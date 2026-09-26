@@ -9,8 +9,32 @@ android {
         applicationId 'com.example.hesabdari'
         minSdkVersion 23
         targetSdkVersion 31
-        versionCode 1
-        versionName '1.0.0-win7'
+
+        versionCode project.hasProperty('versionCode')
+                ? project.versionCode.toInteger()
+                : 2
+
+        versionName project.hasProperty('versionName')
+                ? project.versionName
+                : '1.0.1'
+    }
+
+    signingConfigs {
+        release {
+            if (System.getenv()["CI"]) {
+                storeFile file(System.getenv()["CM_KEYSTORE_PATH"])
+                storePassword System.getenv()["CM_KEYSTORE_PASSWORD"]
+                keyAlias System.getenv()["CM_KEY_ALIAS"]
+                keyPassword System.getenv()["CM_KEY_PASSWORD"]
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
     }
 
     compileOptions {
