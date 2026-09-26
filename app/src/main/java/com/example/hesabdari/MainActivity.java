@@ -1,5 +1,6 @@
 package com.example.hesabdari;
 
+import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ContentValues;
 import android.database.Cursor;
@@ -7,6 +8,7 @@ import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -19,35 +21,33 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.appcompat.app.AppCompatActivity;
-
-import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends Activity {
 
     private DB db;
-
-    private int currentUserId = 0;
-    private int currentSchoolId = 0;
-
-    private String currentUserName = "";
-    private String currentRole = "manager";
 
     private LinearLayout root;
     private LinearLayout content;
 
-    private final ArrayList<String> pageHistory = new ArrayList<>();
+    private int currentSchoolId = 0;
+    private String currentUser = "";
+    private String currentName = "";
+    private String currentRole = "manager";
 
-    private int darkBlue = Color.rgb(18, 55, 95);
-    private int blue = Color.rgb(35, 110, 180);
-    private int green = Color.rgb(38, 130, 80);
+    private int fontSize = 16;
+
+    private int blue = Color.rgb(30, 90, 160);
+    private int darkBlue = Color.rgb(18, 60, 110);
+    private int green = Color.rgb(30, 130, 80);
     private int red = Color.rgb(190, 55, 55);
-    private int orange = Color.rgb(220, 130, 35);
-    private int gray = Color.rgb(245, 247, 250);
+    private int orange = Color.rgb(220, 130, 25);
+    private int gray = Color.rgb(100, 100, 100);
+    private int light = Color.rgb(245, 247, 250);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -55,40 +55,42 @@ public class MainActivity extends AppCompatActivity {
 
         db = new DB(this);
 
+        try {
+            fontSize = Integer.parseInt(db.getSetting("font_size", "16"));
+        } catch (Exception e) {
+            fontSize = 16;
+        }
+
         showLogin();
     }
 
-    // =====================================================
-    // ابزارهای عمومی
-    // =====================================================
+    // =========================================================
+    // عمومی
+    // =========================================================
 
-    private int fontSize() {
-        try {
-            return Integer.parseInt(
-                    db.getSetting("font_size", "16")
-            );
-        } catch (Exception e) {
-            return 16;
-        }
+    private void showToast(String text) {
+        Toast.makeText(MainActivity.this, text, Toast.LENGTH_SHORT).show();
     }
 
-    private TextView text(String value, int size) {
-        TextView t = new TextView(this);
+    private TextView text(String value, float size) {
+        TextView t = new TextView(MainActivity.this);
         t.setText(value);
         t.setTextSize(size);
         t.setTextColor(Color.DKGRAY);
-        t.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
-        t.setPadding(20, 15, 20, 15);
+        t.setGravity(Gravity.CENTER_VERTICAL);
+        t.setPadding(20, 14, 20, 14);
         return t;
     }
 
-    private Button button(String title, int color) {
-        Button b = new Button(this);
+    private Button button(String title) {
+        Button b = new Button(MainActivity.this);
         b.setText(title);
-        b.setTextSize(fontSize());
+        b.setTextSize(fontSize);
         b.setTextColor(Color.WHITE);
+        b.setAllCaps(false);
         b.setGravity(Gravity.CENTER);
-        b.setBackgroundColor(color);
+        b.setPadding(15, 12, 15, 12);
+        b.setBackgroundColor(blue);
 
         LinearLayout.LayoutParams p =
                 new LinearLayout.LayoutParams(
@@ -96,2121 +98,1546 @@ public class MainActivity extends AppCompatActivity {
                         ViewGroup.LayoutParams.WRAP_CONTENT
                 );
 
-        p.setMargins(8, 7, 8, 7);
+        p.setMargins(12, 7, 12, 7);
         b.setLayoutParams(p);
 
         return b;
     }
 
     private EditText edit(String hint) {
-        EditText e = new EditText(this);
+        EditText e = new EditText(MainActivity.this);
         e.setHint(hint);
-        e.setTextSize(fontSize());
-        e.setGravity(Gravity.RIGHT);
-        e.setPadding(20, 12, 20, 12);
+        e.setTextSize(fontSize);
+        e.setPadding(18, 12, 18, 12);
 
-        e.setLayoutParams(
+        LinearLayout.LayoutParams p =
                 new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-        );
+                );
+
+        p.setMargins(12, 6, 12, 6);
+        e.setLayoutParams(p);
 
         return e;
     }
 
-    private LinearLayout vertical() {
-        LinearLayout l = new LinearLayout(this);
-        l.setOrientation(LinearLayout.VERTICAL);
-        l.setPadding(15, 15, 15, 15);
-        return l;
-    }
+    private void setupRoot() {
 
-    private ScrollView scroll(LinearLayout inside) {
-        ScrollView s = new ScrollView(this);
-        s.setFillViewport(true);
-        s.addView(inside);
-        return s;
-    }
-
-    private void baseLayout() {
-
-        root = new LinearLayout(this);
+        root = new LinearLayout(MainActivity.this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.WHITE);
+        root.setBackgroundColor(light);
 
         setContentView(root);
     }
 
-    private void header(String title) {
+    private LinearLayout createContent() {
 
-        TextView h = new TextView(this);
+        LinearLayout box = new LinearLayout(MainActivity.this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(10, 10, 10, 20);
 
-        h.setText(title);
-        h.setTextSize(fontSize() + 3);
-        h.setTextColor(Color.WHITE);
-        h.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        h.setGravity(Gravity.CENTER);
-
-        h.setPadding(10, 25, 10, 25);
-        h.setBackgroundColor(darkBlue);
+        ScrollView scroll = new ScrollView(MainActivity.this);
+        scroll.setFillViewport(true);
+        scroll.addView(box);
 
         root.addView(
-                h,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-        );
-    }
-
-    private void addContent(View v) {
-
-        root.addView(
-                v,
+                scroll,
                 new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         0,
                         1
                 )
         );
+
+        content = box;
+
+        return box;
+    }
+
+    private void title(String title) {
+
+        TextView t = text(title, fontSize + 5);
+        t.setTextColor(Color.WHITE);
+        t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        t.setGravity(Gravity.CENTER);
+        t.setBackgroundColor(darkBlue);
+
+        t.setPadding(10, 22, 10, 22);
+
+        root.addView(
+                t,
+                0,
+                new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+        );
     }
 
     private void addBackButton() {
 
-        Button b =
-                button(
-                        "← بازگشت",
-                        darkBlue
-                );
+        Button back = button("← بازگشت");
 
-        b.setOnClickListener(
-                v -> goBackPage()
+        back.setBackgroundColor(gray);
+
+        back.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onBackPressed();
+            }
+        });
+
+        root.addView(
+                back,
+                1,
+                new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                )
         );
-
-        root.addView(b);
     }
 
-    private void toast(String message) {
-        Toast.makeText(
-                this,
-                message,
-                Toast.LENGTH_SHORT
-        ).show();
+    private void addSectionTitle(String s) {
+
+        TextView t = text(s, fontSize + 2);
+        t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        t.setTextColor(darkBlue);
+        t.setPadding(18, 20, 18, 10);
+
+        content.addView(t);
     }
 
-    private String money(long n) {
-
-        return NumberFormat
-                .getInstance(new Locale("fa", "IR"))
-                .format(n);
-    }
-
-    private long number(String s) {
-
-        if (s == null) {
-            return 0;
-        }
-
-        s = s.replace(",", "")
-                .replace("٬", "")
-                .replace(" ", "")
-                .trim();
-
-        try {
-            return Long.parseLong(s);
-        } catch (Exception e) {
-            return 0;
-        }
-    }
-
-    private String today() {
-
-        return new SimpleDateFormat(
-                "yyyy/MM/dd",
-                Locale.US
-        ).format(new Date());
-    }
-
-    // =====================================================
+    // =========================================================
     // ورود
-    // =====================================================
+    // =========================================================
 
     private void showLogin() {
 
-        pageHistory.clear();
+        setupRoot();
 
-        baseLayout();
+        LinearLayout box = new LinearLayout(MainActivity.this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setGravity(Gravity.CENTER_HORIZONTAL);
+        box.setPadding(30, 50, 30, 30);
 
-        LinearLayout box = vertical();
-
-        TextView title =
-                text(
-                        "سیستم حسابداری مجموعه مدرسه القرآن شهرضا",
-                        fontSize() + 4
-                );
-
-        title.setTypeface(
-                Typeface.DEFAULT,
-                Typeface.BOLD
-        );
-
-        title.setGravity(Gravity.CENTER);
-
-        box.addView(title);
-
-        box.addView(
-                text(
-                        "ورود به سامانه",
-                        fontSize() + 2
+        root.addView(
+                box,
+                new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
                 )
         );
 
-        EditText username =
-                edit("نام کاربری");
+        TextView logo = text(
+                "سیستم حسابداری مجموعه\nمدرسه القرآن شهرضا",
+                fontSize + 7
+        );
 
-        EditText password =
-                edit("رمز عبور");
+        logo.setTextColor(darkBlue);
+        logo.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        logo.setGravity(Gravity.CENTER);
+        logo.setPadding(10, 20, 10, 35);
+
+        box.addView(logo);
+
+        final EditText username = edit("نام کاربری");
+        final EditText password = edit("رمز عبور");
 
         password.setInputType(
-                0x00000081
+                InputType.TYPE_CLASS_TEXT |
+                        InputType.TYPE_TEXT_VARIATION_PASSWORD
         );
 
         box.addView(username);
         box.addView(password);
 
-        Button login =
-                button(
-                        "ورود",
-                        blue
-                );
+        Button login = button("ورود به سیستم");
+        login.setBackgroundColor(green);
 
         box.addView(login);
 
-        login.setOnClickListener(v -> {
+        TextView info = text(
+                "لطفاً نام کاربری و رمز عبور خود را وارد کنید.",
+                fontSize - 1
+        );
 
-            String u =
-                    username.getText()
-                            .toString()
-                            .trim();
+        info.setGravity(Gravity.CENTER);
+        info.setTextColor(gray);
 
-            String p =
-                    password.getText()
-                            .toString()
-                            .trim();
+        box.addView(info);
 
-            if (u.isEmpty() || p.isEmpty()) {
+        login.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
 
-                toast("نام کاربری و رمز عبور را وارد کنید");
+                String u = username.getText().toString().trim();
+                String p = password.getText().toString();
 
-                return;
+                if (u.length() == 0 || p.length() == 0) {
+                    showToast("نام کاربری و رمز عبور را وارد کنید.");
+                    return;
+                }
+
+                loginUser(u, p);
             }
+        });
+    }
 
-            loginUser(u, p);
+    private void loginUser(String username, String password) {
+
+        SQLiteDatabase d = db.getReadableDatabase();
+
+        Cursor c = d.rawQuery(
+                "SELECT id,name,school_id,role,active " +
+                        "FROM managers " +
+                        "WHERE username=? AND password=? LIMIT 1",
+                new String[]{username, password}
+        );
+
+        if (!c.moveToFirst()) {
+            c.close();
+            showToast("نام کاربری یا رمز عبور اشتباه است.");
+            return;
+        }
+
+        int active = c.getInt(4);
+
+        if (active == 0) {
+            c.close();
+            showToast("این حساب غیرفعال است.");
+            return;
+        }
+
+        currentUser = username;
+        currentName = c.getString(1);
+        currentSchoolId = c.getInt(2);
+        currentRole = c.getString(3);
+
+        c.close();
+
+        showDashboard();
+    }
+
+    // =========================================================
+    // داشبورد
+    // =========================================================
+
+    private void showDashboard() {
+
+        setupRoot();
+
+        String schoolName = getSchoolName(currentSchoolId);
+
+        title("سیستم حسابداری مجموعه مدرسه القرآن شهرضا");
+
+        LinearLayout header = new LinearLayout(MainActivity.this);
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.setPadding(15, 15, 15, 15);
+        header.setBackgroundColor(Color.WHITE);
+
+        TextView user = text(
+                "کاربر: " + currentName,
+                fontSize
+        );
+
+        user.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+
+        header.addView(user);
+
+        TextView school = text(
+                currentRole.equals("admin")
+                        ? "سطح دسترسی: مدیر کل سیستم"
+                        : "مرکز: " + schoolName,
+                fontSize
+        );
+
+        header.addView(school);
+
+        root.addView(header);
+
+        createContent();
+
+        if (currentRole.equals("admin")) {
+
+            addSectionTitle("مدیریت کل سیستم");
+
+            Button schools = button("🏫 مدیریت مراکز");
+            Button managers = button("👤 مدیریت مدیران");
+            Button allTransactions = button("📊 همه تراکنش‌ها");
+
+            content.addView(schools);
+            content.addView(managers);
+            content.addView(allTransactions);
+
+            schools.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    showSchools();
+                }
+            });
+
+            managers.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    showManagers();
+                }
+            });
+
+            allTransactions.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    showTransactions(0);
+                }
+            });
+        }
+
+        addSectionTitle("عملیات حسابداری");
+
+        Button income = button("💰 ثبت درآمد / شهریه");
+        Button expense = button("💸 ثبت هزینه");
+        Button transactions = button("📋 دفتر تراکنش‌ها");
+        Button students = button("👨‍🎓 دانش‌آموزان");
+        Button reconciliation = button("✅ مغایرت‌گیری و تطبیق");
+        Button reports = button("📈 گزارش‌ها");
+
+        content.addView(income);
+        content.addView(expense);
+        content.addView(transactions);
+        content.addView(students);
+        content.addView(reconciliation);
+        content.addView(reports);
+
+        income.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showTransactionForm(true);
+            }
         });
 
-        addContent(scroll(box));
-    }
-
-    private void loginUser(
-            String username,
-            String password) {
-
-        SQLiteDatabase d =
-                db.getReadableDatabase();
-
-        Cursor c =
-                d.rawQuery(
-                        "SELECT m.id,m.name,m.school_id," +
-                                "COALESCE(m.role,'manager')," +
-                                "s.name " +
-                                "FROM managers m " +
-                                "LEFT JOIN schools s " +
-                                "ON m.school_id=s.id " +
-                                "WHERE m.username=? " +
-                                "AND m.password=? " +
-                                "AND m.active=1 " +
-                                "LIMIT 1",
-                        new String[]{
-                                username,
-                                password
-                        }
-                );
-
-        if (c.moveToFirst()) {
-
-            currentUserId =
-                    c.getInt(0);
-
-            currentUserName =
-                    c.getString(1);
-
-            currentSchoolId =
-                    c.getInt(2);
-
-            currentRole =
-                    c.getString(3);
-
-            if (currentRole == null) {
-                currentRole = "manager";
+        expense.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showTransactionForm(false);
             }
+        });
 
-            c.close();
+        transactions.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showTransactions(currentSchoolId);
+            }
+        });
 
-            showHome();
+        students.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showStudents();
+            }
+        });
 
-        } else {
+        reconciliation.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showReconciliation();
+            }
+        });
 
-            c.close();
+        reports.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showReports();
+            }
+        });
 
-            toast(
-                    "نام کاربری یا رمز عبور اشتباه است"
-            );
-        }
+        addSectionTitle("تنظیمات");
+
+        Button settings = button("⚙ تنظیمات");
+        Button logout = button("🚪 خروج از حساب");
+
+        content.addView(settings);
+        content.addView(logout);
+
+        settings.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showSettings();
+            }
+        });
+
+        logout.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                currentUser = "";
+                currentName = "";
+                currentRole = "manager";
+                currentSchoolId = 0;
+                showLogin();
+            }
+        });
     }
 
-    // =====================================================
-    // صفحه اصلی
-    // =====================================================
-
-    private void showHome() {
-
-        pageHistory.clear();
-
-        baseLayout();
-
-        header(
-                "سیستم حسابداری مجموعه مدرسه القرآن شهرضا"
-        );
-
-        LinearLayout box = vertical();
-
-        TextView welcome =
-                text(
-                        "خوش آمدید " +
-                                currentUserName,
-                        fontSize() + 2
-                );
-
-        welcome.setTypeface(
-                Typeface.DEFAULT,
-                Typeface.BOLD
-        );
-
-        box.addView(welcome);
-
-        if (isAdmin()) {
-
-            Button schools =
-                    button(
-                            "🏫 مدیریت مراکز",
-                            darkBlue
-                    );
-
-            box.addView(schools);
-
-            schools.setOnClickListener(
-                    v -> go("schools")
-            );
-
-            Button managers =
-                    button(
-                            "👤 مدیریت مدیران",
-                            blue
-                    );
-
-            box.addView(managers);
-
-            managers.setOnClickListener(
-                    v -> go("managers")
-            );
-        }
-
-        Button students =
-                button(
-                        "👨‍🎓 دانش‌آموزان",
-                        green
-                );
-
-        box.addView(students);
-
-        students.setOnClickListener(
-                v -> go("students")
-        );
-
-        Button tuition =
-                button(
-                        "💰 ثبت شهریه / درآمد",
-                        blue
-                );
-
-        box.addView(tuition);
-
-        tuition.setOnClickListener(
-                v -> go("tuition")
-        );
-
-        Button expenses =
-                button(
-                        "💸 ثبت هزینه",
-                        red
-                );
-
-        box.addView(expenses);
-
-        expenses.setOnClickListener(
-                v -> go("expenses")
-        );
-
-        Button accounts =
-                button(
-                        "📒 حساب‌ها",
-                        orange
-                );
-
-        box.addView(accounts);
-
-        accounts.setOnClickListener(
-                v -> go("accounts")
-        );
-
-        Button report =
-                button(
-                        "📊 گزارش مالی",
-                        darkBlue
-                );
-
-        box.addView(report);
-
-        report.setOnClickListener(
-                v -> go("report")
-        );
-
-        Button reconcile =
-                button(
-                        "✅ تطبیق تراکنش‌ها",
-                        green
-                );
-
-        box.addView(reconcile);
-
-        reconcile.setOnClickListener(
-                v -> go("reconcile")
-        );
-
-        Button settings =
-                button(
-                        "⚙️ تنظیمات",
-                        Color.DKGRAY
-                );
-
-        box.addView(settings);
-
-        settings.setOnClickListener(
-                v -> go("settings")
-        );
-
-        Button logout =
-                button(
-                        "🚪 خروج از حساب",
-                        red
-                );
-
-        box.addView(logout);
-
-        logout.setOnClickListener(
-                v -> logout()
-        );
-
-        addContent(scroll(box));
-    }
-
-    private boolean isAdmin() {
-        return "admin".equalsIgnoreCase(
-                currentRole
-        );
-    }
-
-    // =====================================================
-    // مدیریت صفحات
-    // =====================================================
-
-    private void go(String page) {
-
-        pageHistory.add(page);
-
-        openPage(page);
-    }
-
-    private void openPage(String page) {
-
-        if ("schools".equals(page)) {
-            schools();
-        } else if ("managers".equals(page)) {
-            managers();
-        } else if ("students".equals(page)) {
-            students();
-        } else if ("tuition".equals(page)) {
-            transactionForm(true);
-        } else if ("expenses".equals(page)) {
-            transactionForm(false);
-        } else if ("accounts".equals(page)) {
-            accounts();
-        } else if ("report".equals(page)) {
-            report();
-        } else if ("reconcile".equals(page)) {
-            reconcile();
-        } else if ("settings".equals(page)) {
-            settings();
-        }
-    }
-
-    private void goBackPage() {
-
-        if (pageHistory.size() > 0) {
-
-            pageHistory.remove(
-                    pageHistory.size() - 1
-            );
-        }
-
-        if (pageHistory.size() == 0) {
-
-            showHome();
-
-        } else {
-
-            openPage(
-                    pageHistory.get(
-                            pageHistory.size() - 1
-                    )
-            );
-        }
-    }
-
-    @Override
-    public void onBackPressed() {
-
-        if (pageHistory.size() > 0) {
-
-            goBackPage();
-
-        } else {
-
-            super.onBackPressed();
-        }
-    }
-
-    // =====================================================
+    // =========================================================
     // مراکز
-    // =====================================================
+    // =========================================================
 
-    private void schools() {
+    private void showSchools() {
 
-        baseLayout();
+        setupRoot();
+        title("مدیریت مراکز");
+        addBackButton();
+        createContent();
 
-        header("🏫 مدیریت مراکز");
+        SQLiteDatabase d = db.getReadableDatabase();
 
-        LinearLayout box = vertical();
-
-        SQLiteDatabase d =
-                db.getReadableDatabase();
-
-        Cursor c =
-                d.rawQuery(
-                        "SELECT id,name,active " +
-                                "FROM schools " +
-                                "ORDER BY id",
-                        null
-                );
+        Cursor c = d.rawQuery(
+                "SELECT id,name,active FROM schools ORDER BY id",
+                null
+        );
 
         while (c.moveToNext()) {
 
-            int id =
-                    c.getInt(0);
+            final int id = c.getInt(0);
+            String name = c.getString(1);
+            int active = c.getInt(2);
 
-            String name =
-                    c.getString(1);
+            LinearLayout row = new LinearLayout(MainActivity.this);
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.setPadding(15, 15, 15, 15);
+            row.setBackgroundColor(Color.WHITE);
 
-            int active =
-                    c.getInt(2);
-
-            TextView row =
-                    text(
-                            id +
-                                    " - " +
-                                    name +
-                                    "\nوضعیت: " +
-                                    (active == 1 ?
-                                            "فعال" :
-                                            "غیرفعال"),
-                            fontSize()
-                    );
-
-            box.addView(row);
-
-            Button edit =
-                    button(
-                            "ویرایش " + name,
-                            blue
-                    );
-
-            box.addView(edit);
-
-            edit.setOnClickListener(
-                    v -> schoolEditDialog(
-                            id,
-                            name
-                    )
+            TextView t = text(
+                    id + " - " + name +
+                            "\nوضعیت: " +
+                            (active == 1 ? "فعال" : "غیرفعال"),
+                    fontSize
             );
+
+            row.addView(t);
+
+            Button edit = button("ویرایش مرکز");
+
+            edit.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    editSchool(id);
+                }
+            });
+
+            row.addView(edit);
+            content.addView(row);
         }
 
         c.close();
 
-        Button add =
-                button(
-                        "➕ افزودن مرکز",
-                        green
-                );
+        Button add = button("➕ افزودن مرکز جدید");
 
-        box.addView(add);
+        content.addView(add);
 
-        add.setOnClickListener(
-                v -> schoolEditDialog(
-                        -1,
-                        ""
-                )
-        );
-
-        addContent(scroll(box));
-
-        addBackButton();
+        add.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                addSchoolDialog();
+            }
+        });
     }
 
-    private void schoolEditDialog(
-            int id,
-            String oldName) {
+    private void addSchoolDialog() {
 
-        LinearLayout box = vertical();
+        final EditText name = edit("نام مرکز");
 
-        EditText name =
-                edit("نام مرکز");
+        new AlertDialog.Builder(MainActivity.this)
+                .setTitle("افزودن مرکز")
+                .setView(name)
+                .setPositiveButton("ثبت", (dialog, which) -> {
 
-        name.setText(oldName);
+                    String n = name.getText().toString().trim();
 
-        box.addView(name);
+                    if (n.length() == 0) {
+                        showToast("نام مرکز را وارد کنید.");
+                        return;
+                    }
 
-        new AlertDialog.Builder(this)
-                .setTitle(
-                        id == -1 ?
-                                "افزودن مرکز" :
-                                "ویرایش مرکز"
-                )
-                .setView(box)
-                .setPositiveButton(
-                        "ذخیره",
-                        (dialog, which) -> {
+                    ContentValues v = new ContentValues();
+                    v.put("name", n);
+                    v.put("type", "");
+                    v.put("code", "");
+                    v.put("active", 1);
 
-                            String n =
-                                    name.getText()
-                                            .toString()
-                                            .trim();
+                    db.getWritableDatabase().insert(
+                            "schools",
+                            null,
+                            v
+                    );
 
-                            if (n.isEmpty()) {
-
-                                toast(
-                                        "نام مرکز را وارد کنید"
-                                );
-
-                                return;
-                            }
-
-                            SQLiteDatabase d =
-                                    db.getWritableDatabase();
-
-                            ContentValues v =
-                                    new ContentValues();
-
-                            v.put(
-                                    "name",
-                                    n
-                            );
-
-                            v.put(
-                                    "active",
-                                    1
-                            );
-
-                            if (id == -1) {
-
-                                d.insert(
-                                        "schools",
-                                        null,
-                                        v
-                                );
-
-                            } else {
-
-                                d.update(
-                                        "schools",
-                                        v,
-                                        "id=?",
-                                        new String[]{
-                                                String.valueOf(id)
-                                        }
-                                );
-                            }
-
-                            schools();
-                        }
-                )
-                .setNegativeButton(
-                        "انصراف",
-                        null
-                )
+                    showSchools();
+                })
+                .setNegativeButton("انصراف", null)
                 .show();
     }
 
-    // =====================================================
+    private void editSchool(final int id) {
+
+        SQLiteDatabase d = db.getReadableDatabase();
+
+        Cursor c = d.rawQuery(
+                "SELECT name,active FROM schools WHERE id=?",
+                new String[]{String.valueOf(id)}
+        );
+
+        if (!c.moveToFirst()) {
+            c.close();
+            return;
+        }
+
+        final EditText name = edit("نام مرکز");
+        name.setText(c.getString(0));
+
+        final int active = c.getInt(1);
+
+        c.close();
+
+        new AlertDialog.Builder(MainActivity.this)
+                .setTitle("ویرایش مرکز")
+                .setView(name)
+                .setPositiveButton("ذخیره", (dialog, which) -> {
+
+                    ContentValues v = new ContentValues();
+                    v.put("name", name.getText().toString().trim());
+
+                    db.getWritableDatabase().update(
+                            "schools",
+                            v,
+                            "id=?",
+                            new String[]{String.valueOf(id)}
+                    );
+
+                    showSchools();
+                })
+                .setNeutralButton(
+                        active == 1 ? "غیرفعال کردن" : "فعال کردن",
+                        (dialog, which) -> {
+
+                            ContentValues v = new ContentValues();
+                            v.put("active", active == 1 ? 0 : 1);
+
+                            db.getWritableDatabase().update(
+                                    "schools",
+                                    v,
+                                    "id=?",
+                                    new String[]{String.valueOf(id)}
+                            );
+
+                            showSchools();
+                        }
+                )
+                .setNegativeButton("انصراف", null)
+                .show();
+    }
+
+    // =========================================================
     // مدیران
-    // =====================================================
+    // =========================================================
 
-    private void managers() {
+    private void showManagers() {
 
-        baseLayout();
+        setupRoot();
+        title("مدیریت مدیران");
+        addBackButton();
+        createContent();
 
-        header("👤 مدیریت مدیران");
+        SQLiteDatabase d = db.getReadableDatabase();
 
-        LinearLayout box = vertical();
-
-        SQLiteDatabase d =
-                db.getReadableDatabase();
-
-        Cursor c =
-                d.rawQuery(
-                        "SELECT m.id,m.name,m.username," +
-                                "m.role,m.school_id," +
-                                "COALESCE(s.name,'همه مراکز') " +
-                                "FROM managers m " +
-                                "LEFT JOIN schools s " +
-                                "ON m.school_id=s.id " +
-                                "ORDER BY m.id",
-                        null
-                );
+        Cursor c = d.rawQuery(
+                "SELECT m.id,m.name,m.username,m.school_id,m.role,m.active," +
+                        "COALESCE(s.name,'همه مراکز') " +
+                        "FROM managers m " +
+                        "LEFT JOIN schools s ON s.id=m.school_id " +
+                        "ORDER BY m.id",
+                null
+        );
 
         while (c.moveToNext()) {
 
-            int id =
-                    c.getInt(0);
+            final int id = c.getInt(0);
 
-            String name =
-                    c.getString(1);
+            String name = c.getString(1);
+            String username = c.getString(2);
+            int schoolId = c.getInt(3);
+            String role = c.getString(4);
+            int active = c.getInt(5);
+            String schoolName = c.getString(6);
 
-            String username =
-                    c.getString(2);
+            LinearLayout row = new LinearLayout(MainActivity.this);
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.setPadding(15, 15, 15, 15);
+            row.setBackgroundColor(Color.WHITE);
 
-            String role =
-                    c.getString(3);
+            String info =
+                    "نام: " + name +
+                            "\nنام کاربری: " + username +
+                            "\nمرکز: " + schoolName +
+                            "\nنقش: " +
+                            (role.equals("admin")
+                                    ? "مدیر کل"
+                                    : "مدیر مرکز") +
+                            "\nوضعیت: " +
+                            (active == 1 ? "فعال" : "غیرفعال");
 
-            String school =
-                    c.getString(5);
+            row.addView(text(info, fontSize));
 
-            TextView row =
-                    text(
-                            "نام: " + name +
-                                    "\nنام کاربری: " + username +
-                                    "\nنقش: " +
-                                    ("admin".equals(role) ?
-                                            "مدیر کل" :
-                                            "مدیر مرکز") +
-                                    "\nمرکز: " + school,
-                            fontSize()
-                    );
+            Button edit = button("ویرایش مدیر");
 
-            box.addView(row);
+            edit.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    editManager(id);
+                }
+            });
 
-            Button edit =
-                    button(
-                            "ویرایش",
-                            blue
-                    );
-
-            box.addView(edit);
-
-            edit.setOnClickListener(
-                    v -> managerDialog(id)
-            );
+            row.addView(edit);
+            content.addView(row);
         }
 
         c.close();
 
-        Button add =
-                button(
-                        "➕ افزودن مدیر",
-                        green
-                );
+        Button add = button("➕ افزودن مدیر");
 
-        box.addView(add);
+        content.addView(add);
 
-        add.setOnClickListener(
-                v -> managerDialog(-1)
-        );
-
-        addContent(scroll(box));
-
-        addBackButton();
+        add.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                addManagerDialog();
+            }
+        });
     }
 
-    private void managerDialog(int managerId) {
+    private void addManagerDialog() {
 
-        LinearLayout box = vertical();
+        LinearLayout box = new LinearLayout(MainActivity.this);
+        box.setOrientation(LinearLayout.VERTICAL);
 
-        EditText name =
-                edit("نام مدیر");
-
-        EditText username =
-                edit("نام کاربری");
-
-        EditText password =
-                edit("رمز عبور");
-
-        Spinner role =
-                new Spinner(this);
-
-        ArrayList<String> roles =
-                new ArrayList<>();
-
-        roles.add("مدیر مرکز");
-        roles.add("مدیر کل");
-
-        role.setAdapter(
-                new ArrayAdapter<>(
-                        this,
-                        android.R.layout.simple_spinner_dropdown_item,
-                        roles
-                )
-        );
-
-        Spinner school =
-                new Spinner(this);
-
-        ArrayList<String> schoolNames =
-                new ArrayList<>();
-
-        ArrayList<Integer> schoolIds =
-                new ArrayList<>();
-
-        SQLiteDatabase d =
-                db.getReadableDatabase();
-
-        Cursor sc =
-                d.rawQuery(
-                        "SELECT id,name " +
-                                "FROM schools " +
-                                "ORDER BY id",
-                        null
-                );
-
-        while (sc.moveToNext()) {
-
-            schoolIds.add(
-                    sc.getInt(0)
-            );
-
-            schoolNames.add(
-                    sc.getString(1)
-            );
-        }
-
-        sc.close();
-
-        school.setAdapter(
-                new ArrayAdapter<>(
-                        this,
-                        android.R.layout.simple_spinner_dropdown_item,
-                        schoolNames
-                )
-        );
+        final EditText name = edit("نام و نام خانوادگی");
+        final EditText username = edit("نام کاربری");
+        final EditText password = edit("رمز عبور");
 
         box.addView(name);
         box.addView(username);
         box.addView(password);
 
-        box.addView(
-                text(
-                        "نوع حساب",
-                        fontSize()
-                )
+        TextView label = text("مرکز", fontSize);
+        box.addView(label);
+
+        final Spinner schoolSpinner = new Spinner(MainActivity.this);
+
+        final ArrayList<String> schoolNames = new ArrayList<>();
+        final ArrayList<Integer> schoolIds = new ArrayList<>();
+
+        schoolNames.add("مدیر کل سیستم");
+        schoolIds.add(0);
+
+        Cursor c = db.getReadableDatabase().rawQuery(
+                "SELECT id,name FROM schools ORDER BY id",
+                null
         );
-
-        box.addView(role);
-
-        box.addView(
-                text(
-                        "مرکز",
-                        fontSize()
-                )
-        );
-
-        box.addView(school);
-
-        if (managerId != -1) {
-
-            Cursor c =
-                    d.rawQuery(
-                            "SELECT name,username,password," +
-                                    "role,school_id " +
-                                    "FROM managers " +
-                                    "WHERE id=?",
-                            new String[]{
-                                    String.valueOf(managerId)
-                            }
-                    );
-
-            if (c.moveToFirst()) {
-
-                name.setText(
-                        c.getString(0)
-                );
-
-                username.setText(
-                        c.getString(1)
-                );
-
-                password.setText(
-                        c.getString(2)
-                );
-
-                String r =
-                        c.getString(3);
-
-                int sid =
-                        c.getInt(4);
-
-                if ("admin".equals(r)) {
-
-                    role.setSelection(1);
-
-                } else {
-
-                    role.setSelection(0);
-                }
-
-                for (int i = 0;
-                     i < schoolIds.size();
-                     i++) {
-
-                    if (schoolIds.get(i) == sid) {
-
-                        school.setSelection(i);
-
-                        break;
-                    }
-                }
-            }
-
-            c.close();
-        }
-
-        new AlertDialog.Builder(this)
-                .setTitle(
-                        managerId == -1 ?
-                                "افزودن مدیر" :
-                                "ویرایش مدیر"
-                )
-                .setView(box)
-                .setPositiveButton(
-                        "ذخیره",
-                        (dialog, which) -> {
-
-                            String n =
-                                    name.getText()
-                                            .toString()
-                                            .trim();
-
-                            String u =
-                                    username.getText()
-                                            .toString()
-                                            .trim();
-
-                            String p =
-                                    password.getText()
-                                            .toString()
-                                            .trim();
-
-                            if (n.isEmpty() ||
-                                    u.isEmpty() ||
-                                    p.isEmpty()) {
-
-                                toast(
-                                        "همه اطلاعات مدیر را وارد کنید"
-                                );
-
-                                return;
-                            }
-
-                            String r =
-                                    role.getSelectedItemPosition() == 1 ?
-                                            "admin" :
-                                            "manager";
-
-                            int sid = 0;
-
-                            if (r.equals("manager") &&
-                                    schoolIds.size() > 0) {
-
-                                sid =
-                                        schoolIds.get(
-                                                school.getSelectedItemPosition()
-                                        );
-                            }
-
-                            ContentValues v =
-                                    new ContentValues();
-
-                            v.put(
-                                    "name",
-                                    n
-                            );
-
-                            v.put(
-                                    "username",
-                                    u
-                            );
-
-                            v.put(
-                                    "password",
-                                    p
-                            );
-
-                            v.put(
-                                    "school_id",
-                                    sid
-                            );
-
-                            v.put(
-                                    "role",
-                                    r
-                            );
-
-                            v.put(
-                                    "active",
-                                    1
-                            );
-
-                            SQLiteDatabase writable =
-                                    db.getWritableDatabase();
-
-                            if (managerId == -1) {
-
-                                writable.insert(
-                                        "managers",
-                                        null,
-                                        v
-                                );
-
-                            } else {
-
-                                writable.update(
-                                        "managers",
-                                        v,
-                                        "id=?",
-                                        new String[]{
-                                                String.valueOf(managerId)
-                                        }
-                                );
-                            }
-
-                            managers();
-                        }
-                )
-                .setNegativeButton(
-                        "انصراف",
-                        null
-                )
-                .show();
-    }
-
-    // =====================================================
-    // دانش‌آموزان
-    // =====================================================
-
-    private void students() {
-
-        baseLayout();
-
-        header("👨‍🎓 دانش‌آموزان");
-
-        LinearLayout box = vertical();
-
-        Button add =
-                button(
-                        "➕ افزودن دانش‌آموز",
-                        green
-                );
-
-        box.addView(add);
-
-        add.setOnClickListener(
-                v -> studentDialog(-1)
-        );
-
-        EditText search =
-                edit("جستجوی نام یا کد دانش‌آموز");
-
-        box.addView(search);
-
-        Button searchButton =
-                button(
-                        "🔎 جستجو",
-                        blue
-                );
-
-        box.addView(searchButton);
-
-        LinearLayout results =
-                vertical();
-
-        box.addView(results);
-
-        Runnable load =
-                () -> loadStudents(
-                        search.getText()
-                                .toString()
-                                .trim(),
-                        results
-                );
-
-        searchButton.setOnClickListener(
-                v -> load.run()
-        );
-
-        load.run();
-
-        addContent(scroll(box));
-
-        addBackButton();
-    }
-
-    private void loadStudents(
-            String query,
-            LinearLayout results) {
-
-        results.removeAllViews();
-
-        SQLiteDatabase d =
-                db.getReadableDatabase();
-
-        String sql =
-                "SELECT id,name,code,grade,phone " +
-                        "FROM students " +
-                        "WHERE school_id=? ";
-
-        ArrayList<String> args =
-                new ArrayList<>();
-
-        args.add(
-                String.valueOf(
-                        currentSchoolId
-                )
-        );
-
-        if (isAdmin()) {
-
-            sql =
-                    "SELECT id,name,code,grade,phone " +
-                            "FROM students " +
-                            "WHERE 1=1 ";
-            args.clear();
-        }
-
-        if (!query.isEmpty()) {
-
-            sql +=
-                    "AND (name LIKE ? OR code LIKE ?) ";
-
-            args.add(
-                    "%" + query + "%"
-            );
-
-            args.add(
-                    "%" + query + "%"
-            );
-        }
-
-        sql +=
-                "ORDER BY id DESC";
-
-        Cursor c =
-                d.rawQuery(
-                        sql,
-                        args.toArray(
-                                new String[0]
-                        )
-                );
 
         while (c.moveToNext()) {
-
-            int id =
-                    c.getInt(0);
-
-            String name =
-                    c.getString(1);
-
-            String code =
-                    c.getString(2);
-
-            String grade =
-                    c.getString(3);
-
-            String phone =
-                    c.getString(4);
-
-            TextView row =
-                    text(
-                            "نام: " + safe(name) +
-                                    "\nکد: " + safe(code) +
-                                    "\nپایه: " + safe(grade) +
-                                    "\nتلفن: " + safe(phone),
-                            fontSize()
-                    );
-
-            results.addView(row);
-
-            Button edit =
-                    button(
-                            "ویرایش",
-                            blue
-                    );
-
-            results.addView(edit);
-
-            edit.setOnClickListener(
-                    v -> studentDialog(id)
-            );
+            schoolIds.add(c.getInt(0));
+            schoolNames.add(c.getString(1));
         }
 
         c.close();
+
+        ArrayAdapter<String> adapter =
+                new ArrayAdapter<String>(
+                        MainActivity.this,
+                        android.R.layout.simple_spinner_item,
+                        schoolNames
+                );
+
+        adapter.setDropDownViewResource(
+                android.R.layout.simple_spinner_dropdown_item
+        );
+
+        schoolSpinner.setAdapter(adapter);
+        box.addView(schoolSpinner);
+
+        new AlertDialog.Builder(MainActivity.this)
+                .setTitle("افزودن مدیر")
+                .setView(box)
+                .setPositiveButton("ثبت", (dialog, which) -> {
+
+                    String n = name.getText().toString().trim();
+                    String u = username.getText().toString().trim();
+                    String p = password.getText().toString();
+
+                    if (n.length() == 0 ||
+                            u.length() == 0 ||
+                            p.length() == 0) {
+
+                        showToast("تمام اطلاعات را وارد کنید.");
+                        return;
+                    }
+
+                    int schoolId =
+                            schoolIds.get(
+                                    schoolSpinner.getSelectedItemPosition()
+                            );
+
+                    ContentValues v = new ContentValues();
+
+                    v.put("name", n);
+                    v.put("username", u);
+                    v.put("password", p);
+                    v.put("school_id", schoolId);
+                    v.put(
+                            "role",
+                            schoolId == 0
+                                    ? "admin"
+                                    : "manager"
+                    );
+                    v.put("active", 1);
+
+                    long result =
+                            db.getWritableDatabase().insert(
+                                    "managers",
+                                    null,
+                                    v
+                            );
+
+                    if (result == -1) {
+                        showToast("نام کاربری تکراری است.");
+                    } else {
+                        showManagers();
+                    }
+                })
+                .setNegativeButton("انصراف", null)
+                .show();
     }
 
-    private String safe(String s) {
+    private void editManager(final int id) {
 
-        return s == null ? "" : s;
+        SQLiteDatabase d = db.getReadableDatabase();
+
+        Cursor c = d.rawQuery(
+                "SELECT name,username,password,school_id,role,active " +
+                        "FROM managers WHERE id=?",
+                new String[]{String.valueOf(id)}
+        );
+
+        if (!c.moveToFirst()) {
+            c.close();
+            return;
+        }
+
+        final EditText name = edit("نام");
+        final EditText username = edit("نام کاربری");
+        final EditText password = edit("رمز عبور");
+
+        name.setText(c.getString(0));
+        username.setText(c.getString(1));
+        password.setText(c.getString(2));
+
+        final int oldSchoolId = c.getInt(3);
+        final int oldActive = c.getInt(5);
+
+        c.close();
+
+        LinearLayout box = new LinearLayout(MainActivity.this);
+        box.setOrientation(LinearLayout.VERTICAL);
+
+        box.addView(name);
+        box.addView(username);
+        box.addView(password);
+
+        final Spinner schoolSpinner = new Spinner(MainActivity.this);
+
+        final ArrayList<String> schoolNames = new ArrayList<>();
+        final ArrayList<Integer> schoolIds = new ArrayList<>();
+
+        schoolNames.add("مدیر کل سیستم");
+        schoolIds.add(0);
+
+        c = d.rawQuery(
+                "SELECT id,name FROM schools ORDER BY id",
+                null
+        );
+
+        while (c.moveToNext()) {
+            schoolIds.add(c.getInt(0));
+            schoolNames.add(c.getString(1));
+        }
+
+        c.close();
+
+        ArrayAdapter<String> adapter =
+                new ArrayAdapter<String>(
+                        MainActivity.this,
+                        android.R.layout.simple_spinner_item,
+                        schoolNames
+                );
+
+        adapter.setDropDownViewResource(
+                android.R.layout.simple_spinner_dropdown_item
+        );
+
+        schoolSpinner.setAdapter(adapter);
+
+        int position = 0;
+
+        for (int i = 0; i < schoolIds.size(); i++) {
+            if (schoolIds.get(i) == oldSchoolId) {
+                position = i;
+                break;
+            }
+        }
+
+        schoolSpinner.setSelection(position);
+
+        box.addView(schoolSpinner);
+
+        new AlertDialog.Builder(MainActivity.this)
+                .setTitle("ویرایش مدیر")
+                .setView(box)
+                .setPositiveButton("ذخیره", (dialog, which) -> {
+
+                    int schoolId =
+                            schoolIds.get(
+                                    schoolSpinner.getSelectedItemPosition()
+                            );
+
+                    ContentValues v = new ContentValues();
+
+                    v.put("name", name.getText().toString().trim());
+                    v.put(
+                            "username",
+                            username.getText().toString().trim()
+                    );
+                    v.put("password", password.getText().toString());
+                    v.put("school_id", schoolId);
+                    v.put(
+                            "role",
+                            schoolId == 0
+                                    ? "admin"
+                                    : "manager"
+                    );
+
+                    db.getWritableDatabase().update(
+                            "managers",
+                            v,
+                            "id=?",
+                            new String[]{String.valueOf(id)}
+                    );
+
+                    showManagers();
+                })
+                .setNeutralButton(
+                        oldActive == 1
+                                ? "غیرفعال کردن"
+                                : "فعال کردن",
+                        (dialog, which) -> {
+
+                            ContentValues v = new ContentValues();
+                            v.put(
+                                    "active",
+                                    oldActive == 1 ? 0 : 1
+                            );
+
+                            db.getWritableDatabase().update(
+                                    "managers",
+                                    v,
+                                    "id=?",
+                                    new String[]{String.valueOf(id)}
+                            );
+
+                            showManagers();
+                        }
+                )
+                .setNegativeButton("انصراف", null)
+                .show();
     }
 
-    private void studentDialog(int studentId) {
+    // =========================================================
+    // دانش‌آموزان
+    // =========================================================
 
-        LinearLayout box = vertical();
+    private void showStudents() {
 
-        EditText name =
-                edit("نام و نام خانوادگی");
+        setupRoot();
+        title("دانش‌آموزان");
+        addBackButton();
+        createContent();
 
-        EditText code =
-                edit("کد دانش‌آموزی");
+        Button add = button("➕ افزودن دانش‌آموز");
 
-        EditText grade =
-                edit("پایه");
+        content.addView(add);
 
-        EditText phone =
-                edit("شماره تلفن");
+        add.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                addStudentDialog();
+            }
+        });
+
+        final EditText search = edit("جستجوی نام یا کد دانش‌آموز");
+        content.addView(search);
+
+        Button searchButton = button("🔎 جستجو");
+        content.addView(searchButton);
+
+        final LinearLayout results =
+                new LinearLayout(MainActivity.this);
+
+        results.setOrientation(LinearLayout.VERTICAL);
+
+        content.addView(results);
+
+        searchButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+
+                results.removeAllViews();
+
+                String q = search.getText().toString().trim();
+
+                SQLiteDatabase d = db.getReadableDatabase();
+
+                String sql;
+
+                String[] args;
+
+                if (currentRole.equals("admin")) {
+
+                    sql =
+                            "SELECT id,name,code,grade,phone " +
+                                    "FROM students " +
+                                    "WHERE name LIKE ? OR code LIKE ? " +
+                                    "ORDER BY name";
+
+                    args = new String[]{
+                            "%" + q + "%",
+                            "%" + q + "%"
+                    };
+
+                } else {
+
+                    sql =
+                            "SELECT id,name,code,grade,phone " +
+                                    "FROM students " +
+                                    "WHERE school_id=? " +
+                                    "AND (name LIKE ? OR code LIKE ?) " +
+                                    "ORDER BY name";
+
+                    args = new String[]{
+                            String.valueOf(currentSchoolId),
+                            "%" + q + "%",
+                            "%" + q + "%"
+                    };
+                }
+
+                Cursor c = d.rawQuery(sql, args);
+
+                while (c.moveToNext()) {
+
+                    int id = c.getInt(0);
+
+                    String info =
+                            "نام: " + c.getString(1) +
+                                    "\nکد: " + c.getString(2) +
+                                    "\nپایه: " + c.getString(3) +
+                                    "\nتلفن: " + c.getString(4);
+
+                    results.addView(text(info, fontSize));
+
+                    Button edit =
+                            button("ویرایش دانش‌آموز");
+
+                    final int studentId = id;
+
+                    edit.setOnClickListener(
+                            new View.OnClickListener() {
+                                @Override
+                                public void onClick(View v) {
+                                    editStudent(studentId);
+                                }
+                            }
+                    );
+
+                    results.addView(edit);
+                }
+
+                c.close();
+            }
+        });
+    }
+
+    private void addStudentDialog() {
+
+        LinearLayout box = new LinearLayout(MainActivity.this);
+        box.setOrientation(LinearLayout.VERTICAL);
+
+        final EditText name = edit("نام دانش‌آموز");
+        final EditText code = edit("کد دانش‌آموز");
+        final EditText grade = edit("پایه");
+        final EditText phone = edit("شماره تماس");
 
         box.addView(name);
         box.addView(code);
         box.addView(grade);
         box.addView(phone);
 
-        if (studentId != -1) {
+        new AlertDialog.Builder(MainActivity.this)
+                .setTitle("افزودن دانش‌آموز")
+                .setView(box)
+                .setPositiveButton("ثبت", (dialog, which) -> {
 
-            SQLiteDatabase d =
-                    db.getReadableDatabase();
+                    ContentValues v = new ContentValues();
 
-            Cursor c =
-                    d.rawQuery(
-                            "SELECT name,code,grade,phone " +
-                                    "FROM students " +
-                                    "WHERE id=?",
-                            new String[]{
-                                    String.valueOf(studentId)
-                            }
+                    v.put("name", name.getText().toString().trim());
+                    v.put("code", code.getText().toString().trim());
+                    v.put("grade", grade.getText().toString().trim());
+                    v.put("phone", phone.getText().toString().trim());
+                    v.put("school_id", currentSchoolId);
+
+                    db.getWritableDatabase().insert(
+                            "students",
+                            null,
+                            v
                     );
 
-            if (c.moveToFirst()) {
-
-                name.setText(c.getString(0));
-                code.setText(c.getString(1));
-                grade.setText(c.getString(2));
-                phone.setText(c.getString(3));
-            }
-
-            c.close();
-        }
-
-        new AlertDialog.Builder(this)
-                .setTitle(
-                        studentId == -1 ?
-                                "دانش‌آموز جدید" :
-                                "ویرایش دانش‌آموز"
-                )
-                .setView(box)
-                .setPositiveButton(
-                        "ذخیره",
-                        (dialog, which) -> {
-
-                            ContentValues v =
-                                    new ContentValues();
-
-                            v.put(
-                                    "name",
-                                    name.getText()
-                                            .toString()
-                            );
-
-                            v.put(
-                                    "code",
-                                    code.getText()
-                                            .toString()
-                            );
-
-                            v.put(
-                                    "grade",
-                                    grade.getText()
-                                            .toString()
-                            );
-
-                            v.put(
-                                    "phone",
-                                    phone.getText()
-                                            .toString()
-                            );
-
-                            v.put(
-                                    "school_id",
-                                    currentSchoolId
-                            );
-
-                            SQLiteDatabase d =
-                                    db.getWritableDatabase();
-
-                            if (studentId == -1) {
-
-                                d.insert(
-                                        "students",
-                                        null,
-                                        v
-                                );
-
-                            } else {
-
-                                d.update(
-                                        "students",
-                                        v,
-                                        "id=?",
-                                        new String[]{
-                                                String.valueOf(studentId)
-                                        }
-                                );
-                            }
-
-                            students();
-                        }
-                )
-                .setNegativeButton(
-                        "انصراف",
-                        null
-                )
+                    showStudents();
+                })
+                .setNegativeButton("انصراف", null)
                 .show();
     }
 
-    // =====================================================
+    private void editStudent(final int id) {
+
+        SQLiteDatabase d = db.getReadableDatabase();
+
+        Cursor c = d.rawQuery(
+                "SELECT name,code,grade,phone FROM students WHERE id=?",
+                new String[]{String.valueOf(id)}
+        );
+
+        if (!c.moveToFirst()) {
+            c.close();
+            return;
+        }
+
+        final EditText name = edit("نام");
+        final EditText code = edit("کد");
+        final EditText grade = edit("پایه");
+        final EditText phone = edit("تلفن");
+
+        name.setText(c.getString(0));
+        code.setText(c.getString(1));
+        grade.setText(c.getString(2));
+        phone.setText(c.getString(3));
+
+        c.close();
+
+        LinearLayout box = new LinearLayout(MainActivity.this);
+        box.setOrientation(LinearLayout.VERTICAL);
+
+        box.addView(name);
+        box.addView(code);
+        box.addView(grade);
+        box.addView(phone);
+
+        new AlertDialog.Builder(MainActivity.this)
+                .setTitle("ویرایش دانش‌آموز")
+                .setView(box)
+                .setPositiveButton("ذخیره", (dialog, which) -> {
+
+                    ContentValues v = new ContentValues();
+
+                    v.put("name", name.getText().toString().trim());
+                    v.put("code", code.getText().toString().trim());
+                    v.put("grade", grade.getText().toString().trim());
+                    v.put("phone", phone.getText().toString().trim());
+
+                    db.getWritableDatabase().update(
+                            "students",
+                            v,
+                            "id=?",
+                            new String[]{String.valueOf(id)}
+                    );
+
+                    showStudents();
+                })
+                .setNegativeButton("انصراف", null)
+                .show();
+    }
+
+    // =========================================================
     // ثبت درآمد / هزینه
-    // =====================================================
+    // =========================================================
 
-    private void transactionForm(
-            boolean tuition) {
+    private void showTransactionForm(boolean income) {
 
-        baseLayout();
+        setupRoot();
 
-        header(
-                tuition ?
-                        "💰 ثبت شهریه / درآمد" :
-                        "💸 ثبت هزینه"
+        title(
+                income
+                        ? "ثبت درآمد / شهریه"
+                        : "ثبت هزینه"
         );
 
-        LinearLayout box = vertical();
+        addBackButton();
+        createContent();
 
-        EditText amount =
-                edit("مبلغ");
+        final EditText amount = edit("مبلغ به تومان");
+        amount.setInputType(InputType.TYPE_CLASS_NUMBER);
 
-        EditText tracking =
-                edit("کد پیگیری / شماره رسید");
+        final EditText tracking =
+                edit("شماره پیگیری / کد رهگیری");
 
-        EditText comment =
-                edit("شرح");
+        final EditText account =
+                edit(
+                        income
+                                ? "حساب / عنوان درآمد"
+                                : "حساب / عنوان هزینه"
+                );
 
-        Spinner payment =
-                new Spinner(this);
+        final EditText comment =
+                edit("شرح تراکنش");
 
-        ArrayList<String> methods =
-                new ArrayList<>();
+        content.addView(amount);
+        content.addView(account);
 
-        methods.add("نقدی");
-        methods.add("کارت‌به‌کارت");
-        methods.add("کارتخوان");
-        methods.add("واریز بانکی");
-        methods.add("چک");
-        methods.add("سایر");
+        if (income) {
 
-        payment.setAdapter(
-                new ArrayAdapter<>(
-                        this,
-                        android.R.layout.simple_spinner_dropdown_item,
-                        methods
-                )
-        );
+            addSectionTitle("دانش‌آموز");
 
-        box.addView(
-                text(
-                        "مبلغ",
-                        fontSize()
-                )
-        );
+            final Spinner studentSpinner =
+                    new Spinner(MainActivity.this);
 
-        box.addView(amount);
-
-        box.addView(
-                text(
-                        "روش پرداخت",
-                        fontSize()
-                )
-        );
-
-        box.addView(payment);
-
-        box.addView(tracking);
-        box.addView(comment);
-
-        Spinner studentSpinner = null;
-
-        if (tuition) {
-
-            studentSpinner =
-                    new Spinner(this);
-
-            ArrayList<String> studentNames =
+            final ArrayList<String> studentNames =
                     new ArrayList<>();
 
-            ArrayList<Integer> studentIds =
+            final ArrayList<Integer> studentIds =
                     new ArrayList<>();
+
+            studentNames.add("بدون انتخاب");
+            studentIds.add(0);
 
             SQLiteDatabase d =
                     db.getReadableDatabase();
 
-            String sql =
-                    isAdmin() ?
-                            "SELECT id,name FROM students ORDER BY name" :
-                            "SELECT id,name FROM students " +
-                                    "WHERE school_id=? " +
-                                    "ORDER BY name";
-
             Cursor c;
 
-            if (isAdmin()) {
+            if (currentRole.equals("admin")) {
 
-                c =
-                        d.rawQuery(
-                                sql,
-                                null
-                        );
+                c = d.rawQuery(
+                        "SELECT id,name FROM students ORDER BY name",
+                        null
+                );
 
             } else {
 
-                c =
-                        d.rawQuery(
-                                sql,
-                                new String[]{
-                                        String.valueOf(
-                                                currentSchoolId
-                                        )
-                                }
-                        );
+                c = d.rawQuery(
+                        "SELECT id,name FROM students " +
+                                "WHERE school_id=? ORDER BY name",
+                        new String[]{
+                                String.valueOf(currentSchoolId)
+                        }
+                );
             }
 
             while (c.moveToNext()) {
 
-                studentIds.add(
-                        c.getInt(0)
-                );
-
-                studentNames.add(
-                        c.getString(1)
-                );
+                studentIds.add(c.getInt(0));
+                studentNames.add(c.getString(1));
             }
 
             c.close();
 
-            studentSpinner.setAdapter(
-                    new ArrayAdapter<>(
-                            this,
-                            android.R.layout.simple_spinner_dropdown_item,
+            ArrayAdapter<String> studentAdapter =
+                    new ArrayAdapter<String>(
+                            MainActivity.this,
+                            android.R.layout.simple_spinner_item,
                             studentNames
-                    )
-            );
-
-            box.addView(
-                    text(
-                            "دانش‌آموز",
-                            fontSize()
-                    )
-            );
-
-            box.addView(
-                    studentSpinner
-            );
-
-            Button save =
-                    button(
-                            "💾 ثبت شهریه",
-                            green
                     );
 
-            box.addView(save);
-
-            Spinner finalStudentSpinner =
-                    studentSpinner;
-
-            ArrayList<Integer> finalStudentIds =
-                    studentIds;
-
-            save.setOnClickListener(
-                    v -> {
-
-                        saveTransaction(
-                                true,
-                                amount,
-                                payment,
-                                tracking,
-                                comment,
-                                finalStudentSpinner,
-                                finalStudentIds
-                        );
-                    }
+            studentAdapter.setDropDownViewResource(
+                    android.R.layout.simple_spinner_dropdown_item
             );
+
+            studentSpinner.setAdapter(studentAdapter);
+
+            content.addView(studentSpinner);
+
+            addSectionTitle("روش پرداخت");
+
+            final Spinner paymentSpinner =
+                    createPaymentSpinner();
+
+            content.addView(paymentSpinner);
+
+            content.addView(tracking);
+            content.addView(comment);
+
+            Button save = button("💾 ثبت درآمد");
+
+            save.setBackgroundColor(green);
+            content.addView(save);
+
+            save.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+
+                    saveTransaction(
+                            true,
+                            amount,
+                            account,
+                            comment,
+                            tracking,
+                            paymentSpinner,
+                            studentIds,
+                            studentSpinner
+                    );
+                }
+            });
 
         } else {
 
-            Button save =
-                    button(
-                            "💾 ثبت هزینه",
-                            red
+            addSectionTitle("روش پرداخت");
+
+            final Spinner paymentSpinner =
+                    createPaymentSpinner();
+
+            content.addView(paymentSpinner);
+
+            content.addView(tracking);
+            content.addView(comment);
+
+            Button save = button("💾 ثبت هزینه");
+
+            save.setBackgroundColor(red);
+            content.addView(save);
+
+            save.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+
+                    saveExpense(
+                            amount,
+                            account,
+                            comment,
+                            tracking,
+                            paymentSpinner
                     );
-
-            box.addView(save);
-
-            save.setOnClickListener(
-                    v -> {
-
-                        saveTransaction(
-                                false,
-                                amount,
-                                payment,
-                                tracking,
-                                comment,
-                                null,
-                                null
-                        );
-                    }
-            );
+                }
+            });
         }
+    }
 
-        addContent(scroll(box));
+    private Spinner createPaymentSpinner() {
 
-        addBackButton();
+        Spinner spinner = new Spinner(MainActivity.this);
+
+        String[] methods = new String[]{
+                "نقدی",
+                "کارت به کارت",
+                "دستگاه کارتخوان",
+                "واریز بانکی",
+                "چک",
+                "سایر"
+        };
+
+        ArrayAdapter<String> adapter =
+                new ArrayAdapter<String>(
+                        MainActivity.this,
+                        android.R.layout.simple_spinner_item,
+                        methods
+                );
+
+        adapter.setDropDownViewResource(
+                android.R.layout.simple_spinner_dropdown_item
+        );
+
+        spinner.setAdapter(adapter);
+
+        return spinner;
     }
 
     private void saveTransaction(
-            boolean tuition,
+            boolean income,
             EditText amount,
-            Spinner payment,
-            EditText tracking,
+            EditText account,
             EditText comment,
-            Spinner studentSpinner,
-            ArrayList<Integer> studentIds) {
+            EditText tracking,
+            Spinner payment,
+            ArrayList<Integer> studentIds,
+            Spinner studentSpinner) {
 
-        long value =
-                number(
-                        amount.getText()
-                                .toString()
-                );
+        String amountText =
+                amount.getText().toString().trim();
 
-        if (value <= 0) {
-
-            toast("مبلغ صحیح وارد کنید");
-
+        if (amountText.length() == 0) {
+            showToast("مبلغ را وارد کنید.");
             return;
         }
 
-        int studentId = 0;
+        long value;
 
-        if (tuition &&
-                studentIds != null &&
-                studentIds.size() > 0) {
-
-            int position =
-                    studentSpinner
-                            .getSelectedItemPosition();
-
-            if (position >= 0 &&
-                    position < studentIds.size()) {
-
-                studentId =
-                        studentIds.get(position);
-            }
+        try {
+            value = Long.parseLong(amountText);
+        } catch (Exception e) {
+            showToast("مبلغ معتبر نیست.");
+            return;
         }
 
-        String method =
-                payment.getSelectedItem()
-                        .toString();
+        int studentId =
+                studentIds.get(
+                        studentSpinner.getSelectedItemPosition()
+                );
 
-        ContentValues v =
-                new ContentValues();
+        String method =
+                payment.getSelectedItem().toString();
+
+        ContentValues v = new ContentValues();
 
         v.put(
                 "date",
-                today()
+                new SimpleDateFormat(
+                        "yyyy/MM/dd HH:mm",
+                        Locale.US
+                ).format(new Date())
         );
 
         v.put(
                 "account",
-                tuition ?
-                        "شهریه" :
-                        "هزینه"
+                account.getText().toString().trim()
         );
 
-        if (tuition) {
-
-            v.put(
-                    "credit",
-                    value
-            );
-
-            v.put(
-                    "debit",
-                    0
-            );
-
-            v.put(
-                    "kind",
-                    "tuition"
-            );
-
-        } else {
-
-            v.put(
-                    "debit",
-                    value
-            );
-
-            v.put(
-                    "credit",
-                    0
-            );
-
-            v.put(
-                    "kind",
-                    "expense"
-            );
-        }
+        v.put("debit", 0);
+        v.put("credit", value);
 
         v.put(
                 "comment",
-                comment.getText()
-                        .toString()
+                comment.getText().toString().trim()
         );
 
-        v.put(
-                "payment_method",
-                method
-        );
+        v.put("kind", "income");
+        v.put("payment_method", method);
 
         v.put(
                 "tracking_code",
-                tracking.getText()
-                        .toString()
+                tracking.getText().toString().trim()
         );
 
-        v.put(
-                "student_id",
-                studentId
-        );
-
-        v.put(
-                "school_id",
-                currentSchoolId
-        );
-
-        v.put(
-                "reconciled",
-                0
-        );
-
-        SQLiteDatabase d =
-                db.getWritableDatabase();
+        v.put("student_id", studentId);
+        v.put("school_id", currentSchoolId);
+        v.put("reconciled", 0);
 
         long result =
-                d.insert(
+                db.getWritableDatabase().insert(
                         "transactions",
                         null,
                         v
                 );
 
-        if (result != -1) {
-
-            toast(
-                    "تراکنش با موفقیت ثبت شد"
-            );
-
-            if (tuition) {
-
-                transactionForm(true);
-
-            } else {
-
-                transactionForm(false);
-            }
-
+        if (result == -1) {
+            showToast("ثبت تراکنش انجام نشد.");
         } else {
-
-            toast(
-                    "ثبت تراکنش انجام نشد"
-            );
+            showToast("درآمد با موفقیت ثبت شد.");
+            showDashboard();
         }
     }
 
-    // =====================================================
-    // حساب‌ها
-    // =====================================================
+    private void saveExpense(
+            EditText amount,
+            EditText account,
+            EditText comment,
+            EditText tracking,
+            Spinner payment) {
 
-    private void accounts() {
+        String amountText =
+                amount.getText().toString().trim();
 
-        baseLayout();
+        if (amountText.length() == 0) {
+            showToast("مبلغ را وارد کنید.");
+            return;
+        }
 
-        header("📒 حساب‌ها");
+        long value;
 
-        LinearLayout box = vertical();
+        try {
+            value = Long.parseLong(amountText);
+        } catch (Exception e) {
+            showToast("مبلغ معتبر نیست.");
+            return;
+        }
 
-        Button add =
-                button(
-                        "➕ افزودن حساب",
-                        green
-                );
+        ContentValues v = new ContentValues();
 
-        box.addView(add);
-
-        add.setOnClickListener(
-                v -> accountDialog(-1)
+        v.put(
+                "date",
+                new SimpleDateFormat(
+                        "yyyy/MM/dd HH:mm",
+                        Locale.US
+                ).format(new Date())
         );
 
-        SQLiteDatabase d =
-                db.getReadableDatabase();
-
-        String sql =
-                isAdmin() ?
-                        "SELECT id,code,name FROM accounts ORDER BY id" :
-                        "SELECT id,code,name FROM accounts " +
-                                "WHERE school_id=? " +
-                                "ORDER BY id";
-
-        Cursor c;
-
-        if (isAdmin()) {
-
-            c =
-                    d.rawQuery(
-                            sql,
-                            null
-                    );
-
-        } else {
-
-            c =
-                    d.rawQuery(
-                            sql,
-                            new String[]{
-                                    String.valueOf(
-                                            currentSchoolId
-                                    )
-                            }
-                    );
-        }
-
-        while (c.moveToNext()) {
-
-            int id =
-                    c.getInt(0);
-
-            String code =
-                    c.getString(1);
-
-            String name =
-                    c.getString(2);
-
-            TextView row =
-                    text(
-                            "کد: " + safe(code) +
-                                    "\nحساب: " + safe(name),
-                            fontSize()
-                    );
-
-            box.addView(row);
-
-            Button edit =
-                    button(
-                            "ویرایش",
-                            blue
-                    );
-
-            box.addView(edit);
-
-            edit.setOnClickListener(
-                    v -> accountDialog(id)
-            );
-        }
-
-        c.close();
-
-        addContent(scroll(box));
-
-        addBackButton();
-    }
-
-    private void accountDialog(int accountId) {
-
-        LinearLayout box = vertical();
-
-        EditText code =
-                edit("کد حساب");
-
-        EditText name =
-                edit("نام حساب");
-
-        box.addView(code);
-        box.addView(name);
-
-        if (accountId != -1) {
-
-            SQLiteDatabase d =
-                    db.getReadableDatabase();
-
-            Cursor c =
-                    d.rawQuery(
-                            "SELECT code,name " +
-                                    "FROM accounts " +
-                                    "WHERE id=?",
-                            new String[]{
-                                    String.valueOf(accountId)
-                            }
-                    );
-
-            if (c.moveToFirst()) {
-
-                code.setText(
-                        c.getString(0)
-                );
-
-                name.setText(
-                        c.getString(1)
-                );
-            }
-
-            c.close();
-        }
-
-        new AlertDialog.Builder(this)
-                .setTitle(
-                        accountId == -1 ?
-                                "حساب جدید" :
-                                "ویرایش حساب"
-                )
-                .setView(box)
-                .setPositiveButton(
-                        "ذخیره",
-                        (dialog, which) -> {
-
-                            ContentValues v =
-                                    new ContentValues();
-
-                            v.put(
-                                    "code",
-                                    code.getText()
-                                            .toString()
-                            );
-
-                            v.put(
-                                    "name",
-                                    name.getText()
-                                            .toString()
-                            );
-
-                            v.put(
-                                    "school_id",
-                                    currentSchoolId
-                            );
-
-                            SQLiteDatabase d =
-                                    db.getWritableDatabase();
-
-                            if (accountId == -1) {
-
-                                d.insert(
-                                        "accounts",
-                                        null,
-                                        v
-                                );
-
-                            } else {
-
-                                d.update(
-                                        "accounts",
-                                        v,
-                                        "id=?",
-                                        new String[]{
-                                                String.valueOf(accountId)
-                                        }
-                                );
-                            }
-
-                            accounts();
-                        }
-                )
-                .setNegativeButton(
-                        "انصراف",
-                        null
-                )
-                .show();
-    }
-
-    // =====================================================
-    // گزارش مالی
-    // =====================================================
-
-    private void report() {
-
-        baseLayout();
-
-        header("📊 گزارش مالی");
-
-        LinearLayout box = vertical();
-
-        SQLiteDatabase d =
-                db.getReadableDatabase();
-
-        String where =
-                isAdmin() ?
-                        "" :
-                        " WHERE school_id=? ";
-
-        Cursor c;
-
-        if (isAdmin()) {
-
-            c =
-                    d.rawQuery(
-                            "SELECT " +
-                                    "COALESCE(SUM(credit),0)," +
-                                    "COALESCE(SUM(debit),0)," +
-                                    "COUNT(*) " +
-                                    "FROM transactions",
-                            null
-                    );
-
-        } else {
-
-            c =
-                    d.rawQuery(
-                            "SELECT " +
-                                    "COALESCE(SUM(credit),0)," +
-                                    "COALESCE(SUM(debit),0)," +
-                                    "COUNT(*) " +
-                                    "FROM transactions " +
-                                    "WHERE school_id=?",
-                            new String[]{
-                                    String.valueOf(
-                                            currentSchoolId
-                                    )
-                            }
-                    );
-        }
-
-        long income = 0;
-        long expense = 0;
-        long count = 0;
-
-        if (c.moveToFirst()) {
-
-            income =
-                    c.getLong(0);
-
-            expense =
-                    c.getLong(1);
-
-            count =
-                    c.getLong(2);
-        }
-
-        c.close();
-
-        long balance =
-                income - expense;
-
-        TextView result =
-                text(
-                        "مجموع درآمد: " +
-                                money(income) +
-                                "\n\nمجموع هزینه: " +
-                                money(expense) +
-                                "\n\nمانده: " +
-                                money(balance) +
-                                "\n\nتعداد تراکنش‌ها: " +
-                                money(count),
-                        fontSize() + 1
-                );
-
-        result.setTypeface(
-                Typeface.DEFAULT,
-                Typeface.BOLD
+        v.put(
+                "account",
+                account.getText().toString().trim()
         );
 
-        box.addView(result);
+        v.put("debit", value);
+        v.put("credit", 0);
 
-        addContent(scroll(box));
+        v.put(
+                "comment",
+                comment.getText().toString().trim()
+        );
 
-        addBackButton();
+        v.put("kind", "expense");
+
+        v.put(
+                "payment_method",
+                payment.getSelectedItem().toString()
+        );
+
+        v.put(
+                "tracking_code",
+                tracking.getText().toString().trim()
+        );
+
+        v.put("student_id", 0);
+        v.put("school_id", currentSchoolId);
+        v.put("reconciled", 0);
+
+        long result =
+                db.getWritableDatabase().insert(
+                        "transactions",
+                        null,
+                        v
+                );
+
+        if (result == -1) {
+            showToast("ثبت هزینه انجام نشد.");
+        } else {
+            showToast("هزینه با موفقیت ثبت شد.");
+            showDashboard();
+        }
     }
 
-    // =====================================================
-    // تطبیق تراکنش‌ها
-    // =====================================================
+    // =========================================================
+    // تراکنش‌ها
+    // =========================================================
 
-    private void reconcile() {
+    private void showTransactions(int schoolFilter) {
 
-        baseLayout();
+        setupRoot();
+        title("دفتر تراکنش‌ها");
+        addBackButton();
+        createContent();
 
-        header("✅ تطبیق تراکنش‌ها");
-
-        LinearLayout box = vertical();
-
-        SQLiteDatabase d =
-                db.getReadableDatabase();
+        SQLiteDatabase d = db.getReadableDatabase();
 
         String sql;
+        String[] args;
 
-        Cursor c;
-
-        if (isAdmin()) {
+        if (currentRole.equals("admin") && schoolFilter == 0) {
 
             sql =
-                    "SELECT id,date,account,debit,credit," +
-                            "payment_method,tracking_code," +
-                            "reconciled,comment " +
-                            "FROM transactions " +
-                            "ORDER BY id DESC";
+                    "SELECT t.id,t.date,t.account,t.debit,t.credit," +
+                            "t.comment,t.payment_method,t.tracking_code," +
+                            "t.reconciled,s.name " +
+                            "FROM transactions t " +
+                            "LEFT JOIN schools s ON s.id=t.school_id " +
+                            "ORDER BY t.id DESC";
 
-            c =
-                    d.rawQuery(
-                            sql,
-                            null
-                    );
+            args = null;
 
         } else {
 
-            sql =
-                    "SELECT id,date,account,debit,credit," +
-                            "payment_method,tracking_code," +
-                            "reconciled,comment " +
-                            "FROM transactions " +
-                            "WHERE school_id=? " +
-                            "ORDER BY id DESC";
+            int sid =
+                    currentRole.equals("admin")
+                            ? schoolFilter
+                            : currentSchoolId;
 
-            c =
-                    d.rawQuery(
-                            sql,
-                            new String[]{
-                                    String.valueOf(
-                                            currentSchoolId
-                                    )
-                            }
-                    );
+            sql =
+                    "SELECT t.id,t.date,t.account,t.debit,t.credit," +
+                            "t.comment,t.payment_method,t.tracking_code," +
+                            "t.reconciled,s.name " +
+                            "FROM transactions t " +
+                            "LEFT JOIN schools s ON s.id=t.school_id " +
+                            "WHERE t.school_id=? " +
+                            "ORDER BY t.id DESC";
+
+            args = new String[]{
+                    String.valueOf(sid)
+            };
         }
+
+        Cursor c = d.rawQuery(sql, args);
+
+        long totalIncome = 0;
+        long totalExpense = 0;
 
         while (c.moveToNext()) {
 
-            int id =
-                    c.getInt(0);
+            final int id = c.getInt(0);
 
-            String date =
-                    c.getString(1);
+            long debit = c.getLong(3);
+            long credit = c.getLong(4);
 
-            String account =
-                    c.getString(2);
+            totalIncome += credit;
+            totalExpense += debit;
 
-            long debit =
-                    c.getLong(3);
+            String reconciled =
+                    c.getInt(8) == 1
+                            ? "تطبیق شده"
+                            : "در انتظار تطبیق";
 
-            long credit =
-                    c.getLong(4);
+            String school =
+                    c.getString(9);
 
-            String method =
-                    c.getString(5);
+            String info =
+                    "تاریخ: " + c.getString(1) +
+                            "\nحساب: " + c.getString(2) +
+                            "\nدرآمد: " + formatMoney(credit) +
+                            "\nهزینه: " + formatMoney(debit) +
+                            "\nروش پرداخت: " + c.getString(6) +
+                            "\nپیگیری: " + c.getString(7) +
+                            "\nشرح: " + c.getString(5) +
+                            "\nمرکز: " + school +
+                            "\nوضعیت: " + reconciled;
 
-            String tracking =
-                    c.getString(6);
+            TextView t = text(info, fontSize);
 
-            int reconciled =
-                    c.getInt(7);
+            t.setBackgroundColor(Color.WHITE);
+            content.addView(t);
 
-            String comment =
-                    c.getString(8);
-
-            TextView row =
-                    text(
-                            "تاریخ: " + safe(date) +
-                                    "\nحساب: " + safe(account) +
-                                    "\nبدهکار: " + money(debit) +
-                                    "\nبستانکار: " + money(credit) +
-                                    "\nروش: " + safe(method) +
-                                    "\nکد پیگیری: " + safe(tracking) +
-                                    "\nشرح: " + safe(comment) +
-                                    "\nوضعیت: " +
-                                    (reconciled == 1 ?
-                                            "تطبیق شده ✅" :
-                                            "تطبیق نشده ❌"),
-                            fontSize()
+            Button reconcile =
+                    button(
+                            c.getInt(8) == 1
+                                    ? "لغو تطبیق"
+                                    : "تأیید تطبیق"
                     );
 
-            box.addView(row);
+            final boolean isReconciled =
+                    c.getInt(8) == 1;
 
-            if (reconciled == 0) {
-
-                Button ok =
-                        button(
-                                "✅ تأیید و تطبیق",
-                                green
-                        );
-
-                box.addView(ok);
-
-                ok.setOnClickListener(
-                        v -> {
+            reconcile.setOnClickListener(
+                    new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
 
                             ContentValues values =
                                     new ContentValues();
 
                             values.put(
                                     "reconciled",
-                                    1
+                                    isReconciled ? 0 : 1
                             );
 
-                            d.update(
+                            db.getWritableDatabase().update(
                                     "transactions",
                                     values,
                                     "id=?",
@@ -2219,134 +1646,434 @@ public class MainActivity extends AppCompatActivity {
                                     }
                             );
 
-                            reconcile();
+                            showTransactions(schoolFilter);
                         }
-                );
-            }
+                    }
+            );
+
+            content.addView(reconcile);
         }
 
         c.close();
 
-        addContent(scroll(box));
+        addSectionTitle("جمع");
 
-        addBackButton();
+        content.addView(
+                text(
+                        "کل درآمد: " +
+                                formatMoney(totalIncome) +
+                                "\nکل هزینه: " +
+                                formatMoney(totalExpense) +
+                                "\nمانده: " +
+                                formatMoney(
+                                        totalIncome -
+                                                totalExpense
+                                ),
+                        fontSize + 1
+                )
+        );
     }
 
-    // =====================================================
+    private String formatMoney(long value) {
+
+        String s = String.valueOf(value);
+        StringBuilder result = new StringBuilder();
+
+        int count = 0;
+
+        for (int i = s.length() - 1; i >= 0; i--) {
+
+            result.insert(0, s.charAt(i));
+            count++;
+
+            if (count == 3 && i > 0) {
+                result.insert(0, ',');
+                count = 0;
+            }
+        }
+
+        return result + " تومان";
+    }
+
+    // =========================================================
+    // مغایرت‌گیری
+    // =========================================================
+
+    private void showReconciliation() {
+
+        setupRoot();
+        title("مغایرت‌گیری و تطبیق");
+        addBackButton();
+        createContent();
+
+        addSectionTitle("تراکنش‌های در انتظار تطبیق");
+
+        SQLiteDatabase d =
+                db.getReadableDatabase();
+
+        String sql;
+
+        String[] args;
+
+        if (currentRole.equals("admin")) {
+
+            sql =
+                    "SELECT id,date,account,debit,credit," +
+                            "payment_method,tracking_code " +
+                            "FROM transactions " +
+                            "WHERE reconciled=0 " +
+                            "ORDER BY id DESC";
+
+            args = null;
+
+        } else {
+
+            sql =
+                    "SELECT id,date,account,debit,credit," +
+                            "payment_method,tracking_code " +
+                            "FROM transactions " +
+                            "WHERE reconciled=0 AND school_id=? " +
+                            "ORDER BY id DESC";
+
+            args = new String[]{
+                    String.valueOf(currentSchoolId)
+            };
+        }
+
+        Cursor c =
+                d.rawQuery(sql, args);
+
+        int count = 0;
+
+        while (c.moveToNext()) {
+
+            count++;
+
+            final int id = c.getInt(0);
+
+            String info =
+                    "تاریخ: " + c.getString(1) +
+                            "\nحساب: " + c.getString(2) +
+                            "\nمبلغ: " +
+                            formatMoney(
+                                    c.getLong(4) != 0
+                                            ? c.getLong(4)
+                                            : c.getLong(3)
+                            ) +
+                            "\nروش: " + c.getString(5) +
+                            "\nپیگیری: " + c.getString(6);
+
+            content.addView(
+                    text(info, fontSize)
+            );
+
+            Button confirm =
+                    button("✅ تأیید و تطبیق");
+
+            confirm.setOnClickListener(
+                    new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+
+                            ContentValues values =
+                                    new ContentValues();
+
+                            values.put("reconciled", 1);
+
+                            db.getWritableDatabase().update(
+                                    "transactions",
+                                    values,
+                                    "id=?",
+                                    new String[]{
+                                            String.valueOf(id)
+                                    }
+                            );
+
+                            showReconciliation();
+                        }
+                    }
+            );
+
+            content.addView(confirm);
+        }
+
+        c.close();
+
+        if (count == 0) {
+
+            TextView empty =
+                    text(
+                            "🎉 همه تراکنش‌ها تطبیق شده‌اند.",
+                            fontSize + 1
+                    );
+
+            empty.setGravity(Gravity.CENTER);
+
+            content.addView(empty);
+        }
+    }
+
+    // =========================================================
+    // گزارش‌ها
+    // =========================================================
+
+    private void showReports() {
+
+        setupRoot();
+        title("گزارش‌های مالی");
+        addBackButton();
+        createContent();
+
+        SQLiteDatabase d =
+                db.getReadableDatabase();
+
+        String where;
+        String[] args;
+
+        if (currentRole.equals("admin")) {
+
+            where = "";
+            args = null;
+
+        } else {
+
+            where = " WHERE school_id=? ";
+
+            args = new String[]{
+                    String.valueOf(currentSchoolId)
+            };
+        }
+
+        Cursor c =
+                d.rawQuery(
+                        "SELECT " +
+                                "COALESCE(SUM(credit),0)," +
+                                "COALESCE(SUM(debit),0)," +
+                                "COUNT(*) " +
+                                "FROM transactions" +
+                                where,
+                        args
+                );
+
+        if (c.moveToFirst()) {
+
+            long income = c.getLong(0);
+            long expense = c.getLong(1);
+            int count = c.getInt(2);
+
+            content.addView(
+                    text(
+                            "تعداد تراکنش‌ها: " + count +
+                                    "\n\nکل درآمد:\n" +
+                                    formatMoney(income) +
+                                    "\n\nکل هزینه:\n" +
+                                    formatMoney(expense) +
+                                    "\n\nمانده:\n" +
+                                    formatMoney(
+                                            income - expense
+                                    ),
+                            fontSize + 2
+                    )
+            );
+        }
+
+        c.close();
+
+        addSectionTitle("گزارش روش‌های پرداخت");
+
+        Cursor methods;
+
+        if (currentRole.equals("admin")) {
+
+            methods =
+                    d.rawQuery(
+                            "SELECT payment_method," +
+                                    "COUNT(*),SUM(credit),SUM(debit) " +
+                                    "FROM transactions " +
+                                    "GROUP BY payment_method",
+                            null
+                    );
+
+        } else {
+
+            methods =
+                    d.rawQuery(
+                            "SELECT payment_method," +
+                                    "COUNT(*),SUM(credit),SUM(debit) " +
+                                    "FROM transactions " +
+                                    "WHERE school_id=? " +
+                                    "GROUP BY payment_method",
+                            new String[]{
+                                    String.valueOf(currentSchoolId)
+                            }
+                    );
+        }
+
+        while (methods.moveToNext()) {
+
+            content.addView(
+                    text(
+                            "روش: " +
+                                    methods.getString(0) +
+                                    "\nتعداد: " +
+                                    methods.getInt(1) +
+                                    "\nدریافت: " +
+                                    formatMoney(
+                                            methods.getLong(2)
+                                    ) +
+                                    "\nپرداخت: " +
+                                    formatMoney(
+                                            methods.getLong(3)
+                                    ),
+                            fontSize
+                    )
+            );
+        }
+
+        methods.close();
+    }
+
+    // =========================================================
     // تنظیمات
-    // =====================================================
+    // =========================================================
 
-    private void settings() {
+    private void showSettings() {
 
-        baseLayout();
-
-        header("⚙️ تنظیمات");
-
-        LinearLayout box = vertical();
-
-        box.addView(
-                text(
-                        "اندازه نوشته‌ها",
-                        fontSize() + 1
-                )
-        );
-
-        Button small =
-                button(
-                        "🔹 کوچک",
-                        blue
-                );
-
-        Button medium =
-                button(
-                        "🔹 متوسط",
-                        green
-                );
-
-        Button large =
-                button(
-                        "🔹 بزرگ",
-                        orange
-                );
-
-        box.addView(small);
-        box.addView(medium);
-        box.addView(large);
-
-        small.setOnClickListener(
-                v -> {
-
-                    db.setSetting(
-                            "font_size",
-                            "14"
-                    );
-
-                    toast(
-                            "اندازه فونت روی کوچک تنظیم شد"
-                    );
-
-                    settings();
-                }
-        );
-
-        medium.setOnClickListener(
-                v -> {
-
-                    db.setSetting(
-                            "font_size",
-                            "16"
-                    );
-
-                    toast(
-                            "اندازه فونت روی متوسط تنظیم شد"
-                    );
-
-                    settings();
-                }
-        );
-
-        large.setOnClickListener(
-                v -> {
-
-                    db.setSetting(
-                            "font_size",
-                            "20"
-                    );
-
-                    toast(
-                            "اندازه فونت روی بزرگ تنظیم شد"
-                    );
-
-                    settings();
-                }
-        );
-
-        box.addView(
-                text(
-                        "\nنام نرم‌افزار:\n" +
-                                "سیستم حسابداری مجموعه مدرسه القرآن شهرضا",
-                        fontSize()
-                )
-        );
-
-        addContent(scroll(box));
-
+        setupRoot();
+        title("تنظیمات");
         addBackButton();
+        createContent();
+
+        addSectionTitle("اندازه فونت");
+
+        String[] sizes = new String[]{
+                "کوچک",
+                "متوسط",
+                "بزرگ",
+                "خیلی بزرگ"
+        };
+
+        final Spinner spinner =
+                new Spinner(MainActivity.this);
+
+        ArrayAdapter<String> adapter =
+                new ArrayAdapter<String>(
+                        MainActivity.this,
+                        android.R.layout.simple_spinner_item,
+                        sizes
+                );
+
+        adapter.setDropDownViewResource(
+                android.R.layout.simple_spinner_dropdown_item
+        );
+
+        spinner.setAdapter(adapter);
+
+        int selected = 1;
+
+        if (fontSize <= 14) {
+            selected = 0;
+        } else if (fontSize <= 16) {
+            selected = 1;
+        } else if (fontSize <= 19) {
+            selected = 2;
+        } else {
+            selected = 3;
+        }
+
+        spinner.setSelection(selected);
+
+        content.addView(spinner);
+
+        Button save = button("💾 ذخیره اندازه فونت");
+
+        content.addView(save);
+
+        save.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+
+                int pos =
+                        spinner.getSelectedItemPosition();
+
+                if (pos == 0) {
+                    fontSize = 14;
+                } else if (pos == 1) {
+                    fontSize = 16;
+                } else if (pos == 2) {
+                    fontSize = 19;
+                } else {
+                    fontSize = 22;
+                }
+
+                db.setSetting(
+                        "font_size",
+                        String.valueOf(fontSize)
+                );
+
+                showToast(
+                        "اندازه فونت ذخیره شد."
+                );
+
+                showDashboard();
+            }
+        });
+
+        addSectionTitle("اطلاعات حساب");
+
+        content.addView(
+                text(
+                        "نام کاربر: " +
+                                currentName +
+                                "\nنام کاربری: " +
+                                currentUser +
+                                "\nسطح دسترسی: " +
+                                (
+                                        currentRole.equals("admin")
+                                                ? "مدیر کل سیستم"
+                                                : "مدیر مرکز"
+                                ),
+                        fontSize
+                )
+        );
     }
 
-    // =====================================================
-    // خروج
-    // =====================================================
+    // =========================================================
+    // اطلاعات مرکز
+    // =========================================================
 
-    private void logout() {
+    private String getSchoolName(int id) {
 
-        currentUserId = 0;
-        currentSchoolId = 0;
-        currentUserName = "";
-        currentRole = "manager";
+        if (id == 0) {
+            return "همه مراکز";
+        }
 
-        pageHistory.clear();
+        Cursor c =
+                db.getReadableDatabase().rawQuery(
+                        "SELECT name FROM schools WHERE id=?",
+                        new String[]{
+                                String.valueOf(id)
+                        }
+                );
 
-        showLogin();
+        String name = "نامشخص";
+
+        if (c.moveToFirst()) {
+            name = c.getString(0);
+        }
+
+        c.close();
+
+        return name;
+    }
+
+    // =========================================================
+    // دکمه فیزیکی Back
+    // =========================================================
+
+    @Override
+    public void onBackPressed() {
+
+        showDashboard();
     }
 }
