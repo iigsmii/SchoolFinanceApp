@@ -10,25 +10,20 @@ app.use(express.json());
 const PORT = process.env.PORT || 10000;
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY =
-    process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!SUPABASE_URL) {
-    console.error("ERROR: SUPABASE_URL is not configured.");
-}
-
-if (!SUPABASE_SERVICE_ROLE_KEY) {
-    console.error(
-        "ERROR: SUPABASE_SERVICE_ROLE_KEY is not configured."
-    );
-}
+console.log("SUPABASE_URL:", SUPABASE_URL);
+console.log(
+    "SUPABASE_KEY_EXISTS:",
+    !!SUPABASE_KEY
+);
 
 let supabase = null;
 
-if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+if (SUPABASE_URL && SUPABASE_KEY) {
     supabase = createClient(
         SUPABASE_URL,
-        SUPABASE_SERVICE_ROLE_KEY,
+        SUPABASE_KEY,
         {
             auth: {
                 autoRefreshToken: false,
@@ -41,72 +36,65 @@ if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
 app.get("/", (req, res) => {
     res.json({
         success: true,
-        message: "School Finance API is running",
-        version: "1.0.1"
-    });
-});
-
-app.get("/api/test", (req, res) => {
-    res.json({
-        success: true,
-        message: "API connection successful"
+        message: "School Finance API is running"
     });
 });
 
 app.get("/api/test-db", async (req, res) => {
+
+    if (!SUPABASE_URL) {
+        return res.status(500).json({
+            success: false,
+            error: "SUPABASE_URL missing"
+        });
+    }
+
+    if (!SUPABASE_KEY) {
+        return res.status(500).json({
+            success: false,
+            error: "SUPABASE_SERVICE_ROLE_KEY missing"
+        });
+    }
+
     try {
-        if (!supabase) {
-            return res.status(500).json({
-                success: false,
-                message: "Supabase environment variables are missing."
-            });
-        }
 
         const { data, error } = await supabase
             .from("schools")
-            .select("id, name, code, active")
-            .order("id", { ascending: true });
+            .select("*");
 
         if (error) {
-            console.error("Supabase error:", error);
+            console.error("SUPABASE ERROR:", error);
 
             return res.status(500).json({
                 success: false,
-                message: "Supabase connection failed.",
+                message: "Supabase connection failed",
                 error: error.message,
-
-                // فقط URL، بدون Secret Key
-                supabase_url: SUPABASE_URL
+                url: SUPABASE_URL
             });
         }
 
         return res.json({
             success: true,
-            message: "Render is connected to Supabase.",
-
-            // برای تشخیص پروژه متصل‌شده
-            supabase_url: SUPABASE_URL,
-
-            count: data ? data.length : 0,
-            schools: data || []
+            message: "Supabase connection successful",
+            url: SUPABASE_URL,
+            count: data.length,
+            schools: data
         });
 
-    } catch (error) {
-        console.error("Database test error:", error);
+    } catch (err) {
+
+        console.error("SERVER ERROR:", err);
 
         return res.status(500).json({
             success: false,
-            message: "Unexpected server error.",
-            error: error.message,
-
-            // فقط URL، بدون Secret Key
-            supabase_url: SUPABASE_URL
+            message: "Server error",
+            error: err.message
         });
     }
 });
 
 app.listen(PORT, "0.0.0.0", () => {
     console.log(
-        `School Finance API running on port ${PORT}`
+        "School Finance API running on port " + PORT
     );
 });
