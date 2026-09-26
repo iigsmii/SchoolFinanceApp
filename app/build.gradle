@@ -1,0 +1,16 @@
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 31
+    defaultConfig {
+        applicationId 'com.example.hesabdari'
+        minSdkVersion 23
+        targetSdkVersion 31
+        versionCode 1
+        versionName '1.0.0-win7'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+}
