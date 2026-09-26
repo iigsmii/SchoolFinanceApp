@@ -38,25 +38,13 @@ if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
     );
 }
 
-/*
- * ---------------------------------------------------------
- * ROOT
- * ---------------------------------------------------------
- */
-
 app.get("/", (req, res) => {
     res.json({
         success: true,
         message: "School Finance API is running",
-        version: "1.0.0"
+        version: "1.0.1"
     });
 });
-
-/*
- * ---------------------------------------------------------
- * API TEST
- * ---------------------------------------------------------
- */
 
 app.get("/api/test", (req, res) => {
     res.json({
@@ -64,12 +52,6 @@ app.get("/api/test", (req, res) => {
         message: "API connection successful"
     });
 });
-
-/*
- * ---------------------------------------------------------
- * DATABASE TEST
- * ---------------------------------------------------------
- */
 
 app.get("/api/test-db", async (req, res) => {
     try {
@@ -91,15 +73,22 @@ app.get("/api/test-db", async (req, res) => {
             return res.status(500).json({
                 success: false,
                 message: "Supabase connection failed.",
-                error: error.message
+                error: error.message,
+
+                // فقط URL، بدون Secret Key
+                supabase_url: SUPABASE_URL
             });
         }
 
         return res.json({
             success: true,
             message: "Render is connected to Supabase.",
-            count: data.length,
-            schools: data
+
+            // برای تشخیص پروژه متصل‌شده
+            supabase_url: SUPABASE_URL,
+
+            count: data ? data.length : 0,
+            schools: data || []
         });
 
     } catch (error) {
@@ -108,16 +97,13 @@ app.get("/api/test-db", async (req, res) => {
         return res.status(500).json({
             success: false,
             message: "Unexpected server error.",
-            error: error.message
+            error: error.message,
+
+            // فقط URL، بدون Secret Key
+            supabase_url: SUPABASE_URL
         });
     }
 });
-
-/*
- * ---------------------------------------------------------
- * SERVER START
- * ---------------------------------------------------------
- */
 
 app.listen(PORT, "0.0.0.0", () => {
     console.log(
