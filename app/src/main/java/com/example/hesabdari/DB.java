@@ -9,7 +9,7 @@ import android.database.sqlite.SQLiteOpenHelper;
 public class DB extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "hesabdari.db";
-    private static final int DB_VERSION = 4;
+    private static final int DB_VERSION = 8;
 
     final Context context;
 
@@ -18,12 +18,16 @@ public class DB extends SQLiteOpenHelper {
         context = c.getApplicationContext();
     }
 
+    // =====================================================
+    // ایجاد دیتابیس
+    // =====================================================
+
     @Override
     public void onCreate(SQLiteDatabase d) {
 
-        // =========================
+        // -------------------------------------------------
         // مراکز
-        // =========================
+        // -------------------------------------------------
 
         d.execSQL(
             "CREATE TABLE IF NOT EXISTS schools (" +
@@ -34,9 +38,9 @@ public class DB extends SQLiteOpenHelper {
             "active INTEGER DEFAULT 1)"
         );
 
-        // =========================
+        // -------------------------------------------------
         // مدیران
-        // =========================
+        // -------------------------------------------------
 
         d.execSQL(
             "CREATE TABLE IF NOT EXISTS managers (" +
@@ -45,12 +49,13 @@ public class DB extends SQLiteOpenHelper {
             "username TEXT UNIQUE NOT NULL," +
             "password TEXT NOT NULL," +
             "school_id INTEGER NOT NULL," +
+            "role TEXT DEFAULT 'manager'," +
             "active INTEGER DEFAULT 1)"
         );
 
-        // =========================
+        // -------------------------------------------------
         // دانش‌آموزان
-        // =========================
+        // -------------------------------------------------
 
         d.execSQL(
             "CREATE TABLE IF NOT EXISTS students (" +
@@ -58,23 +63,25 @@ public class DB extends SQLiteOpenHelper {
             "name TEXT," +
             "code TEXT," +
             "grade TEXT," +
-            "phone TEXT)"
+            "phone TEXT," +
+            "school_id INTEGER DEFAULT 0)"
         );
 
-        // =========================
+        // -------------------------------------------------
         // حساب‌ها
-        // =========================
+        // -------------------------------------------------
 
         d.execSQL(
             "CREATE TABLE IF NOT EXISTS accounts (" +
             "id INTEGER PRIMARY KEY AUTOINCREMENT," +
             "code TEXT," +
-            "name TEXT)"
+            "name TEXT," +
+            "school_id INTEGER DEFAULT 0)"
         );
 
-        // =========================
-        // تراکنش‌ها
-        // =========================
+        // -------------------------------------------------
+        // تراکنش‌های مالی
+        // -------------------------------------------------
 
         d.execSQL(
             "CREATE TABLE IF NOT EXISTS transactions (" +
@@ -84,15 +91,47 @@ public class DB extends SQLiteOpenHelper {
             "debit INTEGER DEFAULT 0," +
             "credit INTEGER DEFAULT 0," +
             "comment TEXT," +
-            "kind TEXT)"
+            "kind TEXT," +
+            "payment_method TEXT," +
+            "tracking_code TEXT," +
+            "student_id INTEGER DEFAULT 0," +
+            "school_id INTEGER DEFAULT 0," +
+            "reconciled INTEGER DEFAULT 0)"
         );
 
+        // -------------------------------------------------
+        // تنظیمات
+        // -------------------------------------------------
+
+        d.execSQL(
+            "CREATE TABLE IF NOT EXISTS settings (" +
+            "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+            "setting_key TEXT UNIQUE," +
+            "setting_value TEXT)"
+        );
+
+        // -------------------------------------------------
+        // مراکز پیش‌فرض
+        // -------------------------------------------------
+
         insertDefaultSchools(d);
+
+        // -------------------------------------------------
+        // مدیران پیش‌فرض
+        // -------------------------------------------------
+
         insertDefaultManagers(d);
+
+        // -------------------------------------------------
+        // تنظیمات پیش‌فرض
+        // -------------------------------------------------
+
+        insertDefaultSettings(d);
     }
 
+
     // =====================================================
-    // Migration
+    // ارتقای دیتابیس
     // =====================================================
 
     @Override
@@ -101,19 +140,19 @@ public class DB extends SQLiteOpenHelper {
             int oldVersion,
             int newVersion) {
 
-        // ---------------------------------------------
-        // جدول schools
-        // ---------------------------------------------
+        // -------------------------------------------------
+        // مدارس
+        // -------------------------------------------------
 
         d.execSQL(
             "CREATE TABLE IF NOT EXISTS schools (" +
             "id INTEGER PRIMARY KEY AUTOINCREMENT," +
             "name TEXT NOT NULL," +
             "type TEXT," +
-            "code TEXT)"
+            "code TEXT," +
+            "active INTEGER DEFAULT 1)"
         );
 
-        // اضافه کردن active در صورت نبودن
         addColumnIfMissing(
             d,
             "schools",
@@ -121,9 +160,10 @@ public class DB extends SQLiteOpenHelper {
             "INTEGER DEFAULT 1"
         );
 
-        // ---------------------------------------------
-        // جدول managers
-        // ---------------------------------------------
+
+        // -------------------------------------------------
+        // مدیران
+        // -------------------------------------------------
 
         d.execSQL(
             "CREATE TABLE IF NOT EXISTS managers (" +
@@ -131,7 +171,9 @@ public class DB extends SQLiteOpenHelper {
             "name TEXT NOT NULL," +
             "username TEXT UNIQUE NOT NULL," +
             "password TEXT NOT NULL," +
-            "school_id INTEGER NOT NULL)"
+            "school_id INTEGER NOT NULL," +
+            "role TEXT DEFAULT 'manager'," +
+            "active INTEGER DEFAULT 1)"
         );
 
         addColumnIfMissing(
@@ -141,9 +183,17 @@ public class DB extends SQLiteOpenHelper {
             "INTEGER DEFAULT 1"
         );
 
-        // ---------------------------------------------
-        // جدول‌های دیگر
-        // ---------------------------------------------
+        addColumnIfMissing(
+            d,
+            "managers",
+            "role",
+            "TEXT DEFAULT 'manager'"
+        );
+
+
+        // -------------------------------------------------
+        // دانش‌آموزان
+        // -------------------------------------------------
 
         d.execSQL(
             "CREATE TABLE IF NOT EXISTS students (" +
@@ -151,15 +201,41 @@ public class DB extends SQLiteOpenHelper {
             "name TEXT," +
             "code TEXT," +
             "grade TEXT," +
-            "phone TEXT)"
+            "phone TEXT," +
+            "school_id INTEGER DEFAULT 0)"
         );
+
+        addColumnIfMissing(
+            d,
+            "students",
+            "school_id",
+            "INTEGER DEFAULT 0"
+        );
+
+
+        // -------------------------------------------------
+        // حساب‌ها
+        // -------------------------------------------------
 
         d.execSQL(
             "CREATE TABLE IF NOT EXISTS accounts (" +
             "id INTEGER PRIMARY KEY AUTOINCREMENT," +
             "code TEXT," +
-            "name TEXT)"
+            "name TEXT," +
+            "school_id INTEGER DEFAULT 0)"
         );
+
+        addColumnIfMissing(
+            d,
+            "accounts",
+            "school_id",
+            "INTEGER DEFAULT 0"
+        );
+
+
+        // -------------------------------------------------
+        // تراکنش‌ها
+        // -------------------------------------------------
 
         d.execSQL(
             "CREATE TABLE IF NOT EXISTS transactions (" +
@@ -169,21 +245,90 @@ public class DB extends SQLiteOpenHelper {
             "debit INTEGER DEFAULT 0," +
             "credit INTEGER DEFAULT 0," +
             "comment TEXT," +
-            "kind TEXT)"
+            "kind TEXT," +
+            "payment_method TEXT," +
+            "tracking_code TEXT," +
+            "student_id INTEGER DEFAULT 0," +
+            "school_id INTEGER DEFAULT 0," +
+            "reconciled INTEGER DEFAULT 0)"
         );
 
-        // ---------------------------------------------
-        // مراکز پیش‌فرض
-        // ---------------------------------------------
+        addColumnIfMissing(
+            d,
+            "transactions",
+            "payment_method",
+            "TEXT"
+        );
+
+        addColumnIfMissing(
+            d,
+            "transactions",
+            "tracking_code",
+            "TEXT"
+        );
+
+        addColumnIfMissing(
+            d,
+            "transactions",
+            "student_id",
+            "INTEGER DEFAULT 0"
+        );
+
+        addColumnIfMissing(
+            d,
+            "transactions",
+            "school_id",
+            "INTEGER DEFAULT 0"
+        );
+
+        addColumnIfMissing(
+            d,
+            "transactions",
+            "reconciled",
+            "INTEGER DEFAULT 0"
+        );
+
+
+        // -------------------------------------------------
+        // تنظیمات
+        // -------------------------------------------------
+
+        d.execSQL(
+            "CREATE TABLE IF NOT EXISTS settings (" +
+            "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+            "setting_key TEXT UNIQUE," +
+            "setting_value TEXT)"
+        );
+
+
+        // -------------------------------------------------
+        // مراکز
+        // -------------------------------------------------
 
         insertDefaultSchools(d);
 
-        // ---------------------------------------------
-        // مدیران پیش‌فرض
-        // ---------------------------------------------
+
+        // -------------------------------------------------
+        // مدیران
+        // -------------------------------------------------
 
         insertDefaultManagers(d);
+
+
+        // -------------------------------------------------
+        // تنظیمات
+        // -------------------------------------------------
+
+        insertDefaultSettings(d);
+
+
+        // -------------------------------------------------
+        // انتقال اطلاعات قدیمی
+        // -------------------------------------------------
+
+        migrateOldDataToDefaultSchool(d);
     }
+
 
     // =====================================================
     // اضافه کردن ستون در صورت نبودن
@@ -227,11 +372,13 @@ public class DB extends SQLiteOpenHelper {
         }
     }
 
+
     // =====================================================
     // ثبت ۹ مرکز
     // =====================================================
 
-    private void insertDefaultSchools(SQLiteDatabase d) {
+    private void insertDefaultSchools(
+            SQLiteDatabase d) {
 
         addSchool(
             d,
@@ -279,6 +426,7 @@ public class DB extends SQLiteOpenHelper {
         );
     }
 
+
     // =====================================================
     // اضافه کردن مرکز
     // =====================================================
@@ -287,12 +435,15 @@ public class DB extends SQLiteOpenHelper {
             SQLiteDatabase d,
             String name) {
 
-        Cursor c = d.rawQuery(
-            "SELECT id FROM schools WHERE name=? LIMIT 1",
-            new String[]{name}
-        );
+        Cursor c =
+            d.rawQuery(
+                "SELECT id FROM schools " +
+                "WHERE name=? LIMIT 1",
+                new String[]{name}
+            );
 
-        boolean exists = c.moveToFirst();
+        boolean exists =
+            c.moveToFirst();
 
         c.close();
 
@@ -314,11 +465,13 @@ public class DB extends SQLiteOpenHelper {
         }
     }
 
+
     // =====================================================
-    // ثبت مدیران اولیه
+    // مدیران اولیه
     // =====================================================
 
-    private void insertDefaultManagers(SQLiteDatabase d) {
+    private void insertDefaultManagers(
+            SQLiteDatabase d) {
 
         int school1 =
             getSchoolId(
@@ -332,7 +485,23 @@ public class DB extends SQLiteOpenHelper {
                 "دبستان نور ۲"
             );
 
-        // محمدرضا اقاسی
+
+        // -------------------------------------------------
+        // مدیر کل
+        // -------------------------------------------------
+
+        addAdmin(
+            d,
+            "مدیر کل سیستم",
+            "admin",
+            "1234"
+        );
+
+
+        // -------------------------------------------------
+        // مدیر دبستان نور ۱
+        // -------------------------------------------------
+
         if (school1 != -1) {
 
             addManager(
@@ -344,7 +513,11 @@ public class DB extends SQLiteOpenHelper {
             );
         }
 
-        // محمد عربی
+
+        // -------------------------------------------------
+        // مدیر دبستان نور ۲
+        // -------------------------------------------------
+
         if (school2 != -1) {
 
             addManager(
@@ -357,26 +530,29 @@ public class DB extends SQLiteOpenHelper {
         }
     }
 
+
     // =====================================================
-    // اضافه کردن مدیر
+    // مدیر کل
     // =====================================================
 
-    private void addManager(
+    private void addAdmin(
             SQLiteDatabase d,
             String name,
             String username,
-            String password,
-            int schoolId) {
+            String password) {
 
-        Cursor c = d.rawQuery(
-            "SELECT id FROM managers " +
-            "WHERE username=? LIMIT 1",
-            new String[]{username}
-        );
+        Cursor c =
+            d.rawQuery(
+                "SELECT id FROM managers " +
+                "WHERE username=? LIMIT 1",
+                new String[]{username}
+            );
 
-        boolean exists = c.moveToFirst();
+        boolean exists =
+            c.moveToFirst();
 
         c.close();
+
 
         if (!exists) {
 
@@ -386,7 +562,8 @@ public class DB extends SQLiteOpenHelper {
             v.put("name", name);
             v.put("username", username);
             v.put("password", password);
-            v.put("school_id", schoolId);
+            v.put("school_id", 0);
+            v.put("role", "admin");
             v.put("active", 1);
 
             d.insert(
@@ -397,19 +574,66 @@ public class DB extends SQLiteOpenHelper {
         }
     }
 
+
     // =====================================================
-    // گرفتن شناسه مرکز
+    // مدیر مرکز
+    // =====================================================
+
+    private void addManager(
+            SQLiteDatabase d,
+            String name,
+            String username,
+            String password,
+            int schoolId) {
+
+        Cursor c =
+            d.rawQuery(
+                "SELECT id FROM managers " +
+                "WHERE username=? LIMIT 1",
+                new String[]{username}
+            );
+
+        boolean exists =
+            c.moveToFirst();
+
+        c.close();
+
+
+        if (!exists) {
+
+            ContentValues v =
+                new ContentValues();
+
+            v.put("name", name);
+            v.put("username", username);
+            v.put("password", password);
+            v.put("school_id", schoolId);
+            v.put("role", "manager");
+            v.put("active", 1);
+
+            d.insert(
+                "managers",
+                null,
+                v
+            );
+        }
+    }
+
+
+    // =====================================================
+    // شناسه مرکز
     // =====================================================
 
     private int getSchoolId(
             SQLiteDatabase d,
             String name) {
 
-        Cursor c = d.rawQuery(
-            "SELECT id FROM schools " +
-            "WHERE name=? LIMIT 1",
-            new String[]{name}
-        );
+        Cursor c =
+            d.rawQuery(
+                "SELECT id FROM schools " +
+                "WHERE name=? LIMIT 1",
+                new String[]{name}
+            );
 
         int id = -1;
 
@@ -420,5 +644,184 @@ public class DB extends SQLiteOpenHelper {
         c.close();
 
         return id;
+    }
+
+
+    // =====================================================
+    // تنظیمات پیش‌فرض
+    // =====================================================
+
+    private void insertDefaultSettings(
+            SQLiteDatabase d) {
+
+        setSettingIfMissing(
+            d,
+            "font_size",
+            "16"
+        );
+
+        setSettingIfMissing(
+            d,
+            "app_name",
+            "سیستم حسابداری مجموعه مدرسه القرآن شهرضا"
+        );
+    }
+
+
+    // =====================================================
+    // ثبت تنظیم در صورت نبودن
+    // =====================================================
+
+    private void setSettingIfMissing(
+            SQLiteDatabase d,
+            String key,
+            String value) {
+
+        Cursor c =
+            d.rawQuery(
+                "SELECT id FROM settings " +
+                "WHERE setting_key=? LIMIT 1",
+                new String[]{key}
+            );
+
+        boolean exists =
+            c.moveToFirst();
+
+        c.close();
+
+
+        if (!exists) {
+
+            ContentValues v =
+                new ContentValues();
+
+            v.put(
+                "setting_key",
+                key
+            );
+
+            v.put(
+                "setting_value",
+                value
+            );
+
+            d.insert(
+                "settings",
+                null,
+                v
+            );
+        }
+    }
+
+
+    // =====================================================
+    // گرفتن تنظیم
+    // =====================================================
+
+    public String getSetting(
+            String key,
+            String defaultValue) {
+
+        Cursor c =
+            getReadableDatabase()
+            .rawQuery(
+                "SELECT setting_value " +
+                "FROM settings " +
+                "WHERE setting_key=? " +
+                "LIMIT 1",
+                new String[]{key}
+            );
+
+        String result =
+            defaultValue;
+
+        if (c.moveToFirst()) {
+
+            String x =
+                c.getString(0);
+
+            if (x != null) {
+                result = x;
+            }
+        }
+
+        c.close();
+
+        return result;
+    }
+
+
+    // =====================================================
+    // ذخیره تنظیم
+    // =====================================================
+
+    public void setSetting(
+            String key,
+            String value) {
+
+        ContentValues v =
+            new ContentValues();
+
+        v.put(
+            "setting_key",
+            key
+        );
+
+        v.put(
+            "setting_value",
+            value
+        );
+
+        getWritableDatabase()
+        .insertWithOnConflict(
+            "settings",
+            null,
+            v,
+            SQLiteDatabase.CONFLICT_REPLACE
+        );
+    }
+
+
+    // =====================================================
+    // انتقال اطلاعات قدیمی
+    // =====================================================
+
+    private void migrateOldDataToDefaultSchool(
+            SQLiteDatabase d) {
+
+        int schoolId =
+            getSchoolId(
+                d,
+                "دبستان نور ۱"
+            );
+
+        if (schoolId == -1) {
+            return;
+        }
+
+
+        // اطلاعات قدیمی بدون مرکز
+        d.execSQL(
+            "UPDATE students " +
+            "SET school_id=? " +
+            "WHERE school_id IS NULL OR school_id=0",
+            new Object[]{schoolId}
+        );
+
+
+        d.execSQL(
+            "UPDATE accounts " +
+            "SET school_id=? " +
+            "WHERE school_id IS NULL OR school_id=0",
+            new Object[]{schoolId}
+        );
+
+
+        d.execSQL(
+            "UPDATE transactions " +
+            "SET school_id=? " +
+            "WHERE school_id IS NULL OR school_id=0",
+            new Object[]{schoolId}
+        );
     }
 }
