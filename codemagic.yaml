@@ -21,7 +21,6 @@ workflows:
       - name: Build Android Release APK
         script: |
           chmod +x ./gradlew
-
           ./gradlew clean assembleRelease \
             -PversionCode=$BUILD_NUMBER \
             -PversionName=1.0.$BUILD_NUMBER
