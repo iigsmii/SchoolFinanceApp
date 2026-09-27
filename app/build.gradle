@@ -1,6 +1,7 @@
 apply plugin: 'com.android.application'
 
 android {
+    namespace 'com.example.hesabdari'
     compileSdkVersion 31
     defaultConfig {
         applicationId 'com.example.hesabdari'
