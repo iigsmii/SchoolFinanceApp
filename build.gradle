@@ -1,9 +1,10 @@
-android {
-    namespace 'com.example.hesabdari'
-    compileSdkVersion 30
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
 
-    defaultConfig {
-        applicationId "com.example.hesabdari"
-        ...
+    dependencies {
+        classpath 'com.android.tools.build:gradle:7.0.4'
     }
 }
