@@ -1,19 +1,17 @@
 {
   "name": "school-finance-api",
-  "version": "1.0.1",
+  "version": "2.0.0",
   "description": "School Finance API",
   "main": "server.js",
-  "scripts": {
-    "start": "node server.js",
-    "check": "node --check server.js"
-  },
-  "engines": {
-    "node": ">=18"
-  },
+  "scripts": {"start":"node server.js","check":"node --check server.js"},
+  "engines": {"node": ">=18"},
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "multer": "^2.0.2",
+    "sharp": "^0.34.3",
+    "xlsx": "^0.18.5"
   }
 }
