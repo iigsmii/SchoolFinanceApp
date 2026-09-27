@@ -8,9 +8,7 @@ import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
-import android.text.Editable;
 import android.text.InputType;
-import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -40,6 +38,7 @@ public class MainActivity extends Activity {
     private String currentName = "";
     private String currentRole = "manager";
 
+    // وضعیت ورود کاربر
     private boolean isLoggedIn = false;
 
     private int fontSize = 16;
@@ -82,43 +81,26 @@ public class MainActivity extends Activity {
     }
 
     private TextView text(String value, float size) {
-
-        TextView t =
-                new TextView(MainActivity.this);
+        TextView t = new TextView(MainActivity.this);
 
         t.setText(value);
         t.setTextSize(size);
         t.setTextColor(Color.DKGRAY);
         t.setGravity(Gravity.CENTER_VERTICAL);
-
-        t.setPadding(
-                20,
-                18,
-                20,
-                18
-        );
+        t.setPadding(20, 14, 20, 14);
 
         return t;
     }
 
     private Button button(String title) {
-
-        Button b =
-                new Button(MainActivity.this);
+        Button b = new Button(MainActivity.this);
 
         b.setText(title);
         b.setTextSize(fontSize);
         b.setTextColor(Color.WHITE);
         b.setAllCaps(false);
         b.setGravity(Gravity.CENTER);
-
-        b.setPadding(
-                18,
-                16,
-                18,
-                16
-        );
-
+        b.setPadding(15, 12, 15, 12);
         b.setBackgroundColor(blue);
 
         LinearLayout.LayoutParams p =
@@ -127,32 +109,18 @@ public class MainActivity extends Activity {
                         ViewGroup.LayoutParams.WRAP_CONTENT
                 );
 
-        p.setMargins(
-                12,
-                12,
-                12,
-                12
-        );
-
+        p.setMargins(12, 7, 12, 7);
         b.setLayoutParams(p);
 
         return b;
     }
 
     private EditText edit(String hint) {
-
-        EditText e =
-                new EditText(MainActivity.this);
+        EditText e = new EditText(MainActivity.this);
 
         e.setHint(hint);
         e.setTextSize(fontSize);
-
-        e.setPadding(
-                20,
-                16,
-                20,
-                16
-        );
+        e.setPadding(18, 12, 18, 12);
 
         LinearLayout.LayoutParams p =
                 new LinearLayout.LayoutParams(
@@ -160,13 +128,7 @@ public class MainActivity extends Activity {
                         ViewGroup.LayoutParams.WRAP_CONTENT
                 );
 
-        p.setMargins(
-                12,
-                10,
-                12,
-                10
-        );
-
+        p.setMargins(12, 6, 12, 6);
         e.setLayoutParams(p);
 
         return e;
@@ -174,13 +136,8 @@ public class MainActivity extends Activity {
 
     private void setupRoot() {
 
-        root =
-                new LinearLayout(MainActivity.this);
-
-        root.setOrientation(
-                LinearLayout.VERTICAL
-        );
-
+        root = new LinearLayout(MainActivity.this);
+        root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(light);
 
         setContentView(root);
@@ -191,22 +148,13 @@ public class MainActivity extends Activity {
         LinearLayout box =
                 new LinearLayout(MainActivity.this);
 
-        box.setOrientation(
-                LinearLayout.VERTICAL
-        );
-
-        box.setPadding(
-                10,
-                10,
-                10,
-                25
-        );
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(10, 10, 10, 20);
 
         ScrollView scroll =
                 new ScrollView(MainActivity.this);
 
         scroll.setFillViewport(true);
-
         scroll.addView(box);
 
         root.addView(
@@ -226,28 +174,17 @@ public class MainActivity extends Activity {
     private void title(String title) {
 
         TextView t =
-                text(
-                        title,
-                        fontSize + 5
-                );
+                text(title, fontSize + 5);
 
         t.setTextColor(Color.WHITE);
-
         t.setTypeface(
                 Typeface.DEFAULT,
                 Typeface.BOLD
         );
 
         t.setGravity(Gravity.CENTER);
-
         t.setBackgroundColor(darkBlue);
-
-        t.setPadding(
-                10,
-                24,
-                10,
-                24
-        );
+        t.setPadding(10, 22, 10, 22);
 
         root.addView(
                 t,
@@ -288,10 +225,7 @@ public class MainActivity extends Activity {
     private void addSectionTitle(String s) {
 
         TextView t =
-                text(
-                        s,
-                        fontSize + 2
-                );
+                text(s, fontSize + 2);
 
         t.setTypeface(
                 Typeface.DEFAULT,
@@ -299,184 +233,9 @@ public class MainActivity extends Activity {
         );
 
         t.setTextColor(darkBlue);
-
-        t.setPadding(
-                18,
-                25,
-                18,
-                15
-        );
+        t.setPadding(18, 20, 18, 10);
 
         content.addView(t);
-    }
-
-    // =========================================================
-    // ابزارهای مبلغ
-    // =========================================================
-
-    private String convertPersianDigits(String value) {
-
-        if (value == null) {
-            return "";
-        }
-
-        return value
-                .replace('۰', '0')
-                .replace('۱', '1')
-                .replace('۲', '2')
-                .replace('۳', '3')
-                .replace('۴', '4')
-                .replace('۵', '5')
-                .replace('۶', '6')
-                .replace('۷', '7')
-                .replace('۸', '8')
-                .replace('۹', '9')
-                .replace("٬", "")
-                .replace(",", "")
-                .replace("،", "")
-                .replace(" ", "");
-    }
-
-    private long parseMoney(String value)
-            throws NumberFormatException {
-
-        String clean =
-                convertPersianDigits(value);
-
-        if (clean.length() == 0) {
-            throw new NumberFormatException();
-        }
-
-        return Long.parseLong(clean);
-    }
-
-    private String formatNumber(long value) {
-
-        String s =
-                String.valueOf(value);
-
-        boolean negative =
-                s.startsWith("-");
-
-        if (negative) {
-            s = s.substring(1);
-        }
-
-        StringBuilder result =
-                new StringBuilder();
-
-        int count = 0;
-
-        for (int i = s.length() - 1;
-             i >= 0;
-             i--) {
-
-            result.insert(
-                    0,
-                    s.charAt(i)
-            );
-
-            count++;
-
-            if (count == 3 && i > 0) {
-
-                result.insert(
-                        0,
-                        ','
-                );
-
-                count = 0;
-            }
-        }
-
-        if (negative) {
-            result.insert(0, "-");
-        }
-
-        return result.toString();
-    }
-
-    private String formatMoney(long value) {
-
-        return formatNumber(value) +
-                " ریال";
-    }
-
-    private void setupMoneyEditText(
-            final EditText amount) {
-
-        amount.setInputType(
-                InputType.TYPE_CLASS_NUMBER
-        );
-
-        amount.addTextChangedListener(
-                new TextWatcher() {
-
-                    private boolean editing = false;
-
-                    @Override
-                    public void beforeTextChanged(
-                            CharSequence s,
-                            int start,
-                            int count,
-                            int after) {
-                    }
-
-                    @Override
-                    public void onTextChanged(
-                            CharSequence s,
-                            int start,
-                            int before,
-                            int count) {
-                    }
-
-                    @Override
-                    public void afterTextChanged(
-                            Editable s) {
-
-                        if (editing) {
-                            return;
-                        }
-
-                        String raw =
-                                convertPersianDigits(
-                                        s.toString()
-                                );
-
-                        if (raw.length() == 0) {
-                            return;
-                        }
-
-                        try {
-
-                            long value =
-                                    Long.parseLong(raw);
-
-                            String formatted =
-                                    formatNumber(value);
-
-                            if (!formatted.equals(
-                                    s.toString()
-                            )) {
-
-                                editing = true;
-
-                                amount.setText(
-                                        formatted
-                                );
-
-                                amount.setSelection(
-                                        formatted.length()
-                                );
-
-                                editing = false;
-                            }
-
-                        } catch (Exception ignored) {
-                        }
-                    }
-                }
-        );
     }
 
     // =========================================================
@@ -498,12 +257,7 @@ public class MainActivity extends Activity {
                 Gravity.CENTER_HORIZONTAL
         );
 
-        box.setPadding(
-                30,
-                50,
-                30,
-                30
-        );
+        box.setPadding(30, 50, 30, 30);
 
         root.addView(
                 box,
@@ -527,13 +281,7 @@ public class MainActivity extends Activity {
         );
 
         logo.setGravity(Gravity.CENTER);
-
-        logo.setPadding(
-                10,
-                20,
-                10,
-                35
-        );
+        logo.setPadding(10, 20, 10, 35);
 
         box.addView(logo);
 
@@ -630,8 +378,7 @@ public class MainActivity extends Activity {
             return;
         }
 
-        int active =
-                c.getInt(4);
+        int active = c.getInt(4);
 
         if (active == 0) {
 
@@ -644,20 +391,14 @@ public class MainActivity extends Activity {
             return;
         }
 
-        currentUser =
-                username;
-
-        currentName =
-                c.getString(1);
-
-        currentSchoolId =
-                c.getInt(2);
-
-        currentRole =
-                c.getString(3);
+        currentUser = username;
+        currentName = c.getString(1);
+        currentSchoolId = c.getInt(2);
+        currentRole = c.getString(3);
 
         c.close();
 
+        // ورود موفق
         isLoggedIn = true;
 
         showDashboard();
@@ -672,9 +413,7 @@ public class MainActivity extends Activity {
         setupRoot();
 
         String schoolName =
-                getSchoolName(
-                        currentSchoolId
-                );
+                getSchoolName(currentSchoolId);
 
         title(
                 "سیستم حسابداری مجموعه مدرسه القرآن شهرضا"
@@ -687,21 +426,12 @@ public class MainActivity extends Activity {
                 LinearLayout.VERTICAL
         );
 
-        header.setPadding(
-                15,
-                15,
-                15,
-                15
-        );
-
-        header.setBackgroundColor(
-                Color.WHITE
-        );
+        header.setPadding(15, 15, 15, 15);
+        header.setBackgroundColor(Color.WHITE);
 
         TextView user =
                 text(
-                        "کاربر: " +
-                                currentName,
+                        "کاربر: " + currentName,
                         fontSize
                 );
 
@@ -824,9 +554,7 @@ public class MainActivity extends Activity {
                 new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
-                        showTransactions(
-                                currentSchoolId
-                        );
+                        showTransactions(currentSchoolId);
                     }
                 }
         );
@@ -888,6 +616,7 @@ public class MainActivity extends Activity {
                         currentRole = "manager";
                         currentSchoolId = 0;
 
+                        // خروج کامل
                         isLoggedIn = false;
 
                         showLogin();
@@ -919,14 +648,11 @@ public class MainActivity extends Activity {
 
         while (c.moveToNext()) {
 
-            final int id =
-                    c.getInt(0);
+            final int id = c.getInt(0);
 
-            String name =
-                    c.getString(1);
+            String name = c.getString(1);
 
-            int active =
-                    c.getInt(2);
+            int active = c.getInt(2);
 
             LinearLayout row =
                     new LinearLayout(MainActivity.this);
@@ -935,27 +661,16 @@ public class MainActivity extends Activity {
                     LinearLayout.VERTICAL
             );
 
-            row.setPadding(
-                    15,
-                    15,
-                    15,
-                    15
-            );
-
-            row.setBackgroundColor(
-                    Color.WHITE
-            );
+            row.setPadding(15, 15, 15, 15);
+            row.setBackgroundColor(Color.WHITE);
 
             TextView t =
                     text(
-                            id + " - " +
-                                    name +
+                            id + " - " + name +
                                     "\nوضعیت: " +
-                                    (
-                                            active == 1
-                                                    ? "فعال"
-                                                    : "غیرفعال"
-                                    ),
+                                    (active == 1
+                                            ? "فعال"
+                                            : "غیرفعال"),
                             fontSize
                     );
 
@@ -1012,11 +727,9 @@ public class MainActivity extends Activity {
                                             .trim();
 
                             if (n.length() == 0) {
-
                                 showToast(
                                         "نام مرکز را وارد کنید."
                                 );
-
                                 return;
                             }
 
@@ -1068,9 +781,7 @@ public class MainActivity extends Activity {
         final EditText name =
                 edit("نام مرکز");
 
-        name.setText(
-                c.getString(0)
-        );
+        name.setText(c.getString(0));
 
         final int active =
                 c.getInt(1);
@@ -1118,9 +829,7 @@ public class MainActivity extends Activity {
 
                             v.put(
                                     "active",
-                                    active == 1
-                                            ? 0
-                                            : 1
+                                    active == 1 ? 0 : 1
                             );
 
                             db.getWritableDatabase()
@@ -1199,41 +908,24 @@ public class MainActivity extends Activity {
                     LinearLayout.VERTICAL
             );
 
-            row.setPadding(
-                    15,
-                    15,
-                    15,
-                    15
-            );
-
-            row.setBackgroundColor(
-                    Color.WHITE
-            );
+            row.setPadding(15, 15, 15, 15);
+            row.setBackgroundColor(Color.WHITE);
 
             String info =
                     "نام: " + name +
-                            "\nنام کاربری: " +
-                            username +
-                            "\nمرکز: " +
-                            schoolName +
+                            "\nنام کاربری: " + username +
+                            "\nمرکز: " + schoolName +
                             "\nنقش: " +
-                            (
-                                    role.equals("admin")
-                                            ? "مدیر کل"
-                                            : "مدیر مرکز"
-                            ) +
+                            (role.equals("admin")
+                                    ? "مدیر کل"
+                                    : "مدیر مرکز") +
                             "\nوضعیت: " +
-                            (
-                                    active == 1
-                                            ? "فعال"
-                                            : "غیرفعال"
-                            );
+                            (active == 1
+                                    ? "فعال"
+                                    : "غیرفعال");
 
             row.addView(
-                    text(
-                            info,
-                            fontSize
-                    )
+                    text(info, fontSize)
             );
 
             Button edit =
@@ -1249,7 +941,6 @@ public class MainActivity extends Activity {
             );
 
             row.addView(edit);
-
             content.addView(row);
         }
 
@@ -1293,10 +984,7 @@ public class MainActivity extends Activity {
         box.addView(password);
 
         TextView label =
-                text(
-                        "مرکز",
-                        fontSize
-                );
+                text("مرکز", fontSize);
 
         box.addView(label);
 
@@ -1309,10 +997,7 @@ public class MainActivity extends Activity {
         final ArrayList<Integer> schoolIds =
                 new ArrayList<>();
 
-        schoolNames.add(
-                "مدیر کل سیستم"
-        );
-
+        schoolNames.add("مدیر کل سیستم");
         schoolIds.add(0);
 
         Cursor c =
@@ -1325,13 +1010,8 @@ public class MainActivity extends Activity {
 
         while (c.moveToNext()) {
 
-            schoolIds.add(
-                    c.getInt(0)
-            );
-
-            schoolNames.add(
-                    c.getString(1)
-            );
+            schoolIds.add(c.getInt(0));
+            schoolNames.add(c.getString(1));
         }
 
         c.close();
@@ -1463,17 +1143,9 @@ public class MainActivity extends Activity {
         final EditText password =
                 edit("رمز عبور");
 
-        name.setText(
-                c.getString(0)
-        );
-
-        username.setText(
-                c.getString(1)
-        );
-
-        password.setText(
-                c.getString(2)
-        );
+        name.setText(c.getString(0));
+        username.setText(c.getString(1));
+        password.setText(c.getString(2));
 
         final int oldSchoolId =
                 c.getInt(3);
@@ -1503,10 +1175,7 @@ public class MainActivity extends Activity {
         final ArrayList<Integer> schoolIds =
                 new ArrayList<>();
 
-        schoolNames.add(
-                "مدیر کل سیستم"
-        );
-
+        schoolNames.add("مدیر کل سیستم");
         schoolIds.add(0);
 
         c =
@@ -1518,13 +1187,8 @@ public class MainActivity extends Activity {
 
         while (c.moveToNext()) {
 
-            schoolIds.add(
-                    c.getInt(0)
-            );
-
-            schoolNames.add(
-                    c.getString(1)
-            );
+            schoolIds.add(c.getInt(0));
+            schoolNames.add(c.getString(1));
         }
 
         c.close();
@@ -1548,17 +1212,14 @@ public class MainActivity extends Activity {
              i < schoolIds.size();
              i++) {
 
-            if (schoolIds.get(i) ==
-                    oldSchoolId) {
+            if (schoolIds.get(i) == oldSchoolId) {
 
                 position = i;
                 break;
             }
         }
 
-        schoolSpinner.setSelection(
-                position
-        );
+        schoolSpinner.setSelection(position);
 
         box.addView(schoolSpinner);
 
@@ -1666,11 +1327,8 @@ public class MainActivity extends Activity {
     private void showStudents() {
 
         setupRoot();
-
         title("دانش‌آموزان");
-
         addBackButton();
-
         createContent();
 
         Button add =
@@ -1688,9 +1346,7 @@ public class MainActivity extends Activity {
         );
 
         final EditText search =
-                edit(
-                        "جستجوی نام یا کد دانش‌آموز"
-                );
+                edit("جستجوی نام یا کد دانش‌آموز");
 
         content.addView(search);
 
@@ -1713,136 +1369,123 @@ public class MainActivity extends Activity {
                     @Override
                     public void onClick(View v) {
 
-                        searchStudents(
-                                search,
-                                results
-                        );
+                        results.removeAllViews();
+
+                        String q =
+                                search.getText()
+                                        .toString()
+                                        .trim();
+
+                        SQLiteDatabase d =
+                                db.getReadableDatabase();
+
+                        String sql;
+                        String[] args;
+
+                        if (currentRole.equals("admin")) {
+
+                            sql =
+                                    "SELECT id,name,code,grade,phone " +
+                                            "FROM students " +
+                                            "WHERE name LIKE ? " +
+                                            "OR code LIKE ? " +
+                                            "ORDER BY name";
+
+                            args =
+                                    new String[]{
+                                            "%" + q + "%",
+                                            "%" + q + "%"
+                                    };
+
+                        } else {
+
+                            sql =
+                                    "SELECT id,name,code,grade,phone " +
+                                            "FROM students " +
+                                            "WHERE school_id=? " +
+                                            "AND (name LIKE ? " +
+                                            "OR code LIKE ?) " +
+                                            "ORDER BY name";
+
+                            args =
+                                    new String[]{
+                                            String.valueOf(
+                                                    currentSchoolId
+                                            ),
+                                            "%" + q + "%",
+                                            "%" + q + "%"
+                                    };
+                        }
+
+                        Cursor c =
+                                d.rawQuery(
+                                        sql,
+                                        args
+                                );
+
+                        int count = 0;
+
+                        while (c.moveToNext()) {
+
+                            count++;
+
+                            int id =
+                                    c.getInt(0);
+
+                            String info =
+                                    "نام: " +
+                                            c.getString(1) +
+                                            "\nکد: " +
+                                            c.getString(2) +
+                                            "\nپایه: " +
+                                            c.getString(3) +
+                                            "\nتلفن: " +
+                                            c.getString(4);
+
+                            results.addView(
+                                    text(
+                                            info,
+                                            fontSize
+                                    )
+                            );
+
+                            Button edit =
+                                    button(
+                                            "ویرایش دانش‌آموز"
+                                    );
+
+                            final int studentId =
+                                    id;
+
+                            edit.setOnClickListener(
+                                    new View.OnClickListener() {
+                                        @Override
+                                        public void onClick(
+                                                View v) {
+                                            editStudent(
+                                                    studentId
+                                            );
+                                        }
+                                    }
+                            );
+
+                            results.addView(edit);
+                        }
+
+                        c.close();
+
+                        if (count == 0) {
+
+                            results.addView(
+                                    text(
+                                            "دانش‌آموزی پیدا نشد.",
+                                            fontSize
+                                    )
+                            );
+                        }
                     }
                 }
         );
-    }
-
-    private void searchStudents(
-            EditText search,
-            LinearLayout results) {
-
-        results.removeAllViews();
-
-        String q =
-                search.getText()
-                        .toString()
-                        .trim();
-
-        SQLiteDatabase d =
-                db.getReadableDatabase();
-
-        String sql;
-        String[] args;
-
-        if (currentRole.equals("admin")) {
-
-            sql =
-                    "SELECT id,name,code,grade,phone " +
-                            "FROM students " +
-                            "WHERE name LIKE ? " +
-                            "OR code LIKE ? " +
-                            "ORDER BY name";
-
-            args =
-                    new String[]{
-                            "%" + q + "%",
-                            "%" + q + "%"
-                    };
-
-        } else {
-
-            sql =
-                    "SELECT id,name,code,grade,phone " +
-                            "FROM students " +
-                            "WHERE school_id=? " +
-                            "AND (name LIKE ? " +
-                            "OR code LIKE ?) " +
-                            "ORDER BY name";
-
-            args =
-                    new String[]{
-                            String.valueOf(
-                                    currentSchoolId
-                            ),
-                            "%" + q + "%",
-                            "%" + q + "%"
-                    };
-        }
-
-        Cursor c =
-                d.rawQuery(
-                        sql,
-                        args
-                );
-
-        int count = 0;
-
-        while (c.moveToNext()) {
-
-            count++;
-
-            final int id =
-                    c.getInt(0);
-
-            String info =
-                    "نام: " +
-                            c.getString(1) +
-                            "\nکد: " +
-                            c.getString(2) +
-                            "\nپایه: " +
-                            c.getString(3) +
-                            "\nتلفن: " +
-                            c.getString(4);
-
-            TextView studentText =
-                    text(
-                            info,
-                            fontSize
-                    );
-
-            studentText.setBackgroundColor(
-                    Color.WHITE
-            );
-
-            results.addView(
-                    studentText
-            );
-
-            Button edit =
-                    button(
-                            "ویرایش دانش‌آموز"
-                    );
-
-            edit.setOnClickListener(
-                    new View.OnClickListener() {
-                        @Override
-                        public void onClick(
-                                View v) {
-
-                            editStudent(id);
-                        }
-                    }
-            );
-
-            results.addView(edit);
-        }
-
-        c.close();
-
-        if (count == 0) {
-
-            results.addView(
-                    text(
-                            "دانش‌آموزی پیدا نشد.",
-                            fontSize
-                    )
-            );
-        }
     }
 
     private void addStudentDialog() {
@@ -2067,131 +1710,6 @@ public class MainActivity extends Activity {
     }
 
     // =========================================================
-    // حساب‌های بانکی
-    // =========================================================
-
-    private ArrayList<String> getBankAccounts() {
-
-        ArrayList<String> accounts =
-                new ArrayList<>();
-
-        SQLiteDatabase d =
-                db.getReadableDatabase();
-
-        Cursor columns = null;
-        Cursor rows = null;
-
-        try {
-
-            columns =
-                    d.rawQuery(
-                            "PRAGMA table_info(accounts)",
-                            null
-                    );
-
-            ArrayList<String> columnNames =
-                    new ArrayList<>();
-
-            while (columns.moveToNext()) {
-
-                String column =
-                        columns.getString(1);
-
-                if (!column.equalsIgnoreCase("id")) {
-
-                    columnNames.add(column);
-                }
-            }
-
-            if (columnNames.size() == 0) {
-
-                accounts.add(
-                        "حسابی ثبت نشده"
-                );
-
-                return accounts;
-            }
-
-            StringBuilder query =
-                    new StringBuilder(
-                            "SELECT * FROM accounts"
-                    );
-
-            rows =
-                    d.rawQuery(
-                            query.toString(),
-                            null
-                    );
-
-            while (rows.moveToNext()) {
-
-                StringBuilder display =
-                        new StringBuilder();
-
-                String[] names =
-                        rows.getColumnNames();
-
-                for (int i = 0;
-                     i < names.length;
-                     i++) {
-
-                    if (names[i]
-                            .equalsIgnoreCase("id")) {
-
-                        continue;
-                    }
-
-                    String value =
-                            rows.getString(i);
-
-                    if (value == null ||
-                            value.trim().length() == 0) {
-
-                        continue;
-                    }
-
-                    if (display.length() > 0) {
-
-                        display.append(" - ");
-                    }
-
-                    display.append(value.trim());
-                }
-
-                if (display.length() > 0) {
-
-                    accounts.add(
-                            display.toString()
-                    );
-                }
-            }
-
-        } catch (Exception e) {
-
-            accounts.clear();
-
-        } finally {
-
-            if (columns != null) {
-                columns.close();
-            }
-
-            if (rows != null) {
-                rows.close();
-            }
-        }
-
-        if (accounts.size() == 0) {
-
-            accounts.add(
-                    "حسابی ثبت نشده"
-            );
-        }
-
-        return accounts;
-    }
-
-    // =========================================================
     // ثبت درآمد / هزینه
     // =========================================================
 
@@ -2207,125 +1725,103 @@ public class MainActivity extends Activity {
         );
 
         addBackButton();
-
         createContent();
 
-        // -----------------------------------------------------
-        // مبلغ
-        // -----------------------------------------------------
-
         final EditText amount =
-                edit("مبلغ به ریال");
+                edit("مبلغ به تومان");
 
-        setupMoneyEditText(amount);
+        amount.setInputType(
+                InputType.TYPE_CLASS_NUMBER
+        );
+
+        final EditText tracking =
+                edit("شماره پیگیری / کد رهگیری");
+
+        final EditText account =
+                edit(
+                        income
+                                ? "حساب / عنوان درآمد"
+                                : "حساب / عنوان هزینه"
+                );
+
+        final EditText comment =
+                edit("شرح تراکنش");
 
         content.addView(amount);
-
-        TextView amountInfo =
-                text(
-                        "مبلغ به ریال وارد شود؛ مثال: 12,500,000 ریال",
-                        fontSize - 1
-                );
-
-        amountInfo.setTextColor(gray);
-
-        content.addView(amountInfo);
-
-        // -----------------------------------------------------
-        // حساب بانکی
-        // -----------------------------------------------------
-
-        addSectionTitle(
-                income
-                        ? "حساب بانکی دریافت‌کننده"
-                        : "حساب بانکی"
-        );
-
-        final Spinner accountSpinner =
-                new Spinner(MainActivity.this);
-
-        ArrayList<String> bankAccounts =
-                getBankAccounts();
-
-        ArrayAdapter<String> accountAdapter =
-                new ArrayAdapter<String>(
-                        MainActivity.this,
-                        android.R.layout.simple_spinner_item,
-                        bankAccounts
-                );
-
-        accountAdapter.setDropDownViewResource(
-                android.R.layout.simple_spinner_dropdown_item
-        );
-
-        accountSpinner.setAdapter(
-                accountAdapter
-        );
-
-        content.addView(
-                accountSpinner
-        );
-
-        // -----------------------------------------------------
-        // درآمد
-        // -----------------------------------------------------
+        content.addView(account);
 
         if (income) {
 
-            addSectionTitle(
-                    "دانش‌آموز"
-            );
+            addSectionTitle("دانش‌آموز");
 
-            final Button studentButton =
-                    button(
-                            "👨‍🎓 جستجو و انتخاب دانش‌آموز"
+            final Spinner studentSpinner =
+                    new Spinner(MainActivity.this);
+
+            final ArrayList<String> studentNames =
+                    new ArrayList<>();
+
+            final ArrayList<Integer> studentIds =
+                    new ArrayList<>();
+
+            studentNames.add("بدون انتخاب");
+            studentIds.add(0);
+
+            SQLiteDatabase d =
+                    db.getReadableDatabase();
+
+            Cursor c;
+
+            if (currentRole.equals("admin")) {
+
+                c =
+                        d.rawQuery(
+                                "SELECT id,name " +
+                                        "FROM students " +
+                                        "ORDER BY name",
+                                null
+                        );
+
+            } else {
+
+                c =
+                        d.rawQuery(
+                                "SELECT id,name " +
+                                        "FROM students " +
+                                        "WHERE school_id=? " +
+                                        "ORDER BY name",
+                                new String[]{
+                                        String.valueOf(
+                                                currentSchoolId
+                                        )
+                                }
+                        );
+            }
+
+            while (c.moveToNext()) {
+
+                studentIds.add(c.getInt(0));
+                studentNames.add(c.getString(1));
+            }
+
+            c.close();
+
+            ArrayAdapter<String>
+                    studentAdapter =
+                    new ArrayAdapter<String>(
+                            MainActivity.this,
+                            android.R.layout.simple_spinner_item,
+                            studentNames
                     );
 
-            studentButton.setBackgroundColor(
-                    blue
+            studentAdapter.setDropDownViewResource(
+                    android.R.layout.simple_spinner_dropdown_item
             );
 
-            content.addView(
-                    studentButton
+            studentSpinner.setAdapter(
+                    studentAdapter
             );
 
-            final TextView selectedStudent =
-                    text(
-                            "دانش‌آموزی انتخاب نشده است.",
-                            fontSize
-                    );
-
-            selectedStudent.setTextColor(
-                    gray
-            );
-
-            selectedStudent.setBackgroundColor(
-                    Color.WHITE
-            );
-
-            content.addView(
-                    selectedStudent
-            );
-
-            final int[] selectedStudentId =
-                    new int[]{0};
-
-            final String[] selectedStudentName =
-                    new String[]{""};
-
-            studentButton.setOnClickListener(
-                    new View.OnClickListener() {
-                        @Override
-                        public void onClick(View v) {
-
-                            showStudentSelectionDialog(
-                                    selectedStudentId,
-                                    selectedStudentName,
-                                    selectedStudent
-                            );
-                        }
-                    }
-            );
+            content.addView(studentSpinner);
 
             addSectionTitle(
                     "روش پرداخت"
@@ -2334,19 +1830,7 @@ public class MainActivity extends Activity {
             final Spinner paymentSpinner =
                     createPaymentSpinner();
 
-            content.addView(
-                    paymentSpinner
-            );
-
-            final EditText tracking =
-                    edit(
-                            "شماره پیگیری / کد رهگیری"
-                    );
-
-            final EditText comment =
-                    edit(
-                            "شرح تراکنش"
-                    );
+            content.addView(paymentSpinner);
 
             content.addView(tracking);
             content.addView(comment);
@@ -2354,9 +1838,7 @@ public class MainActivity extends Activity {
             Button save =
                     button("💾 ثبت درآمد");
 
-            save.setBackgroundColor(
-                    green
-            );
+            save.setBackgroundColor(green);
 
             content.addView(save);
 
@@ -2365,35 +1847,15 @@ public class MainActivity extends Activity {
                         @Override
                         public void onClick(View v) {
 
-                            if (bankAccounts.size() == 0 ||
-                                    bankAccounts.get(0)
-                                            .equals(
-                                                    "حسابی ثبت نشده"
-                                            )) {
-
-                                showToast(
-                                        "ابتدا اطلاعات حساب‌های بانکی را وارد کنید."
-                                );
-
-                                return;
-                            }
-
-                            if (selectedStudentId[0] == 0) {
-
-                                showToast(
-                                        "لطفاً ابتدا دانش‌آموز را انتخاب کنید."
-                                );
-
-                                return;
-                            }
-
-                            saveIncomeTransaction(
+                            saveTransaction(
+                                    true,
                                     amount,
-                                    accountSpinner,
+                                    account,
                                     comment,
                                     tracking,
                                     paymentSpinner,
-                                    selectedStudentId[0]
+                                    studentIds,
+                                    studentSpinner
                             );
                         }
                     }
@@ -2408,19 +1870,7 @@ public class MainActivity extends Activity {
             final Spinner paymentSpinner =
                     createPaymentSpinner();
 
-            content.addView(
-                    paymentSpinner
-            );
-
-            final EditText tracking =
-                    edit(
-                            "شماره پیگیری / کد رهگیری"
-                    );
-
-            final EditText comment =
-                    edit(
-                            "شرح تراکنش"
-                    );
+            content.addView(paymentSpinner);
 
             content.addView(tracking);
             content.addView(comment);
@@ -2428,9 +1878,7 @@ public class MainActivity extends Activity {
             Button save =
                     button("💾 ثبت هزینه");
 
-            save.setBackgroundColor(
-                    red
-            );
+            save.setBackgroundColor(red);
 
             content.addView(save);
 
@@ -2439,22 +1887,9 @@ public class MainActivity extends Activity {
                         @Override
                         public void onClick(View v) {
 
-                            if (bankAccounts.size() == 0 ||
-                                    bankAccounts.get(0)
-                                            .equals(
-                                                    "حسابی ثبت نشده"
-                                            )) {
-
-                                showToast(
-                                        "ابتدا اطلاعات حساب‌های بانکی را وارد کنید."
-                                );
-
-                                return;
-                            }
-
                             saveExpense(
                                     amount,
-                                    accountSpinner,
+                                    account,
                                     comment,
                                     tracking,
                                     paymentSpinner
@@ -2464,254 +1899,6 @@ public class MainActivity extends Activity {
             );
         }
     }
-
-    // =========================================================
-    // انتخاب دانش‌آموز با جستجو
-    // =========================================================
-
-    private void showStudentSelectionDialog(
-            final int[] selectedStudentId,
-            final String[] selectedStudentName,
-            final TextView selectedStudentView) {
-
-        LinearLayout box =
-                new LinearLayout(MainActivity.this);
-
-        box.setOrientation(
-                LinearLayout.VERTICAL
-        );
-
-        final EditText search =
-                edit(
-                        "نام یا کد دانش‌آموز را جستجو کنید"
-                );
-
-        box.addView(search);
-
-        final LinearLayout results =
-                new LinearLayout(MainActivity.this);
-
-        results.setOrientation(
-                LinearLayout.VERTICAL
-        );
-
-        ScrollView scroll =
-                new ScrollView(MainActivity.this);
-
-        scroll.setFillViewport(true);
-
-        scroll.addView(results);
-
-        box.addView(
-                scroll,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        dp(350)
-                )
-        );
-
-        final AlertDialog dialog =
-                new AlertDialog.Builder(
-                        MainActivity.this
-                )
-                        .setTitle(
-                                "انتخاب دانش‌آموز"
-                        )
-                        .setView(box)
-                        .setNegativeButton(
-                                "انصراف",
-                                null
-                        )
-                        .create();
-
-        search.addTextChangedListener(
-                new TextWatcher() {
-
-                    @Override
-                    public void beforeTextChanged(
-                            CharSequence s,
-                            int start,
-                            int count,
-                            int after) {
-                    }
-
-                    @Override
-                    public void onTextChanged(
-                            CharSequence s,
-                            int start,
-                            int before,
-                            int count) {
-
-                        searchStudentsForIncome(
-                                s.toString(),
-                                results,
-                                selectedStudentId,
-                                selectedStudentName,
-                                selectedStudentView,
-                                dialog
-                        );
-                    }
-
-                    @Override
-                    public void afterTextChanged(
-                            Editable s) {
-                    }
-                }
-        );
-
-        searchStudentsForIncome(
-                "",
-                results,
-                selectedStudentId,
-                selectedStudentName,
-                selectedStudentView,
-                dialog
-        );
-
-        dialog.show();
-    }
-
-    private void searchStudentsForIncome(
-            String query,
-            final LinearLayout results,
-            final int[] selectedStudentId,
-            final String[] selectedStudentName,
-            final TextView selectedStudentView,
-            final AlertDialog dialog) {
-
-        results.removeAllViews();
-
-        String q =
-                query == null
-                        ? ""
-                        : query.trim();
-
-        SQLiteDatabase d =
-                db.getReadableDatabase();
-
-        String sql;
-        String[] args;
-
-        if (currentRole.equals("admin")) {
-
-            sql =
-                    "SELECT id,name,code,grade " +
-                            "FROM students " +
-                            "WHERE name LIKE ? " +
-                            "OR code LIKE ? " +
-                            "ORDER BY name";
-
-            args =
-                    new String[]{
-                            "%" + q + "%",
-                            "%" + q + "%"
-                    };
-
-        } else {
-
-            sql =
-                    "SELECT id,name,code,grade " +
-                            "FROM students " +
-                            "WHERE school_id=? " +
-                            "AND (name LIKE ? " +
-                            "OR code LIKE ?) " +
-                            "ORDER BY name";
-
-            args =
-                    new String[]{
-                            String.valueOf(
-                                    currentSchoolId
-                            ),
-                            "%" + q + "%",
-                            "%" + q + "%"
-                    };
-        }
-
-        Cursor c =
-                d.rawQuery(
-                        sql,
-                        args
-                );
-
-        int count = 0;
-
-        while (c.moveToNext()) {
-
-            count++;
-
-            final int id =
-                    c.getInt(0);
-
-            final String name =
-                    c.getString(1);
-
-            String code =
-                    c.getString(2);
-
-            String grade =
-                    c.getString(3);
-
-            Button student =
-                    button(
-                            name +
-                                    "   |   کد: " +
-                                    code +
-                                    "   |   پایه: " +
-                                    grade
-                    );
-
-            student.setBackgroundColor(
-                    Color.WHITE
-            );
-
-            student.setTextColor(
-                    darkBlue
-            );
-
-            student.setOnClickListener(
-                    new View.OnClickListener() {
-                        @Override
-                        public void onClick(View v) {
-
-                            selectedStudentId[0] =
-                                    id;
-
-                            selectedStudentName[0] =
-                                    name;
-
-                            selectedStudentView.setText(
-                                    "✅ دانش‌آموز انتخاب‌شده: " +
-                                            name
-                            );
-
-                            selectedStudentView.setTextColor(
-                                    green
-                            );
-
-                            dialog.dismiss();
-                        }
-                    }
-            );
-
-            results.addView(student);
-        }
-
-        c.close();
-
-        if (count == 0) {
-
-            results.addView(
-                    text(
-                            "دانش‌آموزی پیدا نشد.",
-                            fontSize
-                    )
-            );
-        }
-    }
-
-    // =========================================================
-    // روش پرداخت
-    // =========================================================
 
     private Spinner createPaymentSpinner() {
 
@@ -2744,17 +1931,15 @@ public class MainActivity extends Activity {
         return spinner;
     }
 
-    // =========================================================
-    // ذخیره درآمد
-    // =========================================================
-
-    private void saveIncomeTransaction(
+    private void saveTransaction(
+            boolean income,
             EditText amount,
-            Spinner account,
+            EditText account,
             EditText comment,
             EditText tracking,
             Spinner payment,
-            int studentId) {
+            ArrayList<Integer> studentIds,
+            Spinner studentSpinner) {
 
         String amountText =
                 amount.getText()
@@ -2775,7 +1960,7 @@ public class MainActivity extends Activity {
         try {
 
             value =
-                    parseMoney(amountText);
+                    Long.parseLong(amountText);
 
         } catch (Exception e) {
 
@@ -2786,29 +1971,11 @@ public class MainActivity extends Activity {
             return;
         }
 
-        if (value <= 0) {
-
-            showToast(
-                    "مبلغ باید بیشتر از صفر باشد."
-            );
-
-            return;
-        }
-
-        String accountName =
-                account.getSelectedItem()
-                        .toString();
-
-        if (accountName.equals(
-                "حسابی ثبت نشده"
-        )) {
-
-            showToast(
-                    "حساب بانکی را انتخاب کنید."
-            );
-
-            return;
-        }
+        int studentId =
+                studentIds.get(
+                        studentSpinner
+                                .getSelectedItemPosition()
+                );
 
         String method =
                 payment.getSelectedItem()
@@ -2827,18 +1994,13 @@ public class MainActivity extends Activity {
 
         v.put(
                 "account",
-                accountName
+                account.getText()
+                        .toString()
+                        .trim()
         );
 
-        v.put(
-                "debit",
-                0
-        );
-
-        v.put(
-                "credit",
-                value
-        );
+        v.put("debit", 0);
+        v.put("credit", value);
 
         v.put(
                 "comment",
@@ -2847,15 +2009,8 @@ public class MainActivity extends Activity {
                         .trim()
         );
 
-        v.put(
-                "kind",
-                "income"
-        );
-
-        v.put(
-                "payment_method",
-                method
-        );
+        v.put("kind", "income");
+        v.put("payment_method", method);
 
         v.put(
                 "tracking_code",
@@ -2864,20 +2019,9 @@ public class MainActivity extends Activity {
                         .trim()
         );
 
-        v.put(
-                "student_id",
-                studentId
-        );
-
-        v.put(
-                "school_id",
-                currentSchoolId
-        );
-
-        v.put(
-                "reconciled",
-                0
-        );
+        v.put("student_id", studentId);
+        v.put("school_id", currentSchoolId);
+        v.put("reconciled", 0);
 
         long result =
                 db.getWritableDatabase()
@@ -2903,13 +2047,9 @@ public class MainActivity extends Activity {
         }
     }
 
-    // =========================================================
-    // ذخیره هزینه
-    // =========================================================
-
     private void saveExpense(
             EditText amount,
-            Spinner account,
+            EditText account,
             EditText comment,
             EditText tracking,
             Spinner payment) {
@@ -2933,36 +2073,12 @@ public class MainActivity extends Activity {
         try {
 
             value =
-                    parseMoney(amountText);
+                    Long.parseLong(amountText);
 
         } catch (Exception e) {
 
             showToast(
                     "مبلغ معتبر نیست."
-            );
-
-            return;
-        }
-
-        if (value <= 0) {
-
-            showToast(
-                    "مبلغ باید بیشتر از صفر باشد."
-            );
-
-            return;
-        }
-
-        String accountName =
-                account.getSelectedItem()
-                        .toString();
-
-        if (accountName.equals(
-                "حسابی ثبت نشده"
-        )) {
-
-            showToast(
-                    "حساب بانکی را انتخاب کنید."
             );
 
             return;
@@ -2981,18 +2097,13 @@ public class MainActivity extends Activity {
 
         v.put(
                 "account",
-                accountName
+                account.getText()
+                        .toString()
+                        .trim()
         );
 
-        v.put(
-                "debit",
-                value
-        );
-
-        v.put(
-                "credit",
-                0
-        );
+        v.put("debit", value);
+        v.put("credit", 0);
 
         v.put(
                 "comment",
@@ -3001,10 +2112,7 @@ public class MainActivity extends Activity {
                         .trim()
         );
 
-        v.put(
-                "kind",
-                "expense"
-        );
+        v.put("kind", "expense");
 
         v.put(
                 "payment_method",
@@ -3019,20 +2127,9 @@ public class MainActivity extends Activity {
                         .trim()
         );
 
-        v.put(
-                "student_id",
-                0
-        );
-
-        v.put(
-                "school_id",
-                currentSchoolId
-        );
-
-        v.put(
-                "reconciled",
-                0
-        );
+        v.put("student_id", 0);
+        v.put("school_id", currentSchoolId);
+        v.put("reconciled", 0);
 
         long result =
                 db.getWritableDatabase()
@@ -3045,7 +2142,7 @@ public class MainActivity extends Activity {
         if (result == -1) {
 
             showToast(
-                    "ثبت هزینه انجام نشد."
+                    "ثبت تراکنش انجام نشد."
             );
 
         } else {
@@ -3070,7 +2167,6 @@ public class MainActivity extends Activity {
         title("دفتر تراکنش‌ها");
 
         addBackButton();
-
         createContent();
 
         SQLiteDatabase d =
@@ -3119,10 +2215,7 @@ public class MainActivity extends Activity {
         }
 
         Cursor c =
-                d.rawQuery(
-                        sql,
-                        args
-                );
+                d.rawQuery(sql, args);
 
         long totalIncome = 0;
         long totalExpense = 0;
@@ -3150,10 +2243,8 @@ public class MainActivity extends Activity {
                     c.getString(9);
 
             String info =
-                    "تاریخ: " +
-                            c.getString(1) +
-                            "\nحساب: " +
-                            c.getString(2) +
+                    "تاریخ: " + c.getString(1) +
+                            "\nحساب: " + c.getString(2) +
                             "\nدرآمد: " +
                             formatMoney(credit) +
                             "\nهزینه: " +
@@ -3170,10 +2261,7 @@ public class MainActivity extends Activity {
                             reconciled;
 
             TextView t =
-                    text(
-                            info,
-                            fontSize
-                    );
+                    text(info, fontSize);
 
             t.setBackgroundColor(
                     Color.WHITE
@@ -3181,11 +2269,576 @@ public class MainActivity extends Activity {
 
             content.addView(t);
 
+            Button reconcile =
+                    button(
+                            c.getInt(8) == 1
+                                    ? "لغو تطبیق"
+                                    : "تأیید و تطبیق"
+                    );
+
             final boolean isReconciled =
                     c.getInt(8) == 1;
 
-            Button reconcile =
+            reconcile.setOnClickListener(
+                    new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+
+                            ContentValues values =
+                                    new ContentValues();
+
+                            values.put(
+                                    "reconciled",
+                                    isReconciled
+                                            ? 0
+                                            : 1
+                            );
+
+                            db.getWritableDatabase()
+                                    .update(
+                                            "transactions",
+                                            values,
+                                            "id=?",
+                                            new String[]{
+                                                    String.valueOf(id)
+                                            }
+                                    );
+
+                            showTransactions(
+                                    schoolFilter
+                            );
+                        }
+                    }
+            );
+
+            content.addView(
+                    reconcile
+            );
+        }
+
+        c.close();
+
+        addSectionTitle("جمع");
+
+        content.addView(
+                text(
+                        "کل درآمد: " +
+                                formatMoney(
+                                        totalIncome
+                                ) +
+                                "\nکل هزینه: " +
+                                formatMoney(
+                                        totalExpense
+                                ) +
+                                "\nمانده: " +
+                                formatMoney(
+                                        totalIncome -
+                                                totalExpense
+                                ),
+                        fontSize + 1
+                )
+        );
+    }
+
+    private String formatMoney(long value) {
+
+        String s =
+                String.valueOf(value);
+
+        StringBuilder result =
+                new StringBuilder();
+
+        int count = 0;
+
+        for (int i = s.length() - 1;
+             i >= 0;
+             i--) {
+
+            result.insert(
+                    0,
+                    s.charAt(i)
+            );
+
+            count++;
+
+            if (count == 3 && i > 0) {
+
+                result.insert(0, ',');
+                count = 0;
+            }
+        }
+
+        return result + " تومان";
+    }
+
+    // =========================================================
+    // مغایرت‌گیری
+    // =========================================================
+
+    private void showReconciliation() {
+
+        setupRoot();
+
+        title(
+                "مغایرت‌گیری و تطبیق"
+        );
+
+        addBackButton();
+        createContent();
+
+        addSectionTitle(
+                "تراکنش‌های در انتظار تطبیق"
+        );
+
+        SQLiteDatabase d =
+                db.getReadableDatabase();
+
+        String sql;
+        String[] args;
+
+        if (currentRole.equals("admin")) {
+
+            sql =
+                    "SELECT id,date,account,debit,credit," +
+                            "payment_method,tracking_code " +
+                            "FROM transactions " +
+                            "WHERE reconciled=0 " +
+                            "ORDER BY id DESC";
+
+            args = null;
+
+        } else {
+
+            sql =
+                    "SELECT id,date,account,debit,credit," +
+                            "payment_method,tracking_code " +
+                            "FROM transactions " +
+                            "WHERE reconciled=0 " +
+                            "AND school_id=? " +
+                            "ORDER BY id DESC";
+
+            args =
+                    new String[]{
+                            String.valueOf(
+                                    currentSchoolId
+                            )
+                    };
+        }
+
+        Cursor c =
+                d.rawQuery(sql, args);
+
+        int count = 0;
+
+        while (c.moveToNext()) {
+
+            count++;
+
+            final int id =
+                    c.getInt(0);
+
+            String info =
+                    "تاریخ: " +
+                            c.getString(1) +
+                            "\nحساب: " +
+                            c.getString(2) +
+                            "\nمبلغ: " +
+                            formatMoney(
+                                    c.getLong(4) != 0
+                                            ? c.getLong(4)
+                                            : c.getLong(3)
+                            ) +
+                            "\nروش: " +
+                            c.getString(5) +
+                            "\nپیگیری: " +
+                            c.getString(6);
+
+            content.addView(
+                    text(
+                            info,
+                            fontSize
+                    )
+            );
+
+            Button confirm =
                     button(
-                            isReconciled
-                                    ? "لغو تطبیق"
-                                    : "تأیید
+                            "✅ تأیید و تطبیق"
+                    );
+
+            confirm.setOnClickListener(
+                    new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+
+                            ContentValues values =
+                                    new ContentValues();
+
+                            values.put(
+                                    "reconciled",
+                                    1
+                            );
+
+                            db.getWritableDatabase()
+                                    .update(
+                                            "transactions",
+                                            values,
+                                            "id=?",
+                                            new String[]{
+                                                    String.valueOf(id)
+                                            }
+                                    );
+
+                            showReconciliation();
+                        }
+                    }
+            );
+
+            content.addView(confirm);
+        }
+
+        c.close();
+
+        if (count == 0) {
+
+            TextView empty =
+                    text(
+                            "🎉 همه تراکنش‌ها تطبیق شده‌اند.",
+                            fontSize + 1
+                    );
+
+            empty.setGravity(
+                    Gravity.CENTER
+            );
+
+            content.addView(empty);
+        }
+    }
+
+    // =========================================================
+    // گزارش‌ها
+    // =========================================================
+
+    private void showReports() {
+
+        setupRoot();
+
+        title("گزارش‌های مالی");
+
+        addBackButton();
+        createContent();
+
+        SQLiteDatabase d =
+                db.getReadableDatabase();
+
+        String where;
+        String[] args;
+
+        if (currentRole.equals("admin")) {
+
+            where = "";
+            args = null;
+
+        } else {
+
+            where =
+                    " WHERE school_id=? ";
+
+            args =
+                    new String[]{
+                            String.valueOf(
+                                    currentSchoolId
+                            )
+                    };
+        }
+
+        Cursor c =
+                d.rawQuery(
+                        "SELECT " +
+                                "COALESCE(SUM(credit),0)," +
+                                "COALESCE(SUM(debit),0)," +
+                                "COUNT(*) " +
+                                "FROM transactions" +
+                                where,
+                        args
+                );
+
+        if (c.moveToFirst()) {
+
+            long income =
+                    c.getLong(0);
+
+            long expense =
+                    c.getLong(1);
+
+            int count =
+                    c.getInt(2);
+
+            content.addView(
+                    text(
+                            "تعداد تراکنش‌ها: " +
+                                    count +
+                                    "\n\nکل درآمد:\n" +
+                                    formatMoney(income) +
+                                    "\n\nکل هزینه:\n" +
+                                    formatMoney(expense) +
+                                    "\n\nمانده:\n" +
+                                    formatMoney(
+                                            income -
+                                                    expense
+                                    ),
+                            fontSize + 2
+                    )
+            );
+        }
+
+        c.close();
+
+        addSectionTitle(
+                "گزارش روش‌های پرداخت"
+        );
+
+        Cursor methods;
+
+        if (currentRole.equals("admin")) {
+
+            methods =
+                    d.rawQuery(
+                            "SELECT payment_method," +
+                                    "COUNT(*)," +
+                                    "SUM(credit)," +
+                                    "SUM(debit) " +
+                                    "FROM transactions " +
+                                    "GROUP BY payment_method",
+                            null
+                    );
+
+        } else {
+
+            methods =
+                    d.rawQuery(
+                            "SELECT payment_method," +
+                                    "COUNT(*)," +
+                                    "SUM(credit)," +
+                                    "SUM(debit) " +
+                                    "FROM transactions " +
+                                    "WHERE school_id=? " +
+                                    "GROUP BY payment_method",
+                            new String[]{
+                                    String.valueOf(
+                                            currentSchoolId
+                                    )
+                            }
+                    );
+        }
+
+        while (methods.moveToNext()) {
+
+            content.addView(
+                    text(
+                            "روش: " +
+                                    methods.getString(0) +
+                                    "\nتعداد: " +
+                                    methods.getInt(1) +
+                                    "\nدریافت: " +
+                                    formatMoney(
+                                            methods.getLong(2)
+                                    ) +
+                                    "\nپرداخت: " +
+                                    formatMoney(
+                                            methods.getLong(3)
+                                    ),
+                            fontSize
+                    )
+            );
+        }
+
+        methods.close();
+    }
+
+    // =========================================================
+    // تنظیمات
+    // =========================================================
+
+    private void showSettings() {
+
+        setupRoot();
+
+        title("تنظیمات");
+
+        addBackButton();
+        createContent();
+
+        addSectionTitle(
+                "اندازه فونت"
+        );
+
+        String[] sizes =
+                new String[]{
+                        "کوچک",
+                        "متوسط",
+                        "بزرگ",
+                        "خیلی بزرگ"
+                };
+
+        final Spinner spinner =
+                new Spinner(MainActivity.this);
+
+        ArrayAdapter<String> adapter =
+                new ArrayAdapter<String>(
+                        MainActivity.this,
+                        android.R.layout.simple_spinner_item,
+                        sizes
+                );
+
+        adapter.setDropDownViewResource(
+                android.R.layout.simple_spinner_dropdown_item
+        );
+
+        spinner.setAdapter(adapter);
+
+        int selected = 1;
+
+        if (fontSize <= 14) {
+
+            selected = 0;
+
+        } else if (fontSize <= 16) {
+
+            selected = 1;
+
+        } else if (fontSize <= 19) {
+
+            selected = 2;
+
+        } else {
+
+            selected = 3;
+        }
+
+        spinner.setSelection(selected);
+
+        content.addView(spinner);
+
+        Button save =
+                button("💾 ذخیره اندازه فونت");
+
+        content.addView(save);
+
+        save.setOnClickListener(
+                new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+
+                        int pos =
+                                spinner
+                                        .getSelectedItemPosition();
+
+                        if (pos == 0) {
+
+                            fontSize = 14;
+
+                        } else if (pos == 1) {
+
+                            fontSize = 16;
+
+                        } else if (pos == 2) {
+
+                            fontSize = 19;
+
+                        } else {
+
+                            fontSize = 22;
+                        }
+
+                        db.setSetting(
+                                "font_size",
+                                String.valueOf(
+                                        fontSize
+                                )
+                        );
+
+                        showToast(
+                                "اندازه فونت ذخیره شد."
+                        );
+
+                        showDashboard();
+                    }
+                }
+        );
+
+        addSectionTitle(
+                "اطلاعات حساب"
+        );
+
+        content.addView(
+                text(
+                        "نام کاربر: " +
+                                currentName +
+                                "\nنام کاربری: " +
+                                currentUser +
+                                "\nسطح دسترسی: " +
+                                (
+                                        currentRole.equals(
+                                                "admin"
+                                        )
+                                                ? "مدیر کل سیستم"
+                                                : "مدیر مرکز"
+                                ),
+                        fontSize
+                )
+        );
+    }
+
+    // =========================================================
+    // اطلاعات مرکز
+    // =========================================================
+
+    private String getSchoolName(int id) {
+
+        if (id == 0) {
+            return "همه مراکز";
+        }
+
+        Cursor c =
+                db.getReadableDatabase()
+                        .rawQuery(
+                                "SELECT name " +
+                                        "FROM schools " +
+                                        "WHERE id=?",
+                                new String[]{
+                                        String.valueOf(id)
+                                }
+                        );
+
+        String name = "نامشخص";
+
+        if (c.moveToFirst()) {
+            name = c.getString(0);
+        }
+
+        c.close();
+
+        return name;
+    }
+
+    // =========================================================
+    // دکمه فیزیکی Back
+    // =========================================================
+
+    @Override
+    public void onBackPressed() {
+
+        // اگر هنوز لاگین نکرده‌ایم،
+        // Back نباید وارد داشبورد شود.
+        if (!isLoggedIn) {
+
+            super.onBackPressed();
+
+            return;
+        }
+
+        // اگر لاگین هستیم،
+        // Back به داشبورد برمی‌گردد.
+        showDashboard();
+    }
+}
