@@ -1,10 +1,14 @@
 {
   "name": "school-finance-api",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "School Finance API",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "check": "node --check server.js"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",
