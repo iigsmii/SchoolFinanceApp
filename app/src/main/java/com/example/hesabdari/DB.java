@@ -5,11 +5,14 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import android.util.Log;
+
+import java.security.MessageDigest;
 
 public class DB extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "hesabdari.db";
-    private static final int DB_VERSION = 7;
+    private static final int DB_VERSION = 8;
 
     private final Context context;
 
@@ -25,6 +28,26 @@ public class DB extends SQLiteOpenHelper {
 
         context =
                 c.getApplicationContext();
+    }
+
+
+    // =====================================================
+    // هش کردن رمز عبور (SHA-256)
+    // =====================================================
+
+    public static String hashPassword(String password) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] messageDigest = md.digest(password.getBytes());
+            StringBuilder sb = new StringBuilder();
+            for (byte b : messageDigest) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            Log.e("DB", "رمز هش نشد", e);
+            return password;
+        }
     }
 
 
@@ -59,7 +82,7 @@ public class DB extends SQLiteOpenHelper {
                         "id INTEGER PRIMARY KEY AUTOINCREMENT," +
                         "name TEXT NOT NULL," +
                         "username TEXT UNIQUE NOT NULL," +
-                        "password TEXT NOT NULL," +
+                        "password_hash TEXT NOT NULL," +
                         "school_id INTEGER DEFAULT 0," +
                         "role TEXT DEFAULT 'manager'," +
                         "active INTEGER DEFAULT 1" +
@@ -167,10 +190,7 @@ public class DB extends SQLiteOpenHelper {
             int oldVersion,
             int newVersion) {
 
-        // -------------------------------------------------
         // schools
-        // -------------------------------------------------
-
         d.execSQL(
                 "CREATE TABLE IF NOT EXISTS schools (" +
                         "id INTEGER PRIMARY KEY AUTOINCREMENT," +
@@ -180,7 +200,6 @@ public class DB extends SQLiteOpenHelper {
                         ")"
         );
 
-
         addColumnIfMissing(
                 d,
                 "schools",
@@ -189,20 +208,16 @@ public class DB extends SQLiteOpenHelper {
         );
 
 
-        // -------------------------------------------------
         // managers
-        // -------------------------------------------------
-
         d.execSQL(
                 "CREATE TABLE IF NOT EXISTS managers (" +
                         "id INTEGER PRIMARY KEY AUTOINCREMENT," +
                         "name TEXT NOT NULL," +
                         "username TEXT UNIQUE NOT NULL," +
-                        "password TEXT NOT NULL," +
+                        "password_hash TEXT NOT NULL," +
                         "school_id INTEGER DEFAULT 0" +
                         ")"
         );
-
 
         addColumnIfMissing(
                 d,
@@ -211,7 +226,6 @@ public class DB extends SQLiteOpenHelper {
                 "TEXT DEFAULT 'manager'"
         );
 
-
         addColumnIfMissing(
                 d,
                 "managers",
@@ -219,11 +233,44 @@ public class DB extends SQLiteOpenHelper {
                 "INTEGER DEFAULT 1"
         );
 
+        // اگر ستون قدیمی وجود دارد، آن را به password_hash تبدیل کن
+        try {
+            Cursor cursor = d.rawQuery("PRAGMA table_info(managers)", null);
+            boolean hasPlainPassword = false;
+            while (cursor.moveToNext()) {
+                String col = cursor.getString(1);
+                if ("password".equalsIgnoreCase(col)) {
+                    hasPlainPassword = true;
+                    break;
+                }
+            }
+            cursor.close();
 
-        // -------------------------------------------------
+            if (hasPlainPassword) {
+                d.execSQL("ALTER TABLE managers RENAME TO managers_old");
+                d.execSQL(
+                        "CREATE TABLE managers (" +
+                                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                                "name TEXT NOT NULL," +
+                                "username TEXT UNIQUE NOT NULL," +
+                                "password_hash TEXT NOT NULL," +
+                                "school_id INTEGER DEFAULT 0," +
+                                "role TEXT DEFAULT 'manager'," +
+                                "active INTEGER DEFAULT 1" +
+                                ")"
+                );
+                d.execSQL(
+                        "INSERT INTO managers (id, name, username, password_hash, school_id, role, active) " +
+                                "SELECT id, name, username, password, school_id, role, active FROM managers_old"
+                );
+                d.execSQL("DROP TABLE managers_old");
+            }
+        } catch (Exception e) {
+            Log.e("DB", "Migration managers failed", e);
+        }
+
+
         // students
-        // -------------------------------------------------
-
         d.execSQL(
                 "CREATE TABLE IF NOT EXISTS students (" +
                         "id INTEGER PRIMARY KEY AUTOINCREMENT," +
@@ -234,7 +281,6 @@ public class DB extends SQLiteOpenHelper {
                         ")"
         );
 
-
         addColumnIfMissing(
                 d,
                 "students",
@@ -243,10 +289,7 @@ public class DB extends SQLiteOpenHelper {
         );
 
 
-        // -------------------------------------------------
         // accounts
-        // -------------------------------------------------
-
         d.execSQL(
                 "CREATE TABLE IF NOT EXISTS accounts (" +
                         "id INTEGER PRIMARY KEY AUTOINCREMENT," +
@@ -254,7 +297,6 @@ public class DB extends SQLiteOpenHelper {
                         "name TEXT" +
                         ")"
         );
-
 
         addColumnIfMissing(
                 d,
@@ -264,10 +306,7 @@ public class DB extends SQLiteOpenHelper {
         );
 
 
-        // -------------------------------------------------
         // transactions
-        // -------------------------------------------------
-
         d.execSQL(
                 "CREATE TABLE IF NOT EXISTS transactions (" +
                         "id INTEGER PRIMARY KEY AUTOINCREMENT," +
@@ -280,14 +319,12 @@ public class DB extends SQLiteOpenHelper {
                         ")"
         );
 
-
         addColumnIfMissing(
                 d,
                 "transactions",
                 "payment_method",
                 "TEXT"
         );
-
 
         addColumnIfMissing(
                 d,
@@ -296,7 +333,6 @@ public class DB extends SQLiteOpenHelper {
                 "TEXT"
         );
 
-
         addColumnIfMissing(
                 d,
                 "transactions",
@@ -304,14 +340,12 @@ public class DB extends SQLiteOpenHelper {
                 "INTEGER DEFAULT 0"
         );
 
-
         addColumnIfMissing(
                 d,
                 "transactions",
                 "school_id",
                 "INTEGER DEFAULT 0"
         );
-
 
         addColumnIfMissing(
                 d,
@@ -321,10 +355,7 @@ public class DB extends SQLiteOpenHelper {
         );
 
 
-        // -------------------------------------------------
         // settings
-        // -------------------------------------------------
-
         d.execSQL(
                 "CREATE TABLE IF NOT EXISTS settings (" +
                         "key TEXT PRIMARY KEY," +
@@ -332,22 +363,15 @@ public class DB extends SQLiteOpenHelper {
                         ")"
         );
 
-
         setDefaultSetting(
                 d,
                 "font_size",
                 "16"
         );
 
-
-        // -------------------------------------------------
         // اطلاعات اولیه
-        // -------------------------------------------------
-
         insertDefaultSchools(d);
-
         insertDefaultManagers(d);
-
         repairManagerSchools(d);
     }
 
@@ -370,30 +394,19 @@ public class DB extends SQLiteOpenHelper {
                         null
                 );
 
-
         boolean exists = false;
 
-
         while (c.moveToNext()) {
-
-            String name =
-                    c.getString(1);
-
-
+            String name = c.getString(1);
             if (column.equalsIgnoreCase(name)) {
-
                 exists = true;
-
                 break;
             }
         }
 
-
         c.close();
 
-
         if (!exists) {
-
             d.execSQL(
                     "ALTER TABLE " +
                             table +
@@ -425,35 +438,14 @@ public class DB extends SQLiteOpenHelper {
                         }
                 );
 
-
-        boolean exists =
-                c.moveToFirst();
-
-
+        boolean exists = c.moveToFirst();
         c.close();
 
-
         if (!exists) {
-
-            ContentValues v =
-                    new ContentValues();
-
-            v.put(
-                    "key",
-                    key
-            );
-
-            v.put(
-                    "value",
-                    value
-            );
-
-
-            d.insert(
-                    "settings",
-                    null,
-                    v
-            );
+            ContentValues v = new ContentValues();
+            v.put("key", key);
+            v.put("value", value);
+            d.insert("settings", null, v);
         }
     }
 
@@ -466,9 +458,7 @@ public class DB extends SQLiteOpenHelper {
             String key,
             String defaultValue) {
 
-        SQLiteDatabase d =
-                getReadableDatabase();
-
+        SQLiteDatabase d = getReadableDatabase();
 
         Cursor c =
                 d.rawQuery(
@@ -480,27 +470,16 @@ public class DB extends SQLiteOpenHelper {
                         }
                 );
 
-
-        String value =
-                defaultValue;
-
+        String value = defaultValue;
 
         if (c.moveToFirst()) {
-
-            String x =
-                    c.getString(0);
-
-
+            String x = c.getString(0);
             if (x != null) {
-
                 value = x;
             }
         }
 
-
         c.close();
-
-
         return value;
     }
 
@@ -513,25 +492,10 @@ public class DB extends SQLiteOpenHelper {
             String key,
             String value) {
 
-        SQLiteDatabase d =
-                getWritableDatabase();
-
-
-        ContentValues v =
-                new ContentValues();
-
-
-        v.put(
-                "key",
-                key
-        );
-
-
-        v.put(
-                "value",
-                value
-        );
-
+        SQLiteDatabase d = getWritableDatabase();
+        ContentValues v = new ContentValues();
+        v.put("key", key);
+        v.put("value", value);
 
         d.insertWithOnConflict(
                 "settings",
@@ -549,58 +513,15 @@ public class DB extends SQLiteOpenHelper {
     private void insertDefaultSchools(
             SQLiteDatabase d) {
 
-        addSchool(
-                d,
-                "دبستان نور ۱"
-        );
-
-
-        addSchool(
-                d,
-                "دبستان نور ۲"
-        );
-
-
-        addSchool(
-                d,
-                "دبستان تبیان ۱"
-        );
-
-
-        addSchool(
-                d,
-                "دبستان تبیان ۲"
-        );
-
-
-        addSchool(
-                d,
-                "مهدالرضا مرکزی شیفت صبح"
-        );
-
-
-        addSchool(
-                d,
-                "مهدالرضا مرکزی شیفت عصر"
-        );
-
-
-        addSchool(
-                d,
-                "مهدالرضا ابراهیم خلیل"
-        );
-
-
-        addSchool(
-                d,
-                "مهدالرضا سروستان"
-        );
-
-
-        addSchool(
-                d,
-                "مهدالرضا منظریه"
-        );
+        addSchool(d, "دبستان نور ۱");
+        addSchool(d, "دبستان نور ۲");
+        addSchool(d, "دبستان تبیان ۱");
+        addSchool(d, "دبستان تبیان ۲");
+        addSchool(d, "مهدالرضا مرکزی شیفت صبح");
+        addSchool(d, "مهدالرضا مرکزی شیفت عصر");
+        addSchool(d, "مهدالرضا ابراهیم خلیل");
+        addSchool(d, "مهدالرضا سروستان");
+        addSchool(d, "مهدالرضا منظریه");
     }
 
 
@@ -612,60 +533,21 @@ public class DB extends SQLiteOpenHelper {
             SQLiteDatabase d,
             String name) {
 
-        Cursor c =
-                d.rawQuery(
-                        "SELECT id " +
-                                "FROM schools " +
-                                "WHERE name=? " +
-                                "LIMIT 1",
-                        new String[]{
-                                name
-                        }
-                );
+        Cursor c = d.rawQuery(
+                "SELECT id FROM schools WHERE name=? LIMIT 1",
+                new String[]{ name }
+        );
 
-
-        boolean exists =
-                c.moveToFirst();
-
-
+        boolean exists = c.moveToFirst();
         c.close();
 
-
         if (!exists) {
-
-            ContentValues v =
-                    new ContentValues();
-
-
-            v.put(
-                    "name",
-                    name
-            );
-
-
-            v.put(
-                    "type",
-                    ""
-            );
-
-
-            v.put(
-                    "code",
-                    ""
-            );
-
-
-            v.put(
-                    "active",
-                    1
-            );
-
-
-            d.insert(
-                    "schools",
-                    null,
-                    v
-            );
+            ContentValues v = new ContentValues();
+            v.put("name", name);
+            v.put("type", "");
+            v.put("code", "");
+            v.put("active", 1);
+            d.insert("schools", null, v);
         }
     }
 
@@ -677,65 +559,16 @@ public class DB extends SQLiteOpenHelper {
     private void insertDefaultManagers(
             SQLiteDatabase d) {
 
-        // -------------------------------------------------
-        // مدیر کل
-        // -------------------------------------------------
+        addManager(d, "مدیر کل سیستم", "admin", "Admin@123456", 0, "admin");
 
-        addManager(
-                d,
-                "مدیر کل سیستم",
-                "admin",
-                "1234",
-                0,
-                "admin"
-        );
-
-
-        // -------------------------------------------------
-        // نور ۱
-        // -------------------------------------------------
-
-        int school1 =
-                getSchoolId(
-                        d,
-                        "دبستان نور ۱"
-                );
-
-
+        int school1 = getSchoolId(d, "دبستان نور ۱");
         if (school1 != -1) {
-
-            addManager(
-                    d,
-                    "آقای محمدرضا اقاسی",
-                    "محمدرضا اقاسی",
-                    "25424801",
-                    school1,
-                    "manager"
-            );
+            addManager(d, "آقای محمدرضا اقاسی", "محمدرضا اقاسی", "School@1234", school1, "manager");
         }
 
-
-        // -------------------------------------------------
-        // نور ۲
-        // -------------------------------------------------
-
-        int school2 =
-                getSchoolId(
-                        d,
-                        "دبستان نور ۲"
-                );
-
-
+        int school2 = getSchoolId(d, "دبستان نور ۲");
         if (school2 != -1) {
-
-            addManager(
-                    d,
-                    "آقای محمد عربی",
-                    "محمد عربی",
-                    "4092272",
-                    school2,
-                    "manager"
-            );
+            addManager(d, "آقای محمد عربی", "محمد عربی", "School@5678", school2, "manager");
         }
     }
 
@@ -752,72 +585,23 @@ public class DB extends SQLiteOpenHelper {
             int schoolId,
             String role) {
 
-        Cursor c =
-                d.rawQuery(
-                        "SELECT id " +
-                                "FROM managers " +
-                                "WHERE username=? " +
-                                "LIMIT 1",
-                        new String[]{
-                                username
-                        }
-                );
+        Cursor c = d.rawQuery(
+                "SELECT id FROM managers WHERE username=? LIMIT 1",
+                new String[]{ username }
+        );
 
-
-        boolean exists =
-                c.moveToFirst();
-
-
+        boolean exists = c.moveToFirst();
         c.close();
 
-
         if (!exists) {
-
-            ContentValues v =
-                    new ContentValues();
-
-
-            v.put(
-                    "name",
-                    name
-            );
-
-
-            v.put(
-                    "username",
-                    username
-            );
-
-
-            v.put(
-                    "password",
-                    password
-            );
-
-
-            v.put(
-                    "school_id",
-                    schoolId
-            );
-
-
-            v.put(
-                    "role",
-                    role
-            );
-
-
-            v.put(
-                    "active",
-                    1
-            );
-
-
-            d.insert(
-                    "managers",
-                    null,
-                    v
-            );
+            ContentValues v = new ContentValues();
+            v.put("name", name);
+            v.put("username", username);
+            v.put("password_hash", hashPassword(password));
+            v.put("school_id", schoolId);
+            v.put("role", role);
+            v.put("active", 1);
+            d.insert("managers", null, v);
         }
     }
 
@@ -829,54 +613,25 @@ public class DB extends SQLiteOpenHelper {
     private void repairManagerSchools(
             SQLiteDatabase d) {
 
-        int school1 =
-                getSchoolId(
-                        d,
-                        "دبستان نور ۱"
-                );
-
-
-        int school2 =
-                getSchoolId(
-                        d,
-                        "دبستان نور ۲"
-                );
-
+        int school1 = getSchoolId(d, "دبستان نور ۱");
+        int school2 = getSchoolId(d, "دبستان نور ۲");
 
         if (school1 != -1) {
-
             d.execSQL(
-                    "UPDATE managers SET " +
-                            "school_id=? " +
-                            "WHERE username=?",
-                    new Object[]{
-                            school1,
-                            "محمدرضا اقاسی"
-                    }
+                    "UPDATE managers SET school_id=? WHERE username=?",
+                    new Object[]{ school1, "محمدرضا اقاسی" }
             );
         }
-
 
         if (school2 != -1) {
-
             d.execSQL(
-                    "UPDATE managers SET " +
-                            "school_id=? " +
-                            "WHERE username=?",
-                    new Object[]{
-                            school2,
-                            "محمد عربی"
-                    }
+                    "UPDATE managers SET school_id=? WHERE username=?",
+                    new Object[]{ school2, "محمد عربی" }
             );
         }
 
-
-        // مدیر کل باید به همه مراکز دسترسی داشته باشد
         d.execSQL(
-                "UPDATE managers SET " +
-                        "role='admin', " +
-                        "school_id=0 " +
-                        "WHERE username='admin'"
+                "UPDATE managers SET role='admin', school_id=0 WHERE username='admin'"
         );
     }
 
@@ -889,31 +644,339 @@ public class DB extends SQLiteOpenHelper {
             SQLiteDatabase d,
             String name) {
 
-        Cursor c =
-                d.rawQuery(
-                        "SELECT id " +
-                                "FROM schools " +
-                                "WHERE name=? " +
-                                "LIMIT 1",
-                        new String[]{
-                                name
-                        }
-                );
-
+        Cursor c = d.rawQuery(
+                "SELECT id FROM schools WHERE name=? LIMIT 1",
+                new String[]{ name }
+        );
 
         int id = -1;
-
-
         if (c.moveToFirst()) {
-
-            id =
-                    c.getInt(0);
+            id = c.getInt(0);
         }
 
-
         c.close();
-
-
         return id;
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
