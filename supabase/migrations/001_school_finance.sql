@@ -58,3 +58,7 @@ on conflict (id) do update set public=true;
 -- The Android app talks only to Render. The service-role key stays on Render.
 -- Storage is intentionally public for simple image retrieval; tighten this later
 -- if private document access is required.
+
+-- UI/roster improvements: national ID for students.
+alter table public.students add column if not exists national_id text;
+create index if not exists students_national_id_idx on public.students(national_id);
