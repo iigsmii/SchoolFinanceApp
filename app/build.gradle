@@ -3,6 +3,7 @@ apply plugin: 'com.android.application'
 android {
     namespace 'com.example.hesabdari'
     compileSdkVersion 31
+
     defaultConfig {
         applicationId 'com.example.hesabdari'
         minSdkVersion 23
@@ -10,6 +11,22 @@ android {
         versionCode 1
         versionName '1.0.0-win7'
     }
+
+    signingConfigs {
+        release {
+            storeFile file(System.getenv("CM_KEYSTORE_PATH"))
+            storePassword System.getenv("CM_KEYSTORE_PASSWORD")
+            keyAlias System.getenv("CM_KEY_ALIAS")
+            keyPassword System.getenv("CM_KEY_PASSWORD")
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
