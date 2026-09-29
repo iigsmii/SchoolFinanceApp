@@ -45,6 +45,18 @@ function requireAuth(req, res, next) {
 function requireAdmin(req, res, next) { if (req.session.role !== "admin") return jsonError(res, 403, "دسترسی مدیر ارشد لازم است"); next(); }
 function schoolFilter(req) { return req.session.role === "admin" ? "" : `&school_id=eq.${enc(req.session.schoolId)}`; }
 function normalizeDigits(v) { return String(v || "").replace(/[۰-۹]/g, c => String("۰۱۲۳۴۵۶۷۸۹".indexOf(c))).replace(/[^0-9]/g, ""); }
+const CANONICAL_SCHOOLS = [
+  "دبستان نور ۱",
+  "دبستان نور ۲",
+  "دبستان تبیان ۱",
+  "دبستان تبیان ۲",
+  "مهد مرکزی صبح",
+  "مهد مرکزی عصر",
+  "مهد ابراهیم خلیل",
+  "مهد سروستان",
+  "مهد منظریه"
+];
+function isCanonicalSchool(s) { return CANONICAL_SCHOOLS.includes(String(s || "").trim()); }
 function money(v) { const n = Number(String(v ?? "").replace(/,/g, "")); if (!Number.isFinite(n) || n < 0) throw new Error("invalid amount"); return Math.round(n); }
 function csvRows(text) {
   const rows = [], row = []; let cell = "", q = false;
@@ -86,9 +98,9 @@ app.post("/api/login", async (req,res)=>{
 app.post("/api/logout",requireAuth,(req,res)=>{sessions.delete(getToken(req));res.json({success:true});});
 app.get("/api/me",requireAuth,(req,res)=>res.json({success:true,user:req.session}));
 
-app.get("/api/schools",requireAuth,async(req,res)=>{try{const q=req.session.role==="admin"?"":"&id=eq."+enc(req.session.schoolId);const r=await db(`/rest/v1/schools?select=id,name,type,code,active&order=id.asc${q}`);if(!r.response.ok)return jsonError(res,502,"خطا در دریافت مدارس");res.json({success:true,data:r.data});}catch(e){jsonError(res,500,"خطای داخلی سرور");}});
-app.post("/api/schools",requireAuth,requireAdmin,async(req,res)=>{try{const {name,type="مدرسه",code,active=true}=req.body||{};if(!name||!code)return jsonError(res,400,"نام و کد مدرسه الزامی است");const r=await db("/rest/v1/schools",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify([{name:String(name).trim(),type:String(type||"مدرسه").trim(),code:String(code).trim(),active:!!active}])});if(!r.response.ok)return jsonError(res,400,"ثبت مدرسه انجام نشد");res.json({success:true,data:r.data?.[0]});}catch(e){jsonError(res,500,"ثبت مدرسه انجام نشد");}});
-app.patch("/api/schools/:id",requireAuth,requireAdmin,async(req,res)=>{try{const body={};for(const k of ["name","type","code","active"])if(req.body?.[k]!==undefined)body[k]=k==="active"?!!req.body[k]:String(req.body[k]).trim();const r=await db(`/rest/v1/schools?id=eq.${enc(req.params.id)}`,{method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify(body)});if(!r.response.ok)return jsonError(res,400,"ویرایش مدرسه انجام نشد");res.json({success:true,data:r.data?.[0]});}catch(e){jsonError(res,500,"ویرایش مدرسه انجام نشد");}});
+app.get("/api/schools",requireAuth,async(req,res)=>{try{const q=req.session.role==="admin"?"":"&id=eq."+enc(req.session.schoolId);const r=await db(`/rest/v1/schools?select=id,name,type,code,active&order=id.asc${q}`);if(!r.response.ok)return jsonError(res,502,"خطا در دریافت مدارس");const data=(r.data||[]).filter(s=>isCanonicalSchool(s.name));res.json({success:true,data});}catch(e){console.error("SCHOOLS GET",e.message);jsonError(res,500,"خطای داخلی سرور");}});
+app.post("/api/schools",requireAuth,requireAdmin,async(req,res)=>{try{const {name,type="مدرسه",code,active=true}=req.body||{};const cleanName=String(name||"").trim();const cleanCode=String(code||"").trim();if(!cleanName||!cleanCode)return jsonError(res,400,"نام و کد مدرسه الزامی است");if(!isCanonicalSchool(cleanName))return jsonError(res,400,"این نام مدرسه در فهرست ۹ مدرسه مجاز نیست");const r=await db("/rest/v1/schools",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify([{name:cleanName,type:String(type||"مدرسه").trim(),code:cleanCode,active:!!active}])});if(!r.response.ok)return jsonError(res,400,"ثبت مدرسه انجام نشد");res.json({success:true,data:r.data?.[0]});}catch(e){console.error("SCHOOL POST",e.message);jsonError(res,500,"ثبت مدرسه انجام نشد");}});
+app.patch("/api/schools/:id",requireAuth,requireAdmin,async(req,res)=>{try{const body={};for(const k of ["name","type","code","active"])if(req.body?.[k]!==undefined)body[k]=k==="active"?!!req.body[k]:String(req.body[k]).trim();if(body.name!==undefined&&!isCanonicalSchool(body.name))return jsonError(res,400,"این نام مدرسه در فهرست ۹ مدرسه مجاز نیست");const r=await db(`/rest/v1/schools?id=eq.${enc(req.params.id)}`,{method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify(body)});if(!r.response.ok)return jsonError(res,400,"ویرایش مدرسه انجام نشد");res.json({success:true,data:r.data?.[0]});}catch(e){jsonError(res,500,"ویرایش مدرسه انجام نشد");}});
 app.delete("/api/schools/:id",requireAuth,requireAdmin,async(req,res)=>{try{const r=await db(`/rest/v1/schools?id=eq.${enc(req.params.id)}`,{method:"DELETE",headers:{Prefer:"return=representation"}});if(!r.response.ok)return jsonError(res,400,"مدرسه قابل حذف نیست؛ ابتدا اطلاعات وابسته را بررسی کنید");res.json({success:true});}catch(e){jsonError(res,500,"حذف مدرسه انجام نشد");}});
 app.get("/api/managers",requireAuth,requireAdmin,async(req,res)=>{try{const r=await db(`/rest/v1/managers?select=id,name,username,school_id,role,active&order=id.asc`);if(!r.response.ok)return jsonError(res,502,"خطا در دریافت مدیران");res.json({success:true,data:r.data});}catch(e){jsonError(res,500,"خطای داخلی سرور");}});
 app.post("/api/managers",requireAuth,requireAdmin,async(req,res)=>{try{const {name,username,password,school_id,role="manager",active=true}=req.body||{};if(!name||!username||!password||!school_id)return jsonError(res,400,"اطلاعات مدیر ناقص است");const hash=await bcrypt.hash(String(password),12);const r=await db("/rest/v1/managers",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify([{name:String(name).trim(),username:String(username).trim(),password_hash:hash,school_id:Number(school_id),role,active:!!active}])});if(!r.response.ok)return jsonError(res,400,"ثبت مدیر انجام نشد");res.json({success:true,data:r.data?.[0]});}catch(e){console.error(e.message);jsonError(res,500,"خطای داخلی سرور");}});
@@ -96,17 +108,196 @@ app.delete("/api/managers/:id",requireAuth,requireAdmin,async(req,res)=>{try{con
 app.patch("/api/managers/:id",requireAuth,requireAdmin,async(req,res)=>{try{const body={};for(const k of ["name","username","school_id","role","active"])if(req.body?.[k]!==undefined)body[k]=k==="school_id"?Number(req.body[k]):req.body[k];if(req.body?.password)body.password_hash=await bcrypt.hash(String(req.body.password),12);const r=await db(`/rest/v1/managers?id=eq.${enc(req.params.id)}`,{method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify(body)});if(!r.response.ok)return jsonError(res,400,"ویرایش مدیر انجام نشد");res.json({success:true,data:r.data?.[0]});}catch(e){jsonError(res,500,"خطای داخلی سرور");}});
 
 app.get("/api/students",requireAuth,async(req,res)=>{try{let q=`/rest/v1/students?select=id,name,code,grade,phone,national_id,school_id&order=name.asc&limit=1000`;const term=String(req.query.q||"").trim();if(term)q+=`&or=(name.ilike.*${enc(term)}*,code.ilike.*${enc(term)}*,national_id.ilike.*${enc(term)}*)`;if(req.session.role!=="admin")q+=`&school_id=eq.${enc(req.session.schoolId)}`;const r=await db(q);if(!r.response.ok)return jsonError(res,502,"خطا در دریافت دانش‌آموزان");res.json({success:true,data:r.data});}catch(e){console.error(e.message);jsonError(res,500,"خطای داخلی سرور");}});
-app.post("/api/students",requireAuth,async(req,res)=>{try{const {name,code,grade}=req.body||{};const phone=normalizeDigits(req.body?.phone);const grades=["مهد","اول","دوم","سوم","چهارم","پنجم","ششم"];if(!name||!grades.includes(grade)||!/^0\d{10}$/.test(phone))return jsonError(res,400,"نام، پایه یا شماره تلفن معتبر نیست");const schoolId=req.session.role==="admin"?Number(req.body.school_id):req.session.schoolId;if(!schoolId)return jsonError(res,400,"مدرسه مشخص نیست");const r=await db("/rest/v1/students",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify([{name:String(name).trim(),code:code?String(code).trim():null,grade,phone,school_id:schoolId}])});if(!r.response.ok)return jsonError(res,400,"ثبت دانش‌آموز انجام نشد");res.json({success:true,data:r.data?.[0]});}catch(e){jsonError(res,500,"خطای داخلی سرور");}});
-app.patch("/api/students/:id",requireAuth,async(req,res)=>{try{const body={};if(req.body?.name!==undefined)body.name=String(req.body.name).trim();if(req.body?.code!==undefined)body.code=req.body.code?String(req.body.code).trim():null;if(req.body?.grade!==undefined&&["مهد","اول","دوم","سوم","چهارم","پنجم","ششم"].includes(req.body.grade))body.grade=req.body.grade;if(req.body?.phone!==undefined){const p=normalizeDigits(req.body.phone);if(!/^0\d{10}$/.test(p))return jsonError(res,400,"شماره تلفن باید مانند 09131112222 باشد");body.phone=p;}if(req.body?.national_id!==undefined){const n=String(req.body.national_id).trim();if(!/^\d{10}$/.test(n))return jsonError(res,400,"کد ملی باید ۱۰ رقم انگلیسی باشد");body.national_id=n;}if(req.session.role==="admin"&&req.body?.school_id!==undefined)body.school_id=Number(req.body.school_id);const school=req.session.role==="admin"?"":`&school_id=eq.${enc(req.session.schoolId)}`;const r=await db(`/rest/v1/students?id=eq.${enc(req.params.id)}${school}`,{method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify(body)});if(!r.response.ok)return jsonError(res,400,"ویرایش دانش‌آموز انجام نشد");res.json({success:true,data:r.data?.[0]});}catch(e){jsonError(res,500,"خطای داخلی سرور");}});
-app.post("/api/students/import",requireAuth,upload.single("file"),async(req,res)=>{try{if(!req.file)return jsonError(res,400,"فایل Excel ارسال نشده است");const rows=rowsFromFile(req.file);if(rows.length<2)return jsonError(res,400,"فایل خالی است");const hs=rows[0].map(x=>String(x||"").trim());const data=rows.slice(1).map(r=>rowObject(hs,r));const grades=["مهد","اول","دوم","سوم","چهارم","پنجم","ششم"];const out=[];for(const o of data){const name=String(first(o,["name","نام","نام و نام خانوادگی","نام خانوادگی"])||"").trim();const code=String(first(o,["code","کد","کد دانش‌آموز"])||"").trim()||null;const grade=String(first(o,["grade","پایه","پایه تحصیلی"])||"").trim();const phone=normalizeDigits(first(o,["phone","تلفن","شماره تلفن","موبایل"]));const nationalId=String(first(o,["national_id","کد ملی","کدملی"])||"").replace(/\s/g,"").trim();if(!name||!grades.includes(grade)||!/^0\d{10}$/.test(phone)||!/^\d{10}$/.test(nationalId))continue;const schoolId=req.session.role==="admin"?Number(req.body.school_id):req.session.schoolId;if(!schoolId)continue;out.push({name,code,grade,phone,national_id:nationalId,school_id:schoolId});}if(!out.length)return jsonError(res,400,"هیچ ردیف معتبر قابل ورود پیدا نشد");const r=await db("/rest/v1/students",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify(out)});if(!r.response.ok)return jsonError(res,400,"ورود دانش‌آموزان انجام نشد");res.json({success:true,count:Array.isArray(r.data)?r.data.length:0});}catch(e){console.error("STUDENT IMPORT",e.message);jsonError(res,400,"خواندن فایل دانش‌آموزان انجام نشد");}});
-app.get("/api/students/:id/balance",requireAuth,async(req,res)=>{try{const sf=req.session.role==="admin"?"":`&school_id=eq.${enc(req.session.schoolId)}`;const r=await db(`/rest/v1/transactions?select=kind,debit,credit&student_id=eq.${enc(req.params.id)}${sf}&limit=1000`);if(!r.response.ok)return jsonError(res,502,"خطا در دریافت بدهی");let due=0,paid=0;for(const x of r.data||[]){if(x.kind==="شهریه_بدهی")due+=Number(x.debit||0);if(x.kind==="شهریه")paid+=Number(x.credit||0);}res.json({success:true,due,paid,balance:Math.max(0,due-paid)});}catch(e){jsonError(res,500,"خطای داخلی سرور");}});
+app.post("/api/students",requireAuth,async(req,res)=>{
+  try{
+    const name=String(req.body?.name||"").trim();
+    const grade=String(req.body?.grade||"").trim();
+    const phone=normalizeDigits(req.body?.phone);
+    const nationalId=normalizeDigits(req.body?.national_id);
+    const grades=["مهد","اول","دوم","سوم","چهارم","پنجم","ششم"];
 
+    if(!name)return jsonError(res,400,"نام دانش‌آموز را وارد کنید");
+    if(!grades.includes(grade))return jsonError(res,400,"پایه تحصیلی معتبر نیست");
+    if(!/^0\d{10}$/.test(phone))return jsonError(res,400,"شماره تلفن باید مانند 09131112222 باشد");
+    if(!/^\d{10}$/.test(nationalId))return jsonError(res,400,"کد ملی باید دقیقاً ۱۰ رقم انگلیسی باشد");
+
+    const schoolId=req.session.role==="admin"?Number(req.body?.school_id):Number(req.session.schoolId);
+    if(!schoolId)return jsonError(res,400,"مدرسه را انتخاب کنید");
+
+    const sr=await db(`/rest/v1/schools?select=id,name,active&id=eq.${enc(schoolId)}&limit=1`);
+    if(!sr.response.ok||!sr.data?.[0])return jsonError(res,400,"مدرسه انتخاب‌شده معتبر نیست");
+    if(!isCanonicalSchool(sr.data[0].name))return jsonError(res,400,"مدرسه انتخاب‌شده در فهرست ۹ مدرسه مجاز نیست");
+    if(sr.data[0].active===false)return jsonError(res,400,"مدرسه غیرفعال است");
+
+    const dup=await db(`/rest/v1/students?select=id,name&national_id=eq.${enc(nationalId)}&limit=1`);
+    if(!dup.response.ok)return jsonError(res,502,"خطا در بررسی کد ملی");
+    if(Array.isArray(dup.data)&&dup.data.length)return jsonError(res,400,"این کد ملی قبلاً ثبت شده است");
+
+    const r=await db("/rest/v1/students",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify([{
+      name,grade,phone,national_id:nationalId,school_id:schoolId
+    }])});
+    if(!r.response.ok){console.error("STUDENT INSERT",r.data);return jsonError(res,400,"ثبت دانش‌آموز انجام نشد");}
+    res.json({success:true,data:r.data?.[0]});
+  }catch(e){console.error("STUDENT POST",e.message);jsonError(res,500,"خطای داخلی در ثبت دانش‌آموز");}
+});
+app.patch("/api/students/:id",requireAuth,async(req,res)=>{
+  try{
+    const body={};
+    if(req.body?.name!==undefined){
+      const name=String(req.body.name).trim();
+      if(!name)return jsonError(res,400,"نام دانش‌آموز را وارد کنید");
+      body.name=name;
+    }
+    if(req.body?.grade!==undefined){
+      const grades=["مهد","اول","دوم","سوم","چهارم","پنجم","ششم"];
+      if(!grades.includes(String(req.body.grade).trim()))return jsonError(res,400,"پایه تحصیلی معتبر نیست");
+      body.grade=String(req.body.grade).trim();
+    }
+    if(req.body?.phone!==undefined){
+      const p=normalizeDigits(req.body.phone);
+      if(!/^0\d{10}$/.test(p))return jsonError(res,400,"شماره تلفن باید مانند 09131112222 باشد");
+      body.phone=p;
+    }
+    if(req.body?.national_id!==undefined){
+      const n=normalizeDigits(req.body.national_id);
+      if(!/^\d{10}$/.test(n))return jsonError(res,400,"کد ملی باید دقیقاً ۱۰ رقم انگلیسی باشد");
+      const dup=await db(`/rest/v1/students?select=id&national_id=eq.${enc(n)}&id=neq.${enc(req.params.id)}&limit=1`);
+      if(!dup.response.ok)return jsonError(res,502,"خطا در بررسی کد ملی");
+      if(Array.isArray(dup.data)&&dup.data.length)return jsonError(res,400,"این کد ملی قبلاً ثبت شده است");
+      body.national_id=n;
+    }
+    if(req.session.role==="admin"&&req.body?.school_id!==undefined){
+      const sid=Number(req.body.school_id);
+      if(!sid)return jsonError(res,400,"مدرسه را انتخاب کنید");
+      const sr=await db(`/rest/v1/schools?select=id,name,active&id=eq.${enc(sid)}&limit=1`);
+      if(!sr.response.ok||!sr.data?.[0]||!isCanonicalSchool(sr.data[0].name))return jsonError(res,400,"مدرسه انتخاب‌شده معتبر نیست");
+      if(sr.data[0].active===false)return jsonError(res,400,"مدرسه غیرفعال است");
+      body.school_id=sid;
+    }
+    const school=req.session.role==="admin"?"":`&school_id=eq.${enc(req.session.schoolId)}`;
+    const r=await db(`/rest/v1/students?id=eq.${enc(req.params.id)}${school}`,{method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify(body)});
+    if(!r.response.ok)return jsonError(res,400,"ویرایش دانش‌آموز انجام نشد");
+    res.json({success:true,data:r.data?.[0]});
+  }catch(e){console.error("STUDENT PATCH",e.message);jsonError(res,500,"خطای داخلی در ویرایش دانش‌آموز");}
+});
+app.post("/api/students/import",requireAuth,upload.single("file"),async(req,res)=>{
+  try{
+    if(!req.file)return jsonError(res,400,"فایل Excel ارسال نشده است");
+    const rows=rowsFromFile(req.file);
+    if(rows.length<2)return jsonError(res,400,"فایل خالی است");
+    const hs=rows[0].map(x=>String(x||"").trim());
+    const data=rows.slice(1).map(r=>rowObject(hs,r));
+    const grades=["مهد","اول","دوم","سوم","چهارم","پنجم","ششم"];
+    const schoolId=req.session.role==="admin"?Number(req.body?.school_id):Number(req.session.schoolId);
+    if(!schoolId)return jsonError(res,400,"مدرسه را انتخاب کنید");
+
+    const sr=await db(`/rest/v1/schools?select=id,name,active&id=eq.${enc(schoolId)}&limit=1`);
+    if(!sr.response.ok||!sr.data?.[0]||!isCanonicalSchool(sr.data[0].name))return jsonError(res,400,"مدرسه انتخاب‌شده معتبر نیست");
+    if(sr.data[0].active===false)return jsonError(res,400,"مدرسه غیرفعال است");
+
+    const out=[], skipped=[];
+    for(let rowNo=0;rowNo<data.length;rowNo++){
+      const o=data[rowNo];
+      const name=String(first(o,["name","نام","نام و نام خانوادگی","نام خانوادگی"])||"").trim();
+      const grade=String(first(o,["grade","پایه","پایه تحصیلی"])||"").trim();
+      const phone=normalizeDigits(first(o,["phone","تلفن","شماره تلفن","موبایل"]));
+      const nationalId=normalizeDigits(first(o,["national_id","کد ملی","کدملی"]));
+      if(!name||!grades.includes(grade)||!/^0\d{10}$/.test(phone)||!/^\d{10}$/.test(nationalId)){skipped.push(rowNo+2);continue;}
+      out.push({name,grade,phone,national_id:nationalId,school_id:schoolId});
+    }
+    if(!out.length)return jsonError(res,400,"هیچ ردیف معتبر قابل ورود پیدا نشد");
+
+    const ids=out.map(x=>x.national_id);
+    const existing=[];
+    for(const nid of ids){
+      const q=await db(`/rest/v1/students?select=national_id&national_id=eq.${enc(nid)}&limit=1`);
+      if(q.response.ok&&q.data?.length)existing.push(nid);
+    }
+    const seen=new Set();
+    const clean=out.filter(x=>{
+      if(existing.includes(x.national_id)||seen.has(x.national_id)){skipped.push(x.national_id);return false;}
+      seen.add(x.national_id);return true;
+    });
+    if(!clean.length)return jsonError(res,400,"همه ردیف‌ها تکراری یا نامعتبر هستند");
+
+    const r=await db("/rest/v1/students",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify(clean)});
+    if(!r.response.ok){console.error("STUDENT IMPORT",r.data);return jsonError(res,400,"ورود دانش‌آموزان انجام نشد");}
+    res.json({success:true,count:Array.isArray(r.data)?r.data.length:0,skipped:skipped.length});
+  }catch(e){console.error("STUDENT IMPORT",e.message);jsonError(res,400,"خواندن فایل دانش‌آموزان انجام نشد");}
+});
+app.get("/api/students/:id/balance",requireAuth,async(req,res)=>{
+  try{
+    const sf=req.session.role==="admin"?"":`&school_id=eq.${enc(req.session.schoolId)}`;
+    const r=await db(`/rest/v1/transactions?select=kind,debit,credit&student_id=eq.${enc(req.params.id)}${sf}&limit=1000`);
+    if(!r.response.ok)return jsonError(res,502,"خطا در دریافت بدهی");
+    let due=0,paid=0;
+    for(const x of r.data||[]){
+      if(x.kind==="شهریه_بدهی")due+=Number(x.debit||0);
+      if(x.kind==="شهریه")paid+=Number(x.credit||0);
+    }
+    res.json({success:true,due,paid,balance:Math.max(0,due-paid)});
+  }catch(e){jsonError(res,500,"خطای داخلی سرور");}
+});
 app.get("/api/expense-categories",requireAuth,async(req,res)=>{try{const r=await db(`/rest/v1/expense_categories?select=id,name,active&order=id.asc`);if(!r.response.ok)return jsonError(res,502,"خطا در دریافت لیست هزینه‌ها");res.json({success:true,data:r.data});}catch(e){jsonError(res,500,"خطای داخلی سرور");}});
 app.post("/api/expense-categories",requireAuth,requireAdmin,async(req,res)=>{try{if(!req.body?.name)return jsonError(res,400,"نام هزینه الزامی است");const r=await db("/rest/v1/expense_categories",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify([{name:String(req.body.name).trim(),active:req.body.active!==false}])});if(!r.response.ok)return jsonError(res,400,"ثبت نوع هزینه انجام نشد");res.json({success:true,data:r.data?.[0]});}catch(e){jsonError(res,500,"خطای داخلی سرور");}});
 app.patch("/api/expense-categories/:id",requireAuth,requireAdmin,async(req,res)=>{try{const body={};if(req.body?.name!==undefined)body.name=String(req.body.name).trim();if(req.body?.active!==undefined)body.active=!!req.body.active;const r=await db(`/rest/v1/expense_categories?id=eq.${enc(req.params.id)}`,{method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify(body)});if(!r.response.ok)return jsonError(res,400,"ویرایش نوع هزینه انجام نشد");res.json({success:true,data:r.data?.[0]});}catch(e){jsonError(res,500,"خطای داخلی سرور");}});
 
-app.post("/api/tuition/debt",requireAuth,async(req,res)=>{try{const amount=money(req.body?.amount);const studentId=Number(req.body?.student_id);if(!studentId||amount<=0)return jsonError(res,400,"مبلغ یا دانش‌آموز معتبر نیست");let schoolId=req.session.role==="admin"?Number(req.body.school_id):req.session.schoolId; if(req.session.role==="admin"&&!schoolId){const sr=await db(`/rest/v1/students?select=school_id&id=eq.${enc(studentId)}&limit=1`); schoolId=sr.response.ok?Number(sr.data?.[0]?.school_id||0):0;} if(!schoolId)return jsonError(res,400,"مدرسه دانش‌آموز مشخص نیست"); const r=await db("/rest/v1/transactions",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify([{date:req.body.date||new Date().toISOString().slice(0,10),account:req.body.account||"مطالبات شهریه",debit:amount,credit:0,comment:req.body.comment||"ثبت بدهی شهریه",kind:"شهریه_بدهی",payment_method:null,tracking_code:null,student_id:studentId,school_id:schoolId,reconciled:false}])});if(!r.response.ok)return jsonError(res,400,"ثبت بدهی انجام نشد");res.json({success:true,data:r.data?.[0]});}catch(e){jsonError(res,400,"مبلغ معتبر نیست");}});
-app.post("/api/tuition/payment",requireAuth,async(req,res)=>{try{const amount=money(req.body?.amount),studentId=Number(req.body?.student_id);if(!studentId||amount<=0)return jsonError(res,400,"مبلغ یا دانش‌آموز معتبر نیست");let schoolId=req.session.role==="admin"?Number(req.body.school_id):req.session.schoolId; if(req.session.role==="admin"&&!schoolId){const sr=await db(`/rest/v1/students?select=school_id&id=eq.${enc(studentId)}&limit=1`); schoolId=sr.response.ok?Number(sr.data?.[0]?.school_id||0):0;} if(!schoolId)return jsonError(res,400,"مدرسه دانش‌آموز مشخص نیست"); const r=await db("/rest/v1/transactions",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify([{date:req.body.date||new Date().toISOString().slice(0,10),account:req.body.account||"بانک",debit:0,credit:amount,comment:req.body.comment||"پرداخت شهریه",kind:"شهریه",payment_method:req.body.payment_method||"بانک",tracking_code:req.body.tracking_code||null,student_id:studentId,school_id:schoolId,reconciled:false}])});if(!r.response.ok)return jsonError(res,400,"ثبت شهریه انجام نشد");res.json({success:true,data:r.data?.[0]});}catch(e){jsonError(res,400,"مبلغ معتبر نیست");}});
+app.post("/api/tuition/debt",requireAuth,async(req,res)=>{
+  try{
+    const amount=money(req.body?.amount),studentId=Number(req.body?.student_id);
+    if(!studentId||amount<=0)return jsonError(res,400,"مبلغ یا دانش‌آموز معتبر نیست");
+    const sr=await db(`/rest/v1/students?select=id,school_id&id=eq.${enc(studentId)}&limit=1`);
+    if(!sr.response.ok||!sr.data?.[0])return jsonError(res,400,"دانش‌آموز پیدا نشد");
+    const studentSchool=Number(sr.data[0].school_id);
+    if(req.session.role!=="admin"&&studentSchool!==Number(req.session.schoolId))return jsonError(res,403,"دسترسی به این دانش‌آموز مجاز نیست");
+    const schoolId=req.session.role==="admin"?(Number(req.body?.school_id)||studentSchool):Number(req.session.schoolId);
+    if(schoolId!==studentSchool)return jsonError(res,400,"مدرسه دانش‌آموز با مدرسه انتخاب‌شده یکسان نیست");
+
+    const r=await db("/rest/v1/transactions",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify([{
+      date:req.body.date||new Date().toISOString().slice(0,10),
+      account:req.body.account||"مطالبات شهریه",
+      debit:amount,credit:0,comment:req.body.comment||"ثبت بدهی شهریه",
+      kind:"شهریه_بدهی",payment_method:null,tracking_code:null,
+      student_id:studentId,school_id:schoolId,reconciled:false
+    }])});
+    if(!r.response.ok)return jsonError(res,400,"ثبت بدهی انجام نشد");
+    res.json({success:true,data:r.data?.[0]});
+  }catch(e){console.error("TUITION DEBT",e.message);jsonError(res,400,"مبلغ معتبر نیست");}
+});
+
+app.post("/api/tuition/payment",requireAuth,async(req,res)=>{
+  try{
+    const amount=money(req.body?.amount),studentId=Number(req.body?.student_id);
+    if(!studentId||amount<=0)return jsonError(res,400,"مبلغ یا دانش‌آموز معتبر نیست");
+    const sr=await db(`/rest/v1/students?select=id,school_id&id=eq.${enc(studentId)}&limit=1`);
+    if(!sr.response.ok||!sr.data?.[0])return jsonError(res,400,"دانش‌آموز پیدا نشد");
+    const studentSchool=Number(sr.data[0].school_id);
+    if(req.session.role!=="admin"&&studentSchool!==Number(req.session.schoolId))return jsonError(res,403,"دسترسی به این دانش‌آموز مجاز نیست");
+    const schoolId=req.session.role==="admin"?(Number(req.body?.school_id)||studentSchool):Number(req.session.schoolId);
+    if(schoolId!==studentSchool)return jsonError(res,400,"مدرسه دانش‌آموز با مدرسه انتخاب‌شده یکسان نیست");
+
+    const tr=await db(`/rest/v1/transactions?select=kind,debit,credit&student_id=eq.${enc(studentId)}&school_id=eq.${enc(schoolId)}&limit=5000`);
+    if(!tr.response.ok)return jsonError(res,502,"خطا در محاسبه بدهی دانش‌آموز");
+    let due=0,paid=0;
+    for(const x of tr.data||[]){
+      if(x.kind==="شهریه_بدهی")due+=Number(x.debit||0);
+      if(x.kind==="شهریه")paid+=Number(x.credit||0);
+    }
+    const balance=Math.max(0,due-paid);
+    if(amount>balance)return jsonError(res,400,`مبلغ پرداختی بیشتر از بدهی است. بدهی فعلی: ${balance}`);
+
+    const r=await db("/rest/v1/transactions",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify([{
+      date:req.body.date||new Date().toISOString().slice(0,10),
+      account:req.body.account||"بانک",debit:0,credit:amount,
+      comment:req.body.comment||"پرداخت شهریه",kind:"شهریه",
+      payment_method:req.body.payment_method||"بانک",
+      tracking_code:req.body.tracking_code||null,
+      student_id:studentId,school_id:schoolId,reconciled:false
+    }])});
+    if(!r.response.ok)return jsonError(res,400,"ثبت شهریه انجام نشد");
+    res.json({success:true,data:r.data?.[0],balance_after:balance-amount});
+  }catch(e){console.error("TUITION PAYMENT",e.message);jsonError(res,400,"مبلغ معتبر نیست");}
+});
 app.post("/api/expenses",requireAuth,async(req,res)=>{try{const amount=money(req.body?.amount),categoryId=Number(req.body?.category_id);if(amount<=0||!categoryId)return jsonError(res,400,"نوع هزینه و مبلغ الزامی است");const schoolId=req.session.role==="admin"?Number(req.body.school_id):req.session.schoolId;const r=await db("/rest/v1/transactions",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify([{date:req.body.date||new Date().toISOString().slice(0,10),account:req.body.account||"هزینه",debit:amount,credit:0,comment:req.body.comment||"",kind:"هزینه",payment_method:req.body.payment_method||"بانک",tracking_code:req.body.tracking_code||null,student_id:null,school_id:schoolId,reconciled:false}])});if(!r.response.ok)return jsonError(res,400,"ثبت هزینه انجام نشد");const tx=r.data?.[0];const patch={comment:`[expense_category_id=${categoryId}] ${req.body.comment||""}`};await db(`/rest/v1/transactions?id=eq.${enc(tx.id)}`,{method:"PATCH",body:JSON.stringify(patch)});res.json({success:true,data:tx});}catch(e){jsonError(res,400,"مبلغ معتبر نیست");}});
 
 app.post("/api/attachments",requireAuth,imageUpload.single("file"),async(req,res)=>{try{if(!req.file)return jsonError(res,400,"فایل ارسال نشده است");const type=req.body.entity_type, id=Number(req.body.entity_id);if(!["tuition","expense"].includes(type)||!id)return jsonError(res,400,"اطلاعات پیوست نامعتبر است");const meta=await sharp(req.file.buffer).metadata();if(!String(meta.format||"").match(/jpeg|jpg|png|webp/i))return jsonError(res,400,"فقط تصویر مجاز است");const buffer=await sharp(req.file.buffer).rotate().resize({width:1600,height:1600,fit:"inside",withoutEnlargement:true}).jpeg({quality:60,mozjpeg:true}).withMetadata({density:96}).toBuffer();const path=`${req.session.schoolId||"admin"}/${type}/${id}/${Date.now()}-${crypto.randomBytes(4).toString("hex")}.jpg`;const url=await storageUpload(path,buffer,"image/jpeg");const r=await db("/rest/v1/attachments",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify([{entity_type:type,entity_id:id,school_id:req.session.schoolId||null,file_url:url,file_name:req.file.originalname||"image.jpg",mime_type:"image/jpeg",size_bytes:buffer.length,dpi:96}])});if(!r.response.ok)return jsonError(res,400,"ذخیره پیوست انجام نشد");res.json({success:true,data:r.data?.[0]});}catch(e){console.error("UPLOAD",e.message);jsonError(res,400,"آپلود تصویر انجام نشد");}});
