@@ -315,7 +315,7 @@ public class MainActivity extends Activity {
             JSONArray ar=o.optJSONArray("data");long debt=0,paid=0;java.util.LinkedHashMap<String,Long> costs=new java.util.LinkedHashMap<>();
             for(int i=0;i<(ar==null?0:ar.length());i++){JSONObject x=ar.optJSONObject(i);String k=x.optString("kind");
                 if("شهریه_بدهی".equals(k))debt+=x.optLong("debit");else if("شهریه".equals(k))paid+=x.optLong("credit");
-                else if("هزینه".equals(k)){String key=x.optString("expense_category_name","هزینه‌های متفرقه");Long old=costs.get(key);costs.put(key,(old==null?0:old)+x.optLong("debit"));}
+                else if("هزینه".equals(k)){String c=expenseComment(x);if(c.length()==0)c="هزینه‌های متفرقه";String marker=x.optString("comment","");java.util.regex.Matcher mm=java.util.regex.Pattern.compile("\\[expense_category_id=(\\d+)\\]").matcher(marker);String key=mm.find()?"نوع هزینه "+mm.group(1):"هزینه‌ها";Long old=costs.get(key);costs.put(key,(old==null?0:old)+x.optLong("debit"));}
             }
             content.addView(tv("جمع بدهی باقی‌مانده شهریه: "+fmt(Math.max(0,debt-paid))+" ریال",19));gap();
             content.addView(tv("جمع هزینه‌ها به تفکیک:",19));gap();
@@ -333,7 +333,7 @@ public class MainActivity extends Activity {
     }
     void exportParsian(){
         if(!"admin".equals(me.optString("role"))){toast("فقط مدیر ارشد به خروجی پارسیان دسترسی دارد");return;}
-        api.request("GET","/api/schools",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray ar=o.optJSONArray("data");ArrayList<String> names=new ArrayList<>();ArrayList<Long> ids=new ArrayList<>();names.add("همه مدارس");ids.add(0L);for(int i=0;i<(ar==null?0:ar.length());i++){JSONObject x=ar.optJSONObject(i);names.add(x.optString("name"));ids.add(x.optLong("id"));}new AlertDialog.Builder(MainActivity.this).setTitle("خروجی Excel پارسیان").setItems(names,(d,w)->downloadParsian(ids.get(w))).show();}public void fail(String m){toast(m);}});
+        api.request("GET","/api/schools",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray ar=o.optJSONArray("data");ArrayList<String> names=new ArrayList<>();ArrayList<Long> ids=new ArrayList<>();names.add("همه مدارس");ids.add(0L);for(int i=0;i<(ar==null?0:ar.length());i++){JSONObject x=ar.optJSONObject(i);names.add(x.optString("name"));ids.add(x.optLong("id"));}new AlertDialog.Builder(MainActivity.this).setTitle("خروجی Excel پارسیان").setItems(names.toArray(new String[0]), (d,w)->downloadParsian(ids.get(w))).show();}public void fail(String m){toast(m);}});
     }
     void downloadParsian(long schoolId){
         new Thread(()->{try{
