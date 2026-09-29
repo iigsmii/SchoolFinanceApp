@@ -225,6 +225,14 @@ app.post("/api/students/import",requireAuth,upload.single("file"),async(req,res)
     res.json({success:true,count:Array.isArray(r.data)?r.data.length:0,skipped:skipped.length});
   }catch(e){console.error("STUDENT IMPORT",e.message);jsonError(res,400,"خواندن فایل دانش‌آموزان انجام نشد");}
 });
+app.get("/api/students/:id",requireAuth,async(req,res)=>{
+  try{
+    const sf=req.session.role==="admin"?"":`&school_id=eq.${enc(req.session.schoolId)}`;
+    const r=await db(`/rest/v1/students?select=*&id=eq.${enc(req.params.id)}${sf}&limit=1`);
+    if(!r.response.ok||!r.data?.[0])return jsonError(res,404,"دانش‌آموز پیدا نشد");
+    res.json({success:true,data:r.data[0]});
+  }catch(e){jsonError(res,500,"خطای داخلی سرور");}
+});
 app.get("/api/students/:id/balance",requireAuth,async(req,res)=>{
   try{
     const sf=req.session.role==="admin"?"":`&school_id=eq.${enc(req.session.schoolId)}`;
@@ -300,16 +308,6 @@ app.post("/api/tuition/payment",requireAuth,async(req,res)=>{
 });
 app.post("/api/expenses",requireAuth,async(req,res)=>{try{const amount=money(req.body?.amount),categoryId=Number(req.body?.category_id);if(amount<=0||!categoryId)return jsonError(res,400,"نوع هزینه و مبلغ الزامی است");const schoolId=req.session.role==="admin"?Number(req.body.school_id):req.session.schoolId;const r=await db("/rest/v1/transactions",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify([{date:req.body.date||new Date().toISOString().slice(0,10),account:req.body.account||"هزینه",debit:amount,credit:0,comment:req.body.comment||"",kind:"هزینه",payment_method:req.body.payment_method||"بانک",tracking_code:req.body.tracking_code||null,student_id:null,school_id:schoolId,reconciled:false}])});if(!r.response.ok)return jsonError(res,400,"ثبت هزینه انجام نشد");const tx=r.data?.[0];const patch={comment:`[expense_category_id=${categoryId}] ${req.body.comment||""}`};await db(`/rest/v1/transactions?id=eq.${enc(tx.id)}`,{method:"PATCH",body:JSON.stringify(patch)});res.json({success:true,data:tx});}catch(e){jsonError(res,400,"مبلغ معتبر نیست");}});
 
-app.patch("/api/transactions/:id",requireAuth,async(req,res)=>{try{const id=Number(req.params.id);if(!id)return jsonError(res,400,"تراکنش معتبر نیست");const own=req.session.role==="admin"?"":`&school_id=eq.${enc(req.session.schoolId)}`;const rr=await db(`/rest/v1/transactions?select=*&id=eq.${enc(id)}${own}&limit=1`);if(!rr.response.ok||!rr.data?.[0])return jsonError(res,404,"تراکنش پیدا نشد");const old=rr.data[0];const body={};if(req.body?.date!==undefined)body.date=String(req.body.date);if(req.body?.comment!==undefined)body.comment=String(req.body.comment);if(req.body?.tracking_code!==undefined)body.tracking_code=req.body.tracking_code?String(req.body.tracking_code):null;
-  const amount=req.body?.amount!==undefined?money(req.body.amount):null;
-  if(old.kind==="هزینه"){if(amount!==null){if(amount<=0)return jsonError(res,400,"مبلغ هزینه معتبر نیست");body.debit=amount;body.credit=0;}if(req.body?.category_id!==undefined){const cat=Number(req.body.category_id);if(!cat)return jsonError(res,400,"نوع هزینه معتبر نیست");const comment=String(req.body.comment||"");body.comment=`[expense_category_id=${cat}] ${comment}`;}}
-  else if(old.kind==="شهریه_بدهی"){if(amount!==null){if(amount<=0)return jsonError(res,400,"مبلغ بدهی معتبر نیست");const tr=await db(`/rest/v1/transactions?select=kind,debit,credit&id=neq.${enc(id)}&student_id=eq.${enc(old.student_id)}&school_id=eq.${enc(old.school_id)}&limit=5000`);let debt=0,paid=0;for(const x of tr.data||[]){if(x.kind==="شهریه_بدهی")debt+=Number(x.debit||0);if(x.kind==="شهریه")paid+=Number(x.credit||0);}if(amount<paid)return jsonError(res,400,"مبلغ بدهی نمی‌تواند کمتر از پرداخت‌های انجام‌شده باشد");body.debit=amount;body.credit=0;}}
-  else if(old.kind==="شهریه"){if(amount!==null){if(amount<=0)return jsonError(res,400,"مبلغ پرداخت معتبر نیست");const tr=await db(`/rest/v1/transactions?select=kind,debit,credit&id=neq.${enc(id)}&student_id=eq.${enc(old.student_id)}&school_id=eq.${enc(old.school_id)}&limit=5000`);let debt=0,paid=0;for(const x of tr.data||[]){if(x.kind==="شهریه_بدهی")debt+=Number(x.debit||0);if(x.kind==="شهریه")paid+=Number(x.credit||0);}if(paid+amount>debt)return jsonError(res,400,`مبلغ پرداختی بیشتر از بدهی است. بدهی کل: ${debt-paid}`);body.credit=amount;body.debit=0;}}
-  else return jsonError(res,400,"این نوع تراکنش قابل ویرایش نیست");
-  body.reconciled=false;const r=await db(`/rest/v1/transactions?id=eq.${enc(id)}${own}`,{method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify(body)});if(!r.response.ok)return jsonError(res,400,"ویرایش تراکنش انجام نشد");res.json({success:true,data:r.data?.[0]});}catch(e){console.error("EDIT TRANSACTION",e.message);jsonError(res,400,"ویرایش تراکنش انجام نشد");}});
-
-app.get("/api/report",requireAuth,async(req,res)=>{try{const schoolId=req.session.role==="admin"?(req.query.school_id?Number(req.query.school_id):null):Number(req.session.schoolId);if(!schoolId)return jsonError(res,400,"مدرسه مشخص نیست");const tr=await db(`/rest/v1/transactions?select=kind,debit,credit,comment&school_id=eq.${enc(schoolId)}&limit=10000`);if(!tr.response.ok)return jsonError(res,502,"خطا در گزارش مالی");const cats=await db("/rest/v1/expense_categories?select=id,name&order=id.asc&limit=500");const map=new Map((cats.data||[]).map(x=>[Number(x.id),{name:x.name,amount:0}]));let debt=0,paid=0;for(const x of tr.data||[]){if(x.kind==="شهریه_بدهی")debt+=Number(x.debit||0);if(x.kind==="شهریه")paid+=Number(x.credit||0);if(x.kind==="هزینه"){const m=String(x.comment||"").match(/expense_category_id=(\d+)/);const id=m?Number(m[1]):0;if(map.has(id))map.get(id).amount+=Number(x.debit||0);else{if(!map.has(0))map.set(0,{name:"هزینه‌های متفرقه",amount:0});map.get(0).amount+=Number(x.debit||0);}}}res.json({success:true,tuition_debt:Math.max(0,debt-paid),expenses_by_category:Array.from(map.values()).filter(x=>x.amount>0)});}catch(e){jsonError(res,500,"گزارش مالی آماده نشد");}});
-
 app.post("/api/attachments",requireAuth,imageUpload.single("file"),async(req,res)=>{try{if(!req.file)return jsonError(res,400,"فایل ارسال نشده است");const type=req.body.entity_type, id=Number(req.body.entity_id);if(!["tuition","expense"].includes(type)||!id)return jsonError(res,400,"اطلاعات پیوست نامعتبر است");const meta=await sharp(req.file.buffer).metadata();if(!String(meta.format||"").match(/jpeg|jpg|png|webp/i))return jsonError(res,400,"فقط تصویر مجاز است");const buffer=await sharp(req.file.buffer).rotate().resize({width:1600,height:1600,fit:"inside",withoutEnlargement:true}).jpeg({quality:60,mozjpeg:true}).withMetadata({density:96}).toBuffer();const path=`${req.session.schoolId||"admin"}/${type}/${id}/${Date.now()}-${crypto.randomBytes(4).toString("hex")}.jpg`;const url=await storageUpload(path,buffer,"image/jpeg");const r=await db("/rest/v1/attachments",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify([{entity_type:type,entity_id:id,school_id:req.session.schoolId||null,file_url:url,file_name:req.file.originalname||"image.jpg",mime_type:"image/jpeg",size_bytes:buffer.length,dpi:96}])});if(!r.response.ok)return jsonError(res,400,"ذخیره پیوست انجام نشد");res.json({success:true,data:r.data?.[0]});}catch(e){console.error("UPLOAD",e.message);jsonError(res,400,"آپلود تصویر انجام نشد");}});
 
 app.post("/api/bank/upload",requireAuth,requireAdmin,upload.single("file"),async(req,res)=>{try{if(!req.file)return jsonError(res,400,"فایل بانک ارسال نشده است");const rows=rowsFromFile(req.file);if(!rows.length)return jsonError(res,400,"فایل خالی است");const hs=rows[0].map(x=>String(x).trim());const data=rows.slice(1).map(r=>rowObject(hs,r));const inserted=[];for(const o of data){const amount=Math.abs(Number(String(first(o,["Bed","بدهکار","مبلغ","Amount","credit"])).replace(/,/g,""))||0);if(!amount)continue;inserted.push({bank_date:first(o,["SanadDate","تاریخ","Date"]),amount,account:first(o,["HesabName","حساب"]),comment:first(o,["Comment","شرح"]),tracking_code:first(o,["TrackingCode","tracking_code","پیگیری"]),raw:o,school_id:req.body.school_id?Number(req.body.school_id):null});}if(!inserted.length)return jsonError(res,400,"تراکنش قابل استفاده‌ای در فایل پیدا نشد");const r=await db("/rest/v1/bank_transactions",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify(inserted)});if(!r.response.ok)return jsonError(res,400,"ذخیره فایل بانک انجام نشد");res.json({success:true,count:r.data?.length||0});}catch(e){console.error("BANK",e.message);jsonError(res,400,"خواندن فایل بانک انجام نشد");}});
@@ -317,11 +315,189 @@ app.post("/api/bank/reconcile",requireAuth,requireAdmin,async(req,res)=>{try{con
 app.get("/api/bank/unmatched",requireAuth,requireAdmin,async(req,res)=>{try{const r=await db(`/rest/v1/bank_transactions?select=*&reconciled=eq.false&order=id.desc&limit=500`);if(!r.response.ok)return jsonError(res,502,"خطا در دریافت تراکنش‌ها");res.json({success:true,data:r.data});}catch(e){jsonError(res,500,"خطای داخلی سرور");}});
 app.post("/api/bank/:id/return",requireAuth,requireAdmin,async(req,res)=>{try{const message="این تراکنش در داده های دریافتی از بانک یافت نشد، لطفا پیگیری بفرمایید.";const r=await db(`/rest/v1/bank_transactions?id=eq.${enc(req.params.id)}`,{method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify({status:"returned",return_message:message})});if(!r.response.ok)return jsonError(res,400,"مرجوع کردن تراکنش انجام نشد");res.json({success:true,message});}catch(e){jsonError(res,500,"خطای داخلی سرور");}});
 
-app.get("/api/transactions",requireAuth,async(req,res)=>{try{let q=`/rest/v1/transactions?select=*&order=id.desc&limit=200`;if(req.query.kind)q+=`&kind=eq.${enc(req.query.kind)}`;if(req.session.role!=="admin")q+=`&school_id=eq.${enc(req.session.schoolId)}`;const r=await db(q);if(!r.response.ok)return jsonError(res,502,"خطا در دریافت تراکنش‌ها");res.json({success:true,data:r.data});}catch(e){jsonError(res,500,"خطای داخلی سرور");}});
+app.patch("/api/transactions/:id",requireAuth,async(req,res)=>{
+  try{
+    const id=Number(req.params.id);
+    if(!id)return jsonError(res,400,"شناسه تراکنش نامعتبر است");
+    const sf=req.session.role==="admin"?"":`&school_id=eq.${enc(req.session.schoolId)}`;
+    const current=await db(`/rest/v1/transactions?select=*&id=eq.${enc(id)}${sf}&limit=1`);
+    if(!current.response.ok||!current.data?.[0])return jsonError(res,404,"تراکنش پیدا نشد");
+    const t=current.data[0];
+    const body={reconciled:false};
+    if(t.kind==="شهریه_بدهی"){
+      const amount=money(req.body?.amount);
+      if(amount<=0)return jsonError(res,400,"مبلغ بدهی معتبر نیست");
+      body.debit=amount; body.credit=0;
+      if(req.body?.comment!==undefined)body.comment=String(req.body.comment||"ثبت بدهی شهریه");
+    }else if(t.kind==="شهریه"){
+      const amount=money(req.body?.amount);
+      if(amount<=0)return jsonError(res,400,"مبلغ پرداختی معتبر نیست");
+      const all=await db(`/rest/v1/transactions?select=id,kind,debit,credit&student_id=eq.${enc(t.student_id)}&school_id=eq.${enc(t.school_id)}&limit=5000`);
+      if(!all.response.ok)return jsonError(res,502,"خطا در محاسبه بدهی دانش‌آموز");
+      let due=0,otherPaid=0;
+      for(const x of all.data||[]){if(x.kind==="شهریه_بدهی")due+=Number(x.debit||0);if(x.kind==="شهریه"&&Number(x.id)!==id)otherPaid+=Number(x.credit||0);}
+      if(amount>Math.max(0,due-otherPaid))return jsonError(res,400,`مبلغ پرداختی بیشتر از بدهی مجاز است. سقف پرداخت: ${Math.max(0,due-otherPaid)}`);
+      body.credit=amount; body.debit=0;
+      if(req.body?.comment!==undefined)body.comment=String(req.body.comment||"پرداخت شهریه");
+      if(req.body?.tracking_code!==undefined)body.tracking_code=String(req.body.tracking_code||"");
+    }else if(t.kind==="هزینه"){
+      const amount=money(req.body?.amount);
+      const categoryId=Number(req.body?.category_id);
+      if(amount<=0||!categoryId)return jsonError(res,400,"نوع هزینه و مبلغ الزامی است");
+      const cat=await db(`/rest/v1/expense_categories?select=id,name&id=eq.${enc(categoryId)}&limit=1`);
+      if(!cat.response.ok||!cat.data?.[0])return jsonError(res,400,"نوع هزینه معتبر نیست");
+      const oldComment=String(req.body?.comment||"");
+      body.debit=amount; body.credit=0;
+      body.comment=`[expense_category_id=${categoryId}] ${oldComment}`;
+    }else{
+      return jsonError(res,400,"این نوع تراکنش قابل ویرایش نیست");
+    }
+    const r=await db(`/rest/v1/transactions?id=eq.${enc(id)}${sf}`,{method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify(body)});
+    if(!r.response.ok)return jsonError(res,400,"ویرایش تراکنش انجام نشد");
+    res.json({success:true,data:r.data?.[0]});
+  }catch(e){console.error("TRANSACTION PATCH",e.message);jsonError(res,400,"ویرایش تراکنش انجام نشد");}
+});
+
+app.get("/api/transactions",requireAuth,async(req,res)=>{try{
+  let q=`/rest/v1/transactions?select=*&order=id.desc&limit=5000`;
+  if(req.query.kind)q+=`&kind=eq.${enc(req.query.kind)}`;
+  if(req.session.role!=="admin")q+=`&school_id=eq.${enc(req.session.schoolId)}`;
+  const r=await db(q);if(!r.response.ok)return jsonError(res,502,"خطا در دریافت تراکنش‌ها");
+  const data=r.data||[];
+  const cats=await db("/rest/v1/expense_categories?select=id,name&limit=5000");
+  const catMap=new Map((cats.data||[]).map(x=>[Number(x.id),x.name]));
+  const ids=[...new Set(data.map(x=>Number(x.student_id)).filter(Boolean))];
+  let students=[];
+  if(ids.length){const sq=ids.map(id=>`id.eq.${enc(id)}`).join(",");const sr=await db(`/rest/v1/students?select=id,name,grade&or=(${sq})&limit=5000`);students=sr.data||[];}
+  const smap=new Map(students.map(x=>[Number(x.id),x]));
+  for(const x of data){
+    const m=String(x.comment||"").match(/expense_category_id=(\d+)/);
+    if(m)x.expense_category_name=catMap.get(Number(m[1]))||"هزینه‌های متفرقه";
+    const st=smap.get(Number(x.student_id));if(st){x.student_name=st.name;x.student_grade=st.grade;}
+  }
+  res.json({success:true,data});
+}catch(e){console.error("TRANSACTIONS GET",e.message);jsonError(res,500,"خطا در دریافت تراکنش‌ها");}});
 
 app.get("/api/export/parsiان",requireAuth,requireAdmin,async(req,res)=>exportParsian(req,res));
 app.get("/api/export/parsian",requireAuth,requireAdmin,async(req,res)=>exportParsian(req,res));
-async function exportParsian(req,res){try{let q="/rest/v1/transactions?select=*&order=id.asc&limit=10000";if(req.query.school_id)q+=`&school_id=eq.${enc(req.query.school_id)}`;const r=await db(q);if(!r.response.ok)return jsonError(res,502,"خطا در دریافت اطلاعات حسابداری");const accounts=await db("/rest/v1/accounts?select=code,name&limit=5000");const byName=new Map((accounts.data||[]).map(a=>[a.name,String(a.code||"")]));const headers=["ID","KolCode","MoeenCode","TafsiliCode","HesabName","Comment","Bed","Bes","Factor_Num","Tick","SanadComment","ChkNum","IsRecPayChk","CostCenterCode"];const rows=[];let id=1;for(const t of r.data||[]){const raw=byName.get(t.account)||"";const parts=raw.split("-");const comment=String(t.comment||"").replace(/^\[expense_category_id=\d+\]\s*/,"");rows.push({ID:id++,KolCode:parts[0]||"",MoeenCode:parts[1]||"",TafsiliCode:parts[2]||"",HesabName:t.account||"",Comment:comment,Bed:Number(t.debit||0),Bes:Number(t.credit||0),Factor_Num:0,Tick:t.reconciled===true,SanadComment:"",ChkNum:t.tracking_code||"",IsRecPayChk:"",CostCenterCode:""});}const ws=XLSX.utils.json_to_sheet(rows,{header:headers,skipHeader:false});ws["!cols"]=headers.map(h=>({wch:h.length<12?12:Math.min(30,h.length+2)}));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Sheet1");const buf=XLSX.write(wb,{type:"buffer",bookType:"xlsx"});res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");res.setHeader("Content-Disposition",`attachment; filename="parsian-${Date.now()}.xlsx"`);res.send(buf);}catch(e){console.error(e.message);jsonError(res,500,"ساخت فایل حسابداری انجام نشد");}}
+async function exportParsian(req,res){
+  try{
+    let q="/rest/v1/transactions?select=*&order=id.asc&limit=10000";
+    if(req.query.school_id)q+=`&school_id=eq.${enc(req.query.school_id)}`;
+    if(req.query.only_reconciled!=="false")q+="&reconciled=eq.true";
+    q+="&kind=in.(شهریه,هزینه)";
+    const r=await db(q);
+    if(!r.response.ok)return jsonError(res,502,"خطا در دریافت اطلاعات حسابداری");
+
+    const accountsR=await db("/rest/v1/accounts?select=code,name&limit=5000");
+    if(!accountsR.response.ok)return jsonError(res,502,"خطا در دریافت سرفصل حساب‌ها");
+    const accounts=accountsR.data||[];
+    const byName=new Map(accounts.map(a=>[String(a.name||"").trim(),String(a.code||"").trim()]));
+
+    const studentsR=await db("/rest/v1/students?select=id,name,grade,school_id&limit=10000");
+    const students=new Map((studentsR.data||[]).map(s=>[Number(s.id),s]));
+    const schoolsR=await db("/rest/v1/schools?select=id,name&limit=100");
+    const schools=new Map((schoolsR.data||[]).map(s=>[Number(s.id),String(s.name||"").trim()]));
+    const catsR=await db("/rest/v1/expense_categories?select=id,name&limit=500");
+    const cats=new Map((catsR.data||[]).map(x=>[Number(x.id),String(x.name||"").trim()]));
+
+    const header=["ID","KolCode","MoeenCode","TafsiliCode","HesabName","Comment","Bed","Bes","Factor_Num","Tick","SanadComment","ChkNum","IsRecPayChk","CostCenterCode"];
+    const rows=[];let rowId=1;
+    const norm=s=>String(s||"").replace(/[\\s‌\-()]/g,"").replace(/ي/g,"ی").replace(/ك/g,"ک").toLowerCase();
+
+    function codeParts(name){
+      const code=byName.get(String(name||"").trim())||"";
+      const p=code.split("-");
+      if(p.length!==3)return ["","",""];
+      return [p[2],p[1],p[0]];
+    }
+    function addRow(name,comment,bed,bes){
+      const [kol,moe,taf]=codeParts(name);
+      rows.push({ID:rowId++,KolCode:kol,MoeenCode:moe,TafsiliCode:taf,HesabName:name,Comment:comment,
+        Bed:Number(bed||0),Bes:Number(bes||0),Factor_Num:0,Tick:false,SanadComment:"",ChkNum:"",IsRecPayChk:"",CostCenterCode:""});
+    }
+    function schoolTokens(schoolName){
+      const n=norm(schoolName);
+      if(n.includes("نور۱")||n.includes("نور1"))return ["نور1","نور 1"];
+      if(n.includes("نور۲")||n.includes("نور2"))return ["نور2","نور 2"];
+      if(n.includes("تبیان۱")||n.includes("تبیان1"))return ["تبیان1","تبیان 1"];
+      if(n.includes("تبیان۲")||n.includes("تبیان2"))return ["تبیان2","تبیان 2"];
+      if(n.includes("مرکزیصبح"))return ["صبح","پیش دبستانی مدرسه القران نوبت صبح"];
+      if(n.includes("مرکزیعصر"))return ["عصر","پیش دبستانی عصر"];
+      if(n.includes("ابراهیمخلیل"))return ["ابراهیم خلیل"];
+      if(n.includes("سروستان"))return ["سروستان"];
+      if(n.includes("منظریه"))return ["منظریه"];
+      return [];
+    }
+    function findAccountByPatterns(patterns){
+      for(const a of accounts){
+        const n=norm(a.name);
+        if(patterns.every(p=>n.includes(norm(p))))return String(a.name).trim();
+      }
+      return null;
+    }
+    function expenseAccount(category,schoolName){
+      const c=norm(category);
+      const tokens=schoolTokens(schoolName);
+      let patterns=[];
+      if(c.includes("متفرقه"))patterns=["هزینه","متفرقه"];
+      else if(c.includes("پذیرایی"))patterns=["هزینه","پذیرایی"];
+      else if(c.includes("اینترنت"))patterns=["هزینه","اینترنت"];
+      else if(c.includes("تلفن"))patterns=["هزینه","تلفن"];
+      else if(c.includes("تخفیف"))patterns=["هزینه","تخفیف"];
+      else if(c.includes("عمرانی"))patterns=["هزینه","عمرانی"];
+      else if(c.includes("آب")||c.includes("برق")||c.includes("گاز"))patterns=["هزینه","آب"];
+      else patterns=["هزینه",category];
+
+      if(tokens.length){
+        const exact=findAccountByPatterns([...patterns,...tokens]);
+        if(exact)return exact;
+      }
+      if((c.includes("آب")||c.includes("برق")||c.includes("گاز"))) {
+        const generic=findAccountByPatterns(["هزینه","آب"]);
+        if(generic)return generic;
+      }
+      const generic=findAccountByPatterns(patterns);
+      return generic||null;
+    }
+    function findStudentAccount(student){
+      if(!student)return null;
+      const target=norm(student.name), grade=norm(student.grade);
+      let hit=accounts.find(a=>{const n=norm(a.name);return n.includes(target)&&(!grade||n.includes(grade));});
+      if(!hit)hit=accounts.find(a=>norm(a.name).includes(target));
+      return hit?String(hit.name).trim():null;
+    }
+
+    for(const t of r.data||[]){
+      const amount=Number(t.debit||0)||Number(t.credit||0);
+      if(amount<=0)continue;
+      let comment=String(t.comment||"").trim();
+      if(t.kind==="هزینه"){
+        const m=comment.match(/^\[expense_category_id=(\d+)\]\s*(.*)$/);
+        const category=m?cats.get(Number(m[1])):"";
+        comment=m?m[2]||"":comment;
+        const schoolName=schools.get(Number(t.school_id))||"";
+        const expenseName=expenseAccount(category||t.account||"هزینه",schoolName);
+        if(!expenseName)return jsonError(res,400,`حساب پارسیان برای نوع هزینه «${category||t.account||"هزینه"}» در مدرسه «${schoolName}» پیدا نشد`);
+        addRow(expenseName,comment||"پرداخت هزینه",amount,0);
+        addRow("بانک صادرات 002",comment||"پرداخت هزینه",0,amount);
+      }else if(t.kind==="شهریه"){
+        const student=students.get(Number(t.student_id));
+        const studentAccount=findStudentAccount(student);
+        if(!studentAccount)return jsonError(res,400,`حساب پارسیان دانش‌آموز «${student?.name||"نامشخص"}» پیدا نشد`);
+        addRow("بانک صادرات 002",comment||"بابت پرداخت شهریه",amount,0);
+        addRow(studentAccount,comment||"بابت پرداخت شهریه",0,amount);
+      }
+    }
+
+    const ws=XLSX.utils.json_to_sheet(rows,{header});
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Sheet1");
+    const buf=XLSX.write(wb,{type:"buffer",bookType:"xlsx"});
+    res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition",`attachment; filename="parsian-${Date.now()}.xlsx"`);
+    res.send(buf);
+  }catch(e){console.error("PARSian EXPORT",e.message);jsonError(res,500,"ساخت فایل حسابداری انجام نشد");}
+}
 
 app.use((error,req,res,next)=>{if(error instanceof SyntaxError&&error.status===400)return jsonError(res,400,"بدنه درخواست JSON معتبر نیست");if(error?.code==="LIMIT_FILE_SIZE")return jsonError(res,413,"حجم فایل بیش از حد مجاز است");console.error("UNHANDLED",error);return jsonError(res,500,"خطای داخلی سرور");});
 app.listen(PORT,"0.0.0.0",()=>console.log(`School Finance API running on port ${PORT}`));

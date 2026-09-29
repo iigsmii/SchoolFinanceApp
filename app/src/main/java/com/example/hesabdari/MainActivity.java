@@ -5,9 +5,6 @@ import android.os.*;
 import android.content.*;
 import android.net.Uri;
 import android.provider.MediaStore;
-import android.content.ContentValues;
-import android.app.DownloadManager;
-import android.os.Environment;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -31,7 +28,7 @@ import java.util.*;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
-    ApiClient api; LinearLayout root, content; JSONObject me; Uri pendingImage, pendingBank, cameraOutput;
+    ApiClient api; LinearLayout root, content; JSONObject me; Uri pendingImage, pendingBank, cameraUri;
     final String[] grades={"مهد","اول","دوم","سوم","چهارم","پنجم","ششم"};
     final int navy=Color.rgb(35,55,95), teal=Color.rgb(20,130,125), gold=Color.rgb(220,155,45), ink=Color.rgb(45,55,70);
     android.content.SharedPreferences prefs;
@@ -88,10 +85,10 @@ public class MainActivity extends Activity {
         base("داشبورد");
         LinearLayout welcome=new LinearLayout(this);welcome.setOrientation(LinearLayout.VERTICAL);welcome.setPadding(8,8,8,8);welcome.setBackground(bg(Color.WHITE,28));
         welcome.addView(tv("خوش آمدید، "+me.optString("name","مدیر"),20));welcome.addView(tv("مدرسه: "+me.optString("school_name","همه مدارس"),15));content.addView(welcome);gap();
-        String[][] ms={{"👨‍🎓\nدانش‌آموزان","students"},{"💳\nشهریه و درآمد","tuition"},{"🧾\nهزینه‌ها","expenses"},{"📋\nتراکنش‌ها","transactions"},{"📊\nگزارش مالی","report"},{"⚙️\nتنظیمات","settings"}};
-        if("admin".equals(me.optString("role")))ms=new String[][]{{"👨‍🎓\nدانش‌آموزان","students"},{"💳\nشهریه و درآمد","tuition"},{"🧾\nهزینه‌ها","expenses"},{"🏦\nتطبیق بانک","bank"},{"👤\nمدیران","managers"},{"🏫\nمدارس","schools"},{"📊\nگزارش مالی","report"},{"⚙️\nتنظیمات","settings"}};
+        String[][] ms={{"👨‍🎓\nدانش‌آموزان","students"},{"💳\nشهریه و درآمد","tuition"},{"🧾\nهزینه‌ها","expenses"},{"🔄\nتراکنش‌ها","transactions"},{"📊\nگزارش مالی","report"},{"⚙️\nتنظیمات","settings"}};
+        if("admin".equals(me.optString("role")))ms=new String[][]{{"👨‍🎓\nدانش‌آموزان","students"},{"💳\nشهریه و درآمد","tuition"},{"🧾\nهزینه‌ها","expenses"},{"🏦\nتطبیق بانک","bank"},{"👤\nمدیران","managers"},{"🏫\nمدارس","schools"},{"📊\nگزارش مالی","report"},{"📥\nخروجی پارسیان","export"},{"⚙️\nتنظیمات","settings"}};
         GridLayout grid=new GridLayout(this);grid.setColumnCount(2);grid.setUseDefaultMargins(false);content.addView(grid);
-        for(String[] m:ms){Button b=cardBtn(m[0]);GridLayout.LayoutParams gp=new GridLayout.LayoutParams();gp.width=0;gp.height=(int)fs(145);gp.columnSpec=GridLayout.spec(GridLayout.UNDEFINED,1f);gp.setMargins(7,21,7,21);grid.addView(b,gp);b.setOnClickListener(v->{switch(m[1]){case"students":students();break;case"tuition":tuition();break;case"expenses":expenses();break;case"bank":bank();break;case"transactions":transactions();break;case"managers":managers();break;case"schools":schools();break;case"report":report();break;default:settings();}});}
+        for(String[] m:ms){Button b=cardBtn(m[0]);GridLayout.LayoutParams gp=new GridLayout.LayoutParams();gp.width=0;gp.height=(int)fs(145);gp.columnSpec=GridLayout.spec(GridLayout.UNDEFINED,1f);gp.setMargins(7,21,7,21);grid.addView(b,gp);b.setOnClickListener(v->{switch(m[1]){case"students":students();break;case"tuition":tuition();break;case"expenses":expenses();break;case"bank":bank();break;case"managers":managers();break;case"schools":schools();break;case"report":report();break;case"transactions":transactionsScreen();break;case"export":exportParsian();break;default:settings();}});}
     }
     void back(){gap();Button b=btn("↩ بازگشت به داشبورد");content.addView(b);b.setOnClickListener(v->showHome());}
     void students(){
@@ -217,74 +214,140 @@ public class MainActivity extends Activity {
     void pickStudentExcel(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,89);}
     void tuition(){
         base("شهریه و درآمد");
-        EditText search=edit("نام، کد یا کد ملی (اختیاری)");Button find=btn("🔎 نمایش و انتخاب دانش‌آموز");content.addView(find);gap();
+        EditText search=edit("نام، کد یا کد ملی (اختیاری)");
+        Button find=btn("🔎 نمایش و انتخاب دانش‌آموز");content.addView(find);gap();
         TextView selected=tv("دانش‌آموزی انتخاب نشده",17);selected.setBackground(bg(Color.WHITE,22));content.addView(selected);gap();
-        Button debt=btn("➕ ثبت بدهی شهریه");Button pay=btn("💳 ثبت پرداخت شهریه");content.addView(debt);gap();content.addView(pay);gap();
+        Button debt=btn("➕ ثبت بدهی شهریه");Button pay=btn("💳 ثبت پرداخت شهریه");
+        content.addView(debt);gap();content.addView(pay);gap();
         LinearLayout photoRow=new LinearLayout(this);photoRow.setOrientation(LinearLayout.HORIZONTAL);
-        Button image=btn("📷 انتخاب عکس فیش");Button camera=btn("📸 دوربین");photoRow.addView(image,new LinearLayout.LayoutParams(0,58,1));photoRow.addView(camera,new LinearLayout.LayoutParams(0,58,1));content.addView(photoRow);gap();
-        image.setOnClickListener(v->pickImage());camera.setOnClickListener(v->takePhoto());
+        Button camera=btn("📷 دوربین");Button gallery=btn("🖼 گالری");
+        photoRow.addView(camera,new LinearLayout.LayoutParams(0,58,1));photoRow.addView(gallery,new LinearLayout.LayoutParams(0,58,1));
+        content.addView(photoRow);gap();
+        camera.setOnClickListener(v->takePhoto());gallery.setOnClickListener(v->pickImage());
         final JSONObject[] student={null};
-        Runnable choose=()->api.request("GET","/api/students?q="+Uri.encode(search.getText().toString()),null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");if(a==null||a.length()==0){toast("دانش‌آموزی پیدا نشد");return;}String[] names=new String[a.length()];for(int i=0;i<a.length();i++){JSONObject s=a.optJSONObject(i);names[i]=s.optString("name")+" | "+s.optString("grade")+" | "+s.optString("national_id");}new AlertDialog.Builder(MainActivity.this).setTitle("انتخاب دانش‌آموز").setItems(names,(d,which)->{student[0]=a.optJSONObject(which);selected.setText("انتخاب: "+student[0].optString("name")+" | "+student[0].optString("grade")+"\nکد ملی: "+student[0].optString("national_id"));loadBalance(student[0],selected);}).show();}public void fail(String m){toast(m);}});
-        find.setOnClickListener(v->choose.run());debt.setOnClickListener(v->{if(student[0]==null){toast("ابتدا دانش‌آموز را انتخاب کنید");return;}amountDialog("ثبت بدهی شهریه","/api/tuition/debt",student[0],false);});pay.setOnClickListener(v->{if(student[0]==null){toast("ابتدا دانش‌آموز را انتخاب کنید");return;}amountDialog("ثبت پرداخت شهریه","/api/tuition/payment",student[0],true);});choose.run();back();
+        Runnable choose=()->api.request("GET","/api/students?q="+Uri.encode(search.getText().toString()),null,new ApiClient.Callback(){
+            public void ok(JSONObject o){JSONArray ar=o.optJSONArray("data");if(ar==null||ar.length()==0){toast("دانش‌آموزی پیدا نشد");return;}
+                String[] names=new String[ar.length()];for(int i=0;i<ar.length();i++){JSONObject x=ar.optJSONObject(i);names[i]=x.optString("name")+" | "+x.optString("grade")+" | "+x.optString("national_id");}
+                new AlertDialog.Builder(MainActivity.this).setTitle("انتخاب دانش‌آموز").setItems(names,(d,which)->{student[0]=ar.optJSONObject(which);selected.setText("انتخاب: "+student[0].optString("name")+" | "+student[0].optString("grade")+"\nکد ملی: "+student[0].optString("national_id"));loadBalance(student[0],selected);}).show();
+            }public void fail(String m){toast(m);}});
+        find.setOnClickListener(v->choose.run());
+        debt.setOnClickListener(v->{if(student[0]==null){toast("ابتدا دانش‌آموز را انتخاب کنید");return;}amountDialog("ثبت بدهی شهریه","/api/tuition/debt",student[0],false,null);});
+        pay.setOnClickListener(v->{if(student[0]==null){toast("ابتدا دانش‌آموز را انتخاب کنید");return;}amountDialog("ثبت پرداخت شهریه","/api/tuition/payment",student[0],true,null);});
+        choose.run();back();
     }
     void loadBalance(JSONObject s,TextView t){api.request("GET","/api/students/"+s.optLong("id")+"/balance",null,new ApiClient.Callback(){public void ok(JSONObject o){t.setText("انتخاب: "+s.optString("name")+"\nبدهی باقی‌مانده: "+fmt(o.optLong("balance"))+" ریال");}public void fail(String m){}});}
-    void amountDialog(String title,String path,JSONObject student,boolean payment){
-        LinearLayout l=new LinearLayout(this);
-        l.setOrientation(LinearLayout.VERTICAL);
-        TextView error=new TextView(this);
-        error.setTextColor(Color.rgb(190,30,30));
-        error.setVisibility(View.GONE);
-        EditText a=amountField();
-        EditText tr=field("شماره پیگیری (اختیاری)");
+    void amountDialog(String title,String path,JSONObject student,boolean payment,JSONObject old){
+        LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);
+        TextView error=new TextView(this);error.setTextColor(Color.rgb(190,30,30));error.setVisibility(View.GONE);
+        EditText a=amountField();EditText tr=field("شماره پیگیری (اختیاری)");
+        if(old!=null){a.setText(fmt(payment?old.optLong("credit"):old.optLong("debit")));tr.setText(old.optString("tracking_code",""));}
         l.addView(error);l.addView(a);l.addView(tr);
-        AlertDialog dlg=new AlertDialog.Builder(this).setTitle(title).setView(l).setPositiveButton("ثبت",null).setNegativeButton("انصراف",null).create();
+        AlertDialog dlg=new AlertDialog.Builder(this).setTitle(title).setView(l).setPositiveButton(old==null?"ثبت":"ذخیره",null).setNegativeButton("انصراف",null).create();
         dlg.setOnShowListener(x->dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
             try{
-                long amount=money(a);
-                if(amount<=0){showFormError(error,"مبلغ را وارد کنید.");return;}
-                JSONObject z=new JSONObject();
-                z.put("student_id",student.optLong("id"));
-                z.put("amount",amount);
+                long amount=money(a);if(amount<=0){showFormError(error,"مبلغ را وارد کنید.");return;}
+                JSONObject z=new JSONObject();z.put("amount",amount);z.put("student_id",student.optLong("id"));
                 if(student.has("school_id"))z.put("school_id",student.optLong("school_id"));
                 if(payment)z.put("tracking_code",tr.getText().toString().trim());
-                api.request("POST",path,z,new ApiClient.Callback(){
-                    public void ok(JSONObject o){
-                        long id=o.optJSONObject("data").optLong("id");
-                        if(pendingImage!=null){uploadAttachment("tuition",id,pendingImage);pendingImage=null;}
-                        dlg.dismiss();
-                        toast("ثبت شد");
-                    }
+                String method=old==null?"POST":"PATCH", endpoint=old==null?path:"/api/transactions/"+old.optLong("id");
+                api.request(method,endpoint,z,new ApiClient.Callback(){
+                    public void ok(JSONObject o){if(old==null&&o.optJSONObject("data")!=null){long id=o.optJSONObject("data").optLong("id");if(pendingImage!=null){uploadAttachment("tuition",id,pendingImage);pendingImage=null;}}dlg.dismiss();toast(old==null?"ثبت شد":"ویرایش شد");tuition();}
                     public void fail(String m){showFormError(error,m);}
                 });
             }catch(Exception e){showFormError(error,"مبلغ معتبر نیست.");}
-        }));
-        dlg.show();
+        }));dlg.show();
     }
     void expenses(){
-        base("هزینه‌ها");Button add=btn("➕ ثبت هزینه");content.addView(add);gap();Button cats=btn("⚙ مدیریت لیست هزینه‌ها");if("admin".equals(me.optString("role")))content.addView(cats);gap();LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);
-        api.request("GET","/api/transactions?kind="+Uri.encode("هزینه"),null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");for(int i=0;i<(a==null?0:a.length());i++){JSONObject t=a.optJSONObject(i);Button r=btn(fmt(t.optLong("debit"))+" ریال | "+t.optString("comment")+"\n"+(t.optBoolean("reconciled",false)?"تأیید شده توسط مدیر ارشد":"در انتظار تطبیق با بانک"));list.addView(r);gapView(list);r.setOnClickListener(v->transactionEdit(t));}}public void fail(String m){toast(m);}});
-        add.setOnClickListener(v->expenseDialog(null));cats.setOnClickListener(v->categories());back();
+        base("هزینه‌ها");Button add=btn("➕ ثبت هزینه");content.addView(add);gap();
+        Button cats=btn("⚙ مدیریت لیست هزینه‌ها");if("admin".equals(me.optString("role")))content.addView(cats);gap();
+        LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);
+        api.request("GET","/api/transactions?kind="+Uri.encode("هزینه"),null,new ApiClient.Callback(){
+            public void ok(JSONObject o){JSONArray ar=o.optJSONArray("data");for(int i=0;i<(ar==null?0:ar.length());i++){JSONObject t=ar.optJSONObject(i);Button r=btn(fmt(t.optLong("debit"))+" ریال\n"+expenseComment(t));list.addView(r);gapView(list);r.setOnClickListener(v->expenseEdit(t));}}
+            public void fail(String m){toast(m);}
+        });
+        add.setOnClickListener(v->expenseDialog());cats.setOnClickListener(v->categories());back();
     }
-    void expenseDialog(JSONObject old){api.request("GET","/api/expense-categories",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");ArrayList<JSONObject> active=new ArrayList<>();ArrayList<String> names=new ArrayList<>();for(int i=0;i<(a==null?0:a.length());i++){JSONObject x=a.optJSONObject(i);if(x.optBoolean("active",true)|| (old!=null && old.optString("comment").contains("expense_category_id="+x.optLong("id")))){active.add(x);names.add(x.optString("name"));}}LinearLayout l=new LinearLayout(MainActivity.this);l.setOrientation(LinearLayout.VERTICAL);Spinner sp=new Spinner(MainActivity.this);sp.setAdapter(new ArrayAdapter<String>(MainActivity.this,android.R.layout.simple_spinner_dropdown_item,names));EditText amount=amountField();EditText comment=field("شرح (اختیاری)");l.addView(sp);l.addView(amount);l.addView(comment);LinearLayout pr=new LinearLayout(MainActivity.this);pr.setOrientation(LinearLayout.HORIZONTAL);Button image=btn("📷 عکس فاکتور");Button camera=btn("📸 دوربین");pr.addView(image,new LinearLayout.LayoutParams(0,58,1));pr.addView(camera,new LinearLayout.LayoutParams(0,58,1));l.addView(pr);image.setOnClickListener(v->pickImage());camera.setOnClickListener(v->takePhoto());
-        if(old!=null){amount.setText(fmt(old.optLong("debit")));String oc=old.optString("comment");if(oc.contains("] "))comment.setText(oc.substring(oc.indexOf("] ")+2));}
-        AlertDialog dlg=new AlertDialog.Builder(MainActivity.this).setTitle(old==null?"ثبت هزینه":"ویرایش هزینه").setView(l).setPositiveButton("ذخیره",null).setNegativeButton("انصراف",null).create();dlg.setOnShowListener(x->dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{JSONObject z=new JSONObject();z.put("amount",money(amount));z.put("comment",comment.getText().toString());z.put("category_id",active.get(sp.getSelectedItemPosition()).optLong("id"));String path=old==null?"/api/expenses":"/api/transactions/"+old.optLong("id");api.request(old==null?"POST":"PATCH",path,z,new ApiClient.Callback(){public void ok(JSONObject r){long id=old==null?r.optJSONObject("data").optLong("id"):old.optLong("id");if(pendingImage!=null){uploadAttachment("expense",id,pendingImage);pendingImage=null;}dlg.dismiss();toast(old==null?"هزینه ثبت شد":"هزینه ویرایش شد");expenses();}public void fail(String m){toast(m);}});}catch(Exception e){toast("مبلغ را وارد کنید");}}));dlg.show();}public void fail(String m){toast(m);}});}
+    String expenseComment(JSONObject t){String c=t.optString("comment","");return c.replaceFirst("^\\[expense_category_id=\\d+\\]\\s*","");}
+    void expenseDialog(){expenseEdit(null);}
+    void expenseEdit(JSONObject old){
+        api.request("GET","/api/expense-categories",null,new ApiClient.Callback(){public void ok(JSONObject o){
+            JSONArray ar=o.optJSONArray("data");ArrayList<JSONObject> cats=new ArrayList<>();ArrayList<String> names=new ArrayList<>();
+            for(int i=0;i<(ar==null?0:ar.length());i++){JSONObject x=ar.optJSONObject(i);if(x.optBoolean("active",true)||old!=null){cats.add(x);names.add(x.optString("name"));}}
+            LinearLayout l=new LinearLayout(MainActivity.this);l.setOrientation(LinearLayout.VERTICAL);
+            TextView error=new TextView(MainActivity.this);error.setTextColor(Color.rgb(190,30,30));error.setVisibility(View.GONE);l.addView(error);
+            Spinner sp=new Spinner(MainActivity.this);sp.setAdapter(new ArrayAdapter<String>(MainActivity.this,android.R.layout.simple_spinner_dropdown_item,names));
+            EditText amount=amountField();EditText comment=field("شرح (اختیاری)");
+            if(old!=null){amount.setText(fmt(old.optLong("debit")));comment.setText(expenseComment(old));String marker=old.optString("comment","");int id=0;java.util.regex.Matcher mm=java.util.regex.Pattern.compile("expense_category_id=(\\d+)").matcher(marker);if(mm.find())id=Integer.parseInt(mm.group(1));for(int i=0;i<cats.size();i++)if(cats.get(i).optInt("id")==id)sp.setSelection(i);}
+            l.addView(sp);l.addView(amount);l.addView(comment);
+            LinearLayout photo=new LinearLayout(MainActivity.this);Button camera=btn("📷 دوربین");Button gallery=btn("🖼 گالری");photo.addView(camera,new LinearLayout.LayoutParams(0,58,1));photo.addView(gallery,new LinearLayout.LayoutParams(0,58,1));l.addView(photo);
+            camera.setOnClickListener(v->takePhoto());gallery.setOnClickListener(v->pickImage());
+            AlertDialog dlg=new AlertDialog.Builder(MainActivity.this).setTitle(old==null?"ثبت هزینه":"ویرایش هزینه").setView(l).setPositiveButton(old==null?"ثبت":"ذخیره",null).setNegativeButton("انصراف",null).create();
+            dlg.setOnShowListener(x->dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{
+                long val=money(amount);if(val<=0){showFormError(error,"مبلغ را وارد کنید.");return;}if(cats.isEmpty()){showFormError(error,"نوع هزینه انتخاب نشده است.");return;}
+                JSONObject z=new JSONObject();z.put("category_id",cats.get(sp.getSelectedItemPosition()).optLong("id"));z.put("amount",val);z.put("comment",comment.getText().toString());
+                String method=old==null?"POST":"PATCH",endpoint=old==null?"/api/expenses":"/api/transactions/"+old.optLong("id");
+                api.request(method,endpoint,z,new ApiClient.Callback(){public void ok(JSONObject r){if(old==null&&r.optJSONObject("data")!=null){long id=r.optJSONObject("data").optLong("id");if(pendingImage!=null){uploadAttachment("expense",id,pendingImage);pendingImage=null;}}dlg.dismiss();toast(old==null?"هزینه ثبت شد":"هزینه ویرایش شد");expenses();}public void fail(String m){showFormError(error,m);}});
+            }catch(Exception e){showFormError(error,"مبلغ را وارد کنید.");}}));dlg.show();
+        }public void fail(String m){toast(m);}});
+    }
     void categories(){base("لیست هزینه‌ها");Button add=btn("➕ افزودن نوع هزینه");content.addView(add);gap();LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);api.request("GET","/api/expense-categories",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");for(int i=0;i<(a==null?0:a.length());i++){JSONObject x=a.optJSONObject(i);Button b=btn(x.optString("name")+(x.optBoolean("active",true)?"":" | غیرفعال"));list.addView(b);gapView(list);b.setOnClickListener(v->{if("admin".equals(me.optString("role")))categoryEdit(x);});}}public void fail(String m){toast(m);}});add.setOnClickListener(v->{EditText n=new EditText(this);n.setHint("نام هزینه");new AlertDialog.Builder(this).setTitle("افزودن نوع هزینه").setView(n).setPositiveButton("ذخیره",(d,w)->{JSONObject x=new JSONObject();try{x.put("name",n.getText().toString());}catch(Exception ignored){}api.request("POST","/api/expense-categories",x,new ApiClient.Callback(){public void ok(JSONObject o){categories();}public void fail(String m){toast(m);}});}).setNegativeButton("انصراف",null).show();});back();}
     void categoryEdit(JSONObject old){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText n=new EditText(this);n.setText(old.optString("name"));CheckBox a=new CheckBox(this);a.setText("فعال");a.setChecked(old.optBoolean("active",true));l.addView(n);l.addView(a);new AlertDialog.Builder(this).setTitle("ویرایش نوع هزینه").setView(l).setPositiveButton("ذخیره",(d,w)->{JSONObject x=new JSONObject();try{x.put("name",n.getText().toString());x.put("active",a.isChecked());}catch(Exception ignored){}api.request("PATCH","/api/expense-categories/"+old.optLong("id"),x,new ApiClient.Callback(){public void ok(JSONObject o){categories();}public void fail(String m){toast(m);}});}).setNegativeButton("انصراف",null).show();}
     void uploadAttachment(String type,long id,Uri uri){JSONObject f=new JSONObject();try{f.put("entity_type",type);f.put("entity_id",id);}catch(Exception ignored){}api.upload(uri,"file","/api/attachments",f,new ApiClient.Callback(){public void ok(JSONObject o){toast("تصویر کم‌حجم با DPI=96 ذخیره شد");}public void fail(String m){toast(m);}});}
     void pickImage(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("image/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,77);}
-    void takePhoto(){try{ContentValues v=new ContentValues();v.put(MediaStore.Images.Media.DISPLAY_NAME,"school_finance_"+System.currentTimeMillis()+".jpg");v.put(MediaStore.Images.Media.MIME_TYPE,"image/jpeg");if(Build.VERSION.SDK_INT>=29)v.put(MediaStore.Images.Media.RELATIVE_PATH,"Pictures/SchoolFinance");cameraOutput=getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,v);Intent i=new Intent(MediaStore.ACTION_IMAGE_CAPTURE);i.putExtra(MediaStore.EXTRA_OUTPUT,cameraOutput);startActivityForResult(i,78);}catch(Exception e){toast("دوربین در دسترس نیست");}}
-    @Override protected void onActivityResult(int r,int c,Intent d){super.onActivityResult(r,c,d);if(c!=RESULT_OK)return;if(r==77&&d!=null){pendingImage=d.getData();toast("تصویر انتخاب شد؛ هنگام ثبت ذخیره می‌شود");}else if(r==78){pendingImage=cameraOutput;cameraOutput=null;toast("عکس گرفته شد؛ هنگام ثبت ذخیره می‌شود");}else if(r==88&&d!=null){pendingBank=d.getData();uploadBank();}else if(r==89&&d!=null){uploadStudentExcel(d.getData());}}
+    void takePhoto(){
+        if(Build.VERSION.SDK_INT>=23 && checkSelfPermission(android.Manifest.permission.CAMERA)!=android.content.pm.PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{android.Manifest.permission.CAMERA},901);return;}
+        try{
+            android.content.ContentValues v=new android.content.ContentValues();v.put(MediaStore.Images.Media.DISPLAY_NAME,"schoolfinance-"+System.currentTimeMillis()+".jpg");v.put(MediaStore.Images.Media.MIME_TYPE,"image/jpeg");if(Build.VERSION.SDK_INT>=29)v.put(MediaStore.Images.Media.RELATIVE_PATH,"Pictures/SchoolFinance");
+            cameraUri=getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,v);if(cameraUri==null){toast("دسترسی دوربین آماده نیست");return;}
+            Intent i=new Intent(MediaStore.ACTION_IMAGE_CAPTURE);i.putExtra(MediaStore.EXTRA_OUTPUT,cameraUri);i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivityForResult(i,90);
+        }catch(Exception e){toast("باز کردن دوربین انجام نشد");}
+    }
+    @Override public void onRequestPermissionsResult(int r,String[] p,int[] g){super.onRequestPermissionsResult(r,p,g);if(r==901&&g.length>0&&g[0]==android.content.pm.PackageManager.PERMISSION_GRANTED)takePhoto();else if(r==901)toast("برای عکس گرفتن باید اجازه دوربین را بدهید");}
+    @Override protected void onActivityResult(int r,int c,Intent d){super.onActivityResult(r,c,d);if(c!=RESULT_OK)return;if(r==77&&d!=null){pendingImage=d.getData();toast("تصویر انتخاب شد؛ هنگام ثبت ذخیره می‌شود");}else if(r==90){pendingImage=cameraUri;cameraUri=null;toast("عکس دوربین آماده ثبت است");}else if(r==88&&d!=null){pendingBank=d.getData();uploadBank();}else if(r==89&&d!=null){uploadStudentExcel(d.getData());}}
     void uploadBank(){JSONObject f=new JSONObject();try{f.put("school_id",me.optLong("school_id"));}catch(Exception ignored){}api.uploadFile(pendingBank,"file","/api/bank/upload",f,"bank-file","application/octet-stream",new ApiClient.Callback(){public void ok(JSONObject o){toast("فایل بانک وارد شد: "+o.optInt("count")+" تراکنش");pendingBank=null;}public void fail(String m){toast(m);}});}
     void uploadStudentExcel(Uri uri){if(!"admin".equals(me.optString("role"))){doStudentExcelUpload(uri,me.optLong("school_id"));return;}api.request("GET","/api/schools",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");if(a==null||a.length()==0){toast("مدرسه‌ای برای ورود دانش‌آموزان وجود ندارد");return;}String[] names=new String[a.length()];for(int i=0;i<a.length();i++){JSONObject s=a.optJSONObject(i);names[i]=s.optString("name")+" | "+s.optString("code");}new AlertDialog.Builder(MainActivity.this).setTitle("انتخاب مدرسه برای Excel").setItems(names,(d,w)->doStudentExcelUpload(uri,a.optJSONObject(w).optLong("id"))).show();}public void fail(String m){toast(m);}});}
     void doStudentExcelUpload(Uri uri,long schoolId){JSONObject f=new JSONObject();try{f.put("school_id",schoolId);}catch(Exception ignored){}api.uploadFile(uri,"file","/api/students/import",f,"students.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",new ApiClient.Callback(){public void ok(JSONObject o){toast("ورود دانش‌آموزان انجام شد: "+o.optInt("count"));students();}public void fail(String m){toast(m);}});}
     void bank(){base("تطبیق بانک");content.addView(tv("مدیر ارشد می‌تواند فایل CSV یا Excel بانک را وارد و با شهریه‌های ثبت‌شده تطبیق دهد.",16));gap();Button upload=btn("📄 انتخاب فایل بانک");content.addView(upload);gap();Button rec=btn("🔄 تطبیق تراکنش‌ها");content.addView(rec);gap();LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);upload.setOnClickListener(v->{Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("*/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,88);});rec.setOnClickListener(v->api.request("POST","/api/bank/reconcile",new JSONObject(),new ApiClient.Callback(){public void ok(JSONObject o){toast("تطبیق شد: "+o.optInt("matched")+" | بدون تطبیق: "+o.optInt("unmatched"));unmatched(list);}public void fail(String m){toast(m);}}));unmatched(list);back();}
     void unmatched(LinearLayout list){api.request("GET","/api/bank/unmatched",null,new ApiClient.Callback(){public void ok(JSONObject o){list.removeAllViews();JSONArray a=o.optJSONArray("data");for(int i=0;i<(a==null?0:a.length());i++){JSONObject x=a.optJSONObject(i);LinearLayout r=new LinearLayout(MainActivity.this);r.setOrientation(LinearLayout.VERTICAL);r.addView(tv(fmt(x.optLong("amount"))+" ریال | "+x.optString("comment"),14));Button b=btn("مرجوع به مدیر");r.addView(b);list.addView(r);gapView(list);b.setOnClickListener(v->api.request("POST","/api/bank/"+x.optLong("id")+"/return",new JSONObject(),new ApiClient.Callback(){public void ok(JSONObject z){toast(z.optString("message"));unmatched(list);}public void fail(String m){toast(m);}}));}}public void fail(String m){toast(m);}});}
-    void transactions(){base("تراکنش‌ها");content.addView(tv("وضعیت ثبت‌های مالی مدرسه",17));gap();LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);api.request("GET","/api/transactions",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");if(a==null||a.length()==0){list.addView(tv("تراکنشی ثبت نشده است.",16));return;}for(int i=0;i<a.length();i++){JSONObject t=a.optJSONObject(i);String kind=t.optString("kind");if(!"هزینه".equals(kind)&&!"شهریه".equals(kind)&&!"شهریه_بدهی".equals(kind))continue;long amount=Math.max(t.optLong("debit"),t.optLong("credit"));String title=("هزینه".equals(kind)?"هزینه":"شهریه")+" | "+fmt(amount)+" ریال";String status=t.optBoolean("reconciled",false)?"تأیید شده توسط مدیر ارشد":"در انتظار تطبیق با بانک";Button b=btn(title+"\n"+status);list.addView(b);gapView(list);b.setOnClickListener(v->transactionEdit(t));}}public void fail(String m){toast(m);}});back();}
-    void transactionEdit(JSONObject t){if(t==null)return;String kind=t.optString("kind");if("هزینه".equals(kind)){expenseDialog(t);return;}amountDialogEdit("شهریه".equals(kind)?"ویرایش پرداخت شهریه":"ویرایش بدهی شهریه",t);}
-    void amountDialogEdit(String title,JSONObject old){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);TextView error=new TextView(this);error.setTextColor(Color.rgb(190,30,30));EditText a=amountField();a.setText(fmt(Math.max(old.optLong("debit"),old.optLong("credit"))));EditText tr=field("شماره پیگیری");tr.setText(old.optString("tracking_code"));EditText comment=field("شرح");comment.setText(old.optString("comment"));l.addView(error);l.addView(a);l.addView(tr);l.addView(comment);AlertDialog dlg=new AlertDialog.Builder(this).setTitle(title).setView(l).setPositiveButton("ذخیره",null).setNegativeButton("انصراف",null).create();dlg.setOnShowListener(x->dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{JSONObject z=new JSONObject();long amount=money(a);if(amount<=0){showFormError(error,"مبلغ معتبر نیست");return;}if(old.optString("kind").equals("شهریه"))z.put("credit",amount);else z.put("debit",amount);z.put("tracking_code",tr.getText().toString().trim());z.put("comment",comment.getText().toString().trim());api.request("PATCH","/api/transactions/"+old.optLong("id"),z,new ApiClient.Callback(){public void ok(JSONObject o){dlg.dismiss();toast("تراکنش ویرایش شد");transactions();}public void fail(String m){showFormError(error,m);}});}catch(Exception e){showFormError(error,"مبلغ معتبر نیست");}}));dlg.show();}
-    void report(){base("گزارش مالی");if(!"admin".equals(me.optString("role"))){api.request("GET","/api/report",null,new ApiClient.Callback(){public void ok(JSONObject o){content.addView(tv("جمع بدهی شهریه: "+fmt(o.optLong("tuition_debt"))+" ریال",19));gap();content.addView(tv("جمع هزینه‌ها به تفکیک",19));JSONArray a=o.optJSONArray("expenses_by_category");for(int i=0;i<(a==null?0:a.length());i++){JSONObject x=a.optJSONObject(i);content.addView(tv(x.optString("name")+": "+fmt(x.optLong("amount"))+" ریال",17));gap();}}public void fail(String m){toast(m);}});}else{Button ex=btn("📥 خروجی Excel برای نرم‌افزار پارسیان");content.addView(ex);gap();ex.setOnClickListener(v->parsianExportDialog());api.request("GET","/api/transactions",null,new ApiClient.Callback(){public void ok(JSONObject o){long d=0,c=0;JSONArray a=o.optJSONArray("data");for(int i=0;i<(a==null?0:a.length());i++){JSONObject x=a.optJSONObject(i);d+=x.optLong("debit");c+=x.optLong("credit");}content.addView(tv("جمع هزینه/بدهکار: "+fmt(d)+" ریال",19));gap();content.addView(tv("جمع درآمد/بستانکار: "+fmt(c)+" ریال",19));gap();content.addView(tv("مانده: "+fmt(c-d)+" ریال",19));}public void fail(String m){toast(m);}});}back();}
-    void parsianExportDialog(){api.request("GET","/api/schools",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");if(a==null||a.length()==0){downloadParsian(0);return;}String[] names=new String[a.length()+1];names[0]="همه مدارس";for(int i=0;i<a.length();i++){JSONObject s=a.optJSONObject(i);names[i+1]=s.optString("name");}new AlertDialog.Builder(MainActivity.this).setTitle("انتخاب مدرسه برای خروجی پارسیان").setItems(names,(d,w)->downloadParsian(w==0?0:a.optJSONObject(w-1).optLong("id"))).show();}public void fail(String m){toast(m);}});}
-    void downloadParsian(long schoolId){try{String url="https://schoolfinanceapp.onrender.com/api/export/parsian"+(schoolId>0?"?school_id="+schoolId:"");DownloadManager dm=(DownloadManager)getSystemService(DOWNLOAD_SERVICE);DownloadManager.Request r=new DownloadManager.Request(Uri.parse(url));r.setTitle("خروجی پارسیان");r.setDescription("فایل Excel حسابداری در حال دریافت است");r.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);r.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS,"parsian-"+System.currentTimeMillis()+".xlsx");r.addRequestHeader("Authorization","Bearer "+api.getToken());dm.enqueue(r);toast("دانلود فایل Excel پارسیان آغاز شد");}catch(Exception e){toast("دانلود فایل پارسیان انجام نشد");}}
+    void report(){
+        base("گزارش مالی");
+        api.request("GET","/api/transactions",null,new ApiClient.Callback(){public void ok(JSONObject o){
+            JSONArray ar=o.optJSONArray("data");long debt=0,paid=0;java.util.LinkedHashMap<String,Long> costs=new java.util.LinkedHashMap<>();
+            for(int i=0;i<(ar==null?0:ar.length());i++){JSONObject x=ar.optJSONObject(i);String k=x.optString("kind");
+                if("شهریه_بدهی".equals(k))debt+=x.optLong("debit");else if("شهریه".equals(k))paid+=x.optLong("credit");
+                else if("هزینه".equals(k)){String key=x.optString("expense_category_name","هزینه‌های متفرقه");Long old=costs.get(key);costs.put(key,(old==null?0:old)+x.optLong("debit"));}
+            }
+            content.addView(tv("جمع بدهی باقی‌مانده شهریه: "+fmt(Math.max(0,debt-paid))+" ریال",19));gap();
+            content.addView(tv("جمع هزینه‌ها به تفکیک:",19));gap();
+            for(java.util.Map.Entry<String,Long> e:costs.entrySet()){content.addView(tv(e.getKey()+" : "+fmt(e.getValue())+" ریال",17));gap();}
+        }public void fail(String m){toast(m);}});
+        back();
+    }
+    void transactionsScreen(){
+        base("تراکنش‌ها");
+        LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);
+        api.request("GET","/api/transactions",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray ar=o.optJSONArray("data");for(int i=0;i<(ar==null?0:ar.length());i++){JSONObject t=ar.optJSONObject(i);String kind=t.optString("kind");if(!"شهریه".equals(kind)&&!"شهریه_بدهی".equals(kind)&&!"هزینه".equals(kind))continue;String status=t.optBoolean("reconciled",false)?"تأیید شده توسط مدیر ارشد":"در انتظار تطبیق با بانک";String title="هزینه".equals(kind)?expenseComment(t):("شهریه_بدهی".equals(kind)?"بدهی شهریه":"پرداخت شهریه");Button b=btn(title+"\n"+fmt(t.optLong("debit")+t.optLong("credit"))+" ریال\n"+status);list.addView(b);gapView(list);b.setOnClickListener(v->{if("هزینه".equals(kind))expenseEdit(t);else {JSONObject st=new JSONObject();try{st.put("name",t.optString("student_name","دانش‌آموز"));}catch(Exception ignored){}studentForEdit(t);}});}}public void fail(String m){toast(m);}});back();
+    }
+    void studentForEdit(JSONObject t){
+        api.request("GET","/api/students/"+t.optLong("student_id"),null,new ApiClient.Callback(){public void ok(JSONObject o){JSONObject st=o.optJSONObject("data");if(st==null){toast("دانش‌آموز پیدا نشد");return;}amountDialog("ویرایش "+("شهریه_بدهی".equals(t.optString("kind"))?"بدهی شهریه":"پرداخت شهریه"),"شهریه_بدهی".equals(t.optString("kind"))?"/api/tuition/debt":"/api/tuition/payment",st,"شهریه".equals(t.optString("kind")),t);}public void fail(String m){toast(m);}});
+    }
+    void exportParsian(){
+        if(!"admin".equals(me.optString("role"))){toast("فقط مدیر ارشد به خروجی پارسیان دسترسی دارد");return;}
+        api.request("GET","/api/schools",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray ar=o.optJSONArray("data");ArrayList<String> names=new ArrayList<>();ArrayList<Long> ids=new ArrayList<>();names.add("همه مدارس");ids.add(0L);for(int i=0;i<(ar==null?0:ar.length());i++){JSONObject x=ar.optJSONObject(i);names.add(x.optString("name"));ids.add(x.optLong("id"));}new AlertDialog.Builder(MainActivity.this).setTitle("خروجی Excel پارسیان").setItems(names,(d,w)->downloadParsian(ids.get(w))).show();}public void fail(String m){toast(m);}});
+    }
+    void downloadParsian(long schoolId){
+        new Thread(()->{try{
+            java.net.URL u=new java.net.URL("https://schoolfinanceapp.onrender.com/api/export/parsian"+(schoolId>0?"?school_id="+schoolId:""));
+            java.net.HttpURLConnection c=(java.net.HttpURLConnection)u.openConnection();c.setRequestProperty("Authorization","Bearer "+api.getToken());c.setConnectTimeout(15000);c.setReadTimeout(60000);
+            int code=c.getResponseCode();if(code<200||code>=300){runOnUiThread(()->toast("ساخت فایل پارسیان انجام نشد"));return;}
+            byte[] data;try(java.io.InputStream in=c.getInputStream();java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream()){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);data=out.toByteArray();}
+            android.content.ContentValues cv=new android.content.ContentValues();cv.put(MediaStore.Downloads.DISPLAY_NAME,"parsian-"+System.currentTimeMillis()+".xlsx");cv.put(MediaStore.Downloads.MIME_TYPE,"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");cv.put(MediaStore.Downloads.RELATIVE_PATH,"Download/SchoolFinance");
+            Uri uri=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,cv);if(uri==null)throw new Exception("save");
+            try(java.io.OutputStream out=getContentResolver().openOutputStream(uri)){out.write(data);}
+            runOnUiThread(()->toast("فایل Excel پارسیان در پوشه Download/SchoolFinance ذخیره شد"));
+        }catch(Exception e){runOnUiThread(()->toast("ذخیره فایل پارسیان انجام نشد"));}}).start();
+    }
+
     void managers(){base("مدیریت مدیران");Button add=btn("➕ افزودن مدیر");content.addView(add);gap();LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);api.request("GET","/api/managers",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");for(int i=0;i<(a==null?0:a.length());i++){JSONObject m=a.optJSONObject(i);Button b=btn("👤 "+m.optString("name")+"\n"+m.optString("username")+" | "+m.optString("role"));list.addView(b);gapView(list);b.setOnClickListener(v->managerEdit(m));}}public void fail(String m){toast(m);}});add.setOnClickListener(v->managerEdit(null));back();}
     void managerEdit(JSONObject old){
         LinearLayout l=new LinearLayout(this);
