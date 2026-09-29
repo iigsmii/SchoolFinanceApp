@@ -26,6 +26,8 @@ import org.json.*;
 import java.text.NumberFormat;
 import java.util.*;
 import java.util.Locale;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
 
 public class MainActivity extends Activity {
     ApiClient api; LinearLayout root, content; JSONObject me; Uri pendingImage, pendingBank, cameraUri;
@@ -33,33 +35,53 @@ public class MainActivity extends Activity {
     final int navy=Color.rgb(35,55,95), teal=Color.rgb(20,130,125), gold=Color.rgb(220,155,45), ink=Color.rgb(45,55,70);
     android.content.SharedPreferences prefs;
     float fontScale=1f;
+    int themeIndex=0;
+    Handler clockHandler=new Handler(Looper.getMainLooper());
+    TextView dashboardClock;
     boolean loginScreen=false;
     final String KEY_ALIAS="SchoolFinanceLoginKey";
 
-    @Override public void onCreate(Bundle b){super.onCreate(b);prefs=getSharedPreferences("school_finance",MODE_PRIVATE);fontScale=prefs.getFloat("font_scale",1f);api=new ApiClient(this);autoLogin();}
+    @Override public void onCreate(Bundle b){super.onCreate(b);prefs=getSharedPreferences("school_finance",MODE_PRIVATE);fontScale=prefs.getFloat("font_scale",1f);themeIndex=prefs.getInt("theme_index",0);api=new ApiClient(this);autoLogin();}
     @Override public void onBackPressed(){if(loginScreen){super.onBackPressed();return;}if(!isHomeScreen()){showHome();}else{super.onBackPressed();}}
     boolean isHomeScreen(){return root!=null && content!=null && "داشبورد".equals(((TextView)root.getChildAt(0)).getText().toString());}
 
     float fs(float n){return n*fontScale;}
-    TextView tv(String s,float size){TextView t=new TextView(this);t.setText(s);t.setTextSize(fs(size));t.setTextColor(ink);t.setPadding(18,15,18,15);t.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);return t;}
+    int accent(){int[] a={Color.rgb(20,130,125),Color.rgb(63,81,181),Color.rgb(156,39,176),Color.rgb(230,126,34),Color.rgb(46,125,50),Color.rgb(0,121,107)};return a[Math.max(0,Math.min(themeIndex,a.length-1))];}
+    Typeface yekanBold(){return Typeface.create("Yekan",Typeface.BOLD);}
+    TextView tv(String s,float size){TextView t=new TextView(this);t.setText(s);t.setTextSize(fs(size));t.setTextColor(ink);t.setTypeface(yekanBold());t.setPadding(18,15,18,15);t.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);return t;}
     GradientDrawable bg(int c,float r){GradientDrawable g=new GradientDrawable();g.setColor(c);g.setCornerRadius(r);return g;}
-    Button btn(String s){Button b=new Button(this);b.setText(s);b.setAllCaps(false);b.setTextSize(fs(16));b.setTextColor(Color.WHITE);b.setTypeface(Typeface.create("sans",Typeface.BOLD));b.setMinHeight((int)fs(58));b.setPadding(14,10,14,10);b.setBackground(bg(teal,24));return b;}
-    Button cardBtn(String s){Button b=btn(s);b.setTextSize(fs(17));b.setMinHeight((int)fs(135));b.setGravity(Gravity.CENTER);b.setBackground(bg(Color.WHITE,30));b.setTextColor(navy);return b;}
+    Button btn(String s){Button b=new Button(this);b.setText(s);b.setAllCaps(false);b.setTextSize(fs(16));b.setTextColor(Color.WHITE);b.setTypeface(yekanBold());b.setMinHeight((int)fs(68));b.setPadding(14,10,14,10);b.setBackground(bg(accent(),24));return b;}
+    Button cardBtn(String s){Button b=btn(s);b.setTextSize(fs(17));b.setMinHeight((int)fs(145));b.setGravity(Gravity.CENTER);b.setBackground(bg(Color.WHITE,30));b.setTextColor(navy);return b;}
     void gap(){Space s=new Space(this);content.addView(s,new LinearLayout.LayoutParams(1,14));}
     void gapView(LinearLayout l){Space s=new Space(this);l.addView(s,new LinearLayout.LayoutParams(1,10));}
     void base(String title){
-        root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(14,14,14,14);root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(14,10,14,14);root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         GradientDrawable shell=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{Color.rgb(238,248,249),Color.rgb(255,249,232),Color.rgb(235,240,250)});root.setBackground(shell);
-        TextView h=tv(title,24);h.setTextColor(navy);h.setTypeface(Typeface.DEFAULT_BOLD);h.setGravity(Gravity.RIGHT);root.addView(h);
-        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(3,5,3,12);
+        TextView h=tv(title,23);h.setTextColor(navy);h.setTypeface(yekanBold());h.setGravity(Gravity.RIGHT);root.addView(h);
+        TextView brand=tv("سیستم حسابداری مجموعه ی مدرسة القرآن الکریم شهرضا",16);brand.setTextColor(accent());brand.setTypeface(Typeface.create("Neyriz",Typeface.BOLD));brand.setGravity(Gravity.RIGHT);root.addView(brand);
+        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(3,3,3,12);
         ScrollView sv=new ScrollView(this);sv.setFillViewport(true);sv.addView(content);root.addView(sv,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);
     }
-    EditText field(String hint){EditText e=new EditText(this);e.setHint(hint);e.setTextSize(fs(16));e.setTextColor(ink);e.setHintTextColor(Color.rgb(125,135,145));e.setPadding(18,14,18,14);e.setBackground(bg(Color.WHITE,22));return e;}
+    EditText field(String hint){EditText e=new EditText(this);e.setHint(hint);e.setTextSize(fs(16));e.setTextColor(ink);e.setHintTextColor(Color.rgb(125,135,145));e.setTypeface(yekanBold());e.setPadding(18,14,18,14);e.setBackground(bg(Color.WHITE,22));return e;}
     EditText amountField(){EditText e=field("مبلغ به ریال");e.setInputType(2);final boolean[] lock={false};e.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int b,int c){}public void afterTextChanged(Editable x){if(lock[0])return;String d=x.toString().replace(",","");if(d.length()==0)return;try{String f=NumberFormat.getNumberInstance(Locale.US).format(Long.parseLong(d));lock[0]=true;x.replace(0,x.length(),f);lock[0]=false;}catch(Exception ignored){}}});return e;}
     EditText edit(String hint){EditText e=field(hint);content.addView(e,new LinearLayout.LayoutParams(-1,-2));gap();return e;}
     EditText amount(){EditText e=amountField();content.addView(e,new LinearLayout.LayoutParams(-1,-2));gap();return e;}
     long money(EditText e){return Long.parseLong(e.getText().toString().replace(",",""));}
     void toast(String s){Toast.makeText(this,s,Toast.LENGTH_LONG).show();}
+    String todayGregorian(){return new SimpleDateFormat("yyyy-MM-dd",Locale.US).format(new Date());}
+    String todayJalali(){int[] j=gregorianToJalali(Calendar.getInstance().get(Calendar.YEAR),Calendar.getInstance().get(Calendar.MONTH)+1,Calendar.getInstance().get(Calendar.DAY_OF_MONTH));return String.format(Locale.US,"%04d/%02d/%02d",j[0],j[1],j[2]);}
+    TextView dateButton(String initial){TextView d=tv(initial==null||initial.isEmpty()?todayJalali():initial,17);d.setBackground(bg(Color.WHITE,22));d.setGravity(Gravity.CENTER);d.setTypeface(yekanBold());d.setOnClickListener(v->jalaliPicker(d));return d;}
+    void jalaliPicker(TextView target){int[] now=gregorianToJalali(Calendar.getInstance().get(Calendar.YEAR),Calendar.getInstance().get(Calendar.MONTH)+1,Calendar.getInstance().get(Calendar.DAY_OF_MONTH));int yy=now[0],mm=now[1],dd=now[2];String[] parts=String.valueOf(target.getText()).split("/");try{yy=Integer.parseInt(parts[0]);mm=Integer.parseInt(parts[1]);dd=Integer.parseInt(parts[2]);}catch(Exception ignored){}
+        LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.HORIZONTAL);l.setGravity(Gravity.CENTER);Spinner ys=new Spinner(this), ms=new Spinner(this), ds=new Spinner(this);
+        ArrayList<String> yl=new ArrayList<>();for(int y=1400;y<=1415;y++)yl.add(String.valueOf(y));ArrayList<String> ml=new ArrayList<>();for(int m=1;m<=12;m++)ml.add(String.valueOf(m));ArrayList<String> dl=new ArrayList<>();for(int d=1;d<=31;d++)dl.add(String.valueOf(d));
+        ys.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,yl));ms.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,ml));ds.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,dl));ys.setSelection(Math.max(0,yy-1400));ms.setSelection(mm-1);ds.setSelection(dd-1);l.addView(ds,new LinearLayout.LayoutParams(0,70,1));l.addView(ms,new LinearLayout.LayoutParams(0,70,1));l.addView(ys,new LinearLayout.LayoutParams(0,70,1));
+        new AlertDialog.Builder(this).setTitle("انتخاب تاریخ شمسی").setView(l).setPositiveButton("تأیید",(di,w)->target.setText(String.format(Locale.US,"%04d/%02d/%02d",Integer.parseInt(ys.getSelectedItem().toString()),Integer.parseInt(ms.getSelectedItem().toString()),Integer.parseInt(ds.getSelectedItem().toString())))).setNegativeButton("انصراف",null).show();}
+    String jalaliToGregorianString(String s){try{String[] p=s.split("/");int[] g=jalaliToGregorian(Integer.parseInt(p[0]),Integer.parseInt(p[1]),Integer.parseInt(p[2]));return String.format(Locale.US,"%04d-%02d-%02d",g[0],g[1],g[2]);}catch(Exception e){return todayGregorian();}}
+    int[] jalaliToGregorian(int jy,int jm,int jd){int gy=jy+621;int[] gdm={0,31,28,31,30,31,30,31,31,30,31,30,31};int[] jdm={0,31,31,31,31,31,31,30,30,30,30,30,29};int days=365*(jy-979)+((jy-979)/33)*8+(((jy-979)%33)+3)/4;for(int i=1;i<jm;i++)days+=jdm[i];days+=jd-1;int gday=days+79;gy=1600+400*(gday/146097);gday%=146097;boolean leap=true;if(gday>=36525){gday--;gy+=100*(gday/36524);gday%=36524;if(gday>=365)gday++;}gy+=4*(gday/1461);gday%=1461;if(gday>=366){leap=false;gday--;gy+=gday/365;gday%=365;}int gm=1;while(gday>gdm[gm]+((gm==2&&leap)?1:0)){gday-=gdm[gm]+((gm==2&&leap)?1:0);gm++;}return new int[]{gy,gm,gday+1};}
+    int[] gregorianToJalali(int gy,int gm,int gd){int[] gdm={0,31,28,31,30,31,30,31,31,30,31,30,31};int[] jdm={0,31,31,31,31,31,31,30,30,30,30,30,29};int gy2=gy-1600,gm2=gm-1,gd2=gd-1;int gday=365*gy2+(gy2+3)/4-(gy2+99)/100+(gy2+399)/400;for(int i=0;i<gm2;i++)gday+=gdm[i+1];if(gm>2&&((gy%4==0&&gy%100!=0)||gy%400==0))gday++;gday+=gd2;int jday=gday-79;int jy=979+33*(jday/12053);jday%=12053;jy+=4*(jday/1461);jday%=1461;if(jday>=366){jy+=(jday-1)/365;jday=(jday-1)%365;}int jm,jd;if(jday<186){jm=1+jday/31;jd=1+jday%31;}else{jm=7+(jday-186)/30;jd=1+(jday-186)%30;}return new int[]{jy,jm,jd};}
+    void addDateField(LinearLayout l,String label,String initial){l.addView(tv(label+" *",14));l.addView(dateButton(initial));gapView(l);}
+    void startClock(){if(dashboardClock==null)return;clockHandler.removeCallbacksAndMessages(null);Runnable r=new Runnable(){public void run(){if(dashboardClock!=null){dashboardClock.setText("تاریخ امروز: "+todayJalali()+"\nساعت: "+new SimpleDateFormat("HH:mm:ss",Locale.US).format(new Date()));clockHandler.postDelayed(this,1000);}}};clockHandler.post(r);}
+
     void autoLogin(){
         String u=decrypt(prefs.getString("login_user","")), p=decrypt(prefs.getString("login_pass",""));
         if(u.length()==0||p.length()==0){showLogin();return;}
@@ -84,7 +106,7 @@ public class MainActivity extends Activity {
         loginScreen=false;
         base("داشبورد");
         LinearLayout welcome=new LinearLayout(this);welcome.setOrientation(LinearLayout.VERTICAL);welcome.setPadding(8,8,8,8);welcome.setBackground(bg(Color.WHITE,28));
-        welcome.addView(tv("خوش آمدید، "+me.optString("name","مدیر"),20));welcome.addView(tv("مدرسه: "+me.optString("school_name","همه مدارس"),15));content.addView(welcome);gap();
+        welcome.addView(tv("خوش آمدید، "+me.optString("name","مدیر"),20));welcome.addView(tv("مدرسه: "+me.optString("school_name","همه مدارس"),15));dashboardClock=tv("",18);dashboardClock.setTextColor(accent());welcome.addView(dashboardClock);content.addView(welcome);startClock();gap();
         String[][] ms={{"👨‍🎓\nدانش‌آموزان","students"},{"💳\nشهریه و درآمد","tuition"},{"🧾\nهزینه‌ها","expenses"},{"🔄\nتراکنش‌ها","transactions"},{"📊\nگزارش مالی","report"},{"⚙️\nتنظیمات","settings"}};
         if("admin".equals(me.optString("role")))ms=new String[][]{{"👨‍🎓\nدانش‌آموزان","students"},{"💳\nشهریه و درآمد","tuition"},{"🧾\nهزینه‌ها","expenses"},{"🏦\nتطبیق بانک","bank"},{"👤\nمدیران","managers"},{"🏫\nمدارس","schools"},{"📊\nگزارش مالی","report"},{"📥\nخروجی پارسیان","export"},{"⚙️\nتنظیمات","settings"}};
         GridLayout grid=new GridLayout(this);grid.setColumnCount(2);grid.setUseDefaultMargins(false);content.addView(grid);
@@ -99,111 +121,24 @@ public class MainActivity extends Activity {
         Runnable load=()->api.request("GET","/api/students?q="+Uri.encode(q.getText().toString()),null,new ApiClient.Callback(){public void ok(JSONObject o){list.removeAllViews();JSONArray a=o.optJSONArray("data");if(a==null||a.length()==0){list.addView(tv("دانش‌آموزی یافت نشد.",16));return;}for(int i=0;i<a.length();i++){JSONObject s=a.optJSONObject(i);Button r=btn("👤 "+s.optString("name")+"\n"+s.optString("grade")+"  |  "+s.optString("national_id")+"\n"+s.optString("phone"));list.addView(r);gapView(list);r.setOnClickListener(v->studentEdit(s));}}public void fail(String m){toast(m);}});search.setOnClickListener(v->load.run());add.setOnClickListener(v->studentEdit(null));imp.setOnClickListener(v->pickStudentExcel());load.run();back();
     }
     void studentEdit(JSONObject old){
-        LinearLayout l=new LinearLayout(this);
-        l.setOrientation(LinearLayout.VERTICAL);
-        l.setPadding(10,4,10,4);
-
-        TextView error=new TextView(this);
-        error.setTextColor(Color.rgb(190,30,30));
-        error.setTextSize(fs(15));
-        error.setVisibility(View.GONE);
-        l.addView(error);
-
-        EditText n=field("نام و نام خانوادگی *");
-        Spinner g=new Spinner(this);
-        g.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,grades));
-        EditText phone=field("شماره تلفن، مثال 09131112222 *");
-        phone.setInputType(2);
-        phone.setKeyListener(DigitsKeyListener.getInstance("0123456789"));
-        phone.setFilters(new InputFilter[]{new InputFilter.LengthFilter(11)});
-        EditText national=field("کد ملی، دقیقاً ۱۰ رقم انگلیسی *");
-        national.setInputType(2);
-        national.setKeyListener(DigitsKeyListener.getInstance("0123456789"));
-        national.setFilters(new InputFilter[]{new InputFilter.LengthFilter(10)});
-
-        Spinner school=new Spinner(this);
-        ArrayList<String> schoolNames=new ArrayList<>();
-        ArrayList<Long> schoolIds=new ArrayList<>();
-
-        l.addView(n);
-        l.addView(tv("پایه تحصیلی *",14));
-        l.addView(g);
-        l.addView(phone);
-        l.addView(national);
-
-        if(old!=null){
-            n.setText(old.optString("name"));
-            phone.setText(old.optString("phone"));
-            national.setText(old.optString("national_id"));
-            for(int i=0;i<grades.length;i++)if(grades[i].equals(old.optString("grade")))g.setSelection(i);
-        }
-
-        if("admin".equals(me.optString("role"))){
-            l.addView(tv("مدرسه دانش‌آموز *",14));
-            l.addView(school);
-        }
-
-        AlertDialog dlg=new AlertDialog.Builder(this)
-            .setTitle(old==null?"افزودن دانش‌آموز":"ویرایش دانش‌آموز")
-            .setView(l)
-            .setPositiveButton("ذخیره",null)
-            .setNegativeButton("انصراف",null)
-            .create();
-
-        dlg.setOnShowListener(x->{
-            Button save=dlg.getButton(AlertDialog.BUTTON_POSITIVE);
-            if("admin".equals(me.optString("role"))){
-                save.setEnabled(false);
-                api.request("GET","/api/schools",null,new ApiClient.Callback(){
-                    public void ok(JSONObject o){
-                        JSONArray a=o.optJSONArray("data");
-                        if(a!=null){
-                            for(int i=0;i<a.length() && i<9;i++){
-                                JSONObject s=a.optJSONObject(i);
-                                if(s==null)continue;
-                                schoolNames.add(canonicalSchoolName(i));
-                                schoolIds.add(s.optLong("id"));
-                            }
-                        }
-                        school.setAdapter(new ArrayAdapter<String>(MainActivity.this,android.R.layout.simple_spinner_dropdown_item,schoolNames));
-                        if(old!=null){
-                            long sid=old.optLong("school_id");
-                            for(int i=0;i<schoolIds.size();i++)if(schoolIds.get(i)==sid)school.setSelection(i);
-                        }
-                        save.setEnabled(!schoolIds.isEmpty());
-                    }
-                    public void fail(String m){showFormError(error,m);}
-                });
-            }
-
-            save.setOnClickListener(v->{
-                String name=n.getText().toString().trim();
-                String p=phone.getText().toString().trim();
-                String nid=national.getText().toString().trim();
-                if(name.isEmpty()){showFormError(error,"نام دانش‌آموز را وارد کنید.");return;}
-                if(!p.matches("0\\d{10}")){showFormError(error,"شماره تلفن باید دقیقاً مانند 09131112222 باشد.");return;}
-                if(!nid.matches("\\d{10}")){showFormError(error,"کد ملی باید دقیقاً ۱۰ رقم انگلیسی باشد.");return;}
-                if("admin".equals(me.optString("role")) && schoolIds.isEmpty()){showFormError(error,"مدرسه برای انتخاب وجود ندارد.");return;}
-
-                try{
-                    JSONObject z=new JSONObject();
-                    z.put("name",name);
-                    z.put("grade",grades[g.getSelectedItemPosition()]);
-                    z.put("phone",p);
-                    z.put("national_id",nid);
-                    if("admin".equals(me.optString("role")))z.put("school_id",schoolIds.get(school.getSelectedItemPosition()));
-                    String path=old==null?"/api/students":"/api/students/"+old.optLong("id");
-                    api.request(old==null?"POST":"PATCH",path,z,new ApiClient.Callback(){
-                        public void ok(JSONObject o){
-                            dlg.dismiss();
-                            students();
-                        }
-                        public void fail(String m){showFormError(error,m);}
-                    });
-                }catch(Exception e){showFormError(error,"اطلاعات دانش‌آموز کامل نیست.");}
-            });
-        });
-        dlg.show();
+        LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(10,4,10,4);
+        TextView error=new TextView(this);error.setTextColor(Color.rgb(190,30,30));error.setTextSize(fs(15));error.setVisibility(View.GONE);l.addView(error);
+        EditText n=field("نام و نام خانوادگی *");Spinner g=new Spinner(this);g.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,grades));
+        EditText phone=field("شماره تلفن، مثال 09131112222 *");phone.setInputType(2);phone.setKeyListener(DigitsKeyListener.getInstance("0123456789"));phone.setFilters(new InputFilter[]{new InputFilter.LengthFilter(11)});
+        EditText national=field("کد ملی، دقیقاً ۱۰ رقم انگلیسی *");national.setInputType(2);national.setKeyListener(DigitsKeyListener.getInstance("0123456789"));national.setFilters(new InputFilter[]{new InputFilter.LengthFilter(10)});
+        final String[] parsianCode={old==null?"":old.optString("parsian_account_code","")};TextView codeInfo=tv("کد پارسیان دانش‌آموز هنوز انتخاب نشده است.",14);codeInfo.setBackground(bg(Color.WHITE,20));
+        Button chooseCode=btn("🔢 انتخاب حساب پارسیان");Button newCode=btn("➕ ساخت حساب تفصیلی جدید بر اساس سرفصل پارسیان");
+        LinearLayout schoolBox=new LinearLayout(this);schoolBox.setOrientation(LinearLayout.VERTICAL);Spinner school=new Spinner(this);TextView schoolAccount=tv("",14);schoolAccount.setBackground(bg(Color.WHITE,20));
+        ArrayList<String> schoolNames=new ArrayList<>();ArrayList<Long> schoolIds=new ArrayList<>();
+        l.addView(n);l.addView(tv("پایه تحصیلی *",14));l.addView(g);l.addView(phone);l.addView(national);l.addView(tv("حساب تفصیلی پارسیان *",14));l.addView(codeInfo);l.addView(chooseCode);gapView(l);l.addView(newCode);gapView(l);
+        if(old!=null){n.setText(old.optString("name"));phone.setText(old.optString("phone"));national.setText(old.optString("national_id"));for(int i=0;i<grades.length;i++)if(grades[i].equals(old.optString("grade")))g.setSelection(i);}
+        Runnable updateCodeInfo=()->{String c=parsianCode[0];if(c.matches("\\d+-\\d+-\\d+")){String[] p=c.split("-");codeInfo.setText("کد کامل: "+c+"\nکد کلی: "+p[2]+"   |   کد معین: "+p[1]+"   |   کد تفصیلی: "+p[0]);}else codeInfo.setText("کد پارسیان دانش‌آموز هنوز انتخاب نشده است.");};updateCodeInfo.run();
+        if("admin".equals(me.optString("role"))){l.addView(tv("مدرسه دانش‌آموز *",14));l.addView(school);l.addView(schoolAccount);}else{l.addView(schoolAccount);}
+        Runnable loadSchoolMap=()->api.request("GET","/api/parsian/school-map",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");String wanted=me.optString("school_name","");if("admin".equals(me.optString("role"))&&!schoolIds.isEmpty())wanted=schoolNames.get(school.getSelectedItemPosition());for(int i=0;i<(a==null?0:a.length());i++){JSONObject x=a.optJSONObject(i);if(wanted.equals(x.optString("school_name"))){JSONObject t=x.optJSONObject("tuition");schoolAccount.setText(t==null?"سرفصل شهریه پارسیان برای این مدرسه تعریف نشده است":"سرفصل درآمد شهریه مدرسه در پارسیان: "+t.optString("code")+"\n"+t.optString("name"));break;}}}public void fail(String m){}});
+        AlertDialog dlg=new AlertDialog.Builder(this).setTitle(old==null?"افزودن دانش‌آموز":"ویرایش دانش‌آموز").setView(l).setPositiveButton("ذخیره",null).setNegativeButton("انصراف",null).create();
+        chooseCode.setOnClickListener(v->{LinearLayout ql=new LinearLayout(this);ql.setOrientation(LinearLayout.VERTICAL);EditText q=field("جست‌وجو با کد یا نام حساب");ql.addView(q);LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);ScrollView sv=new ScrollView(this);sv.addView(list);ql.addView(sv,new LinearLayout.LayoutParams(-1,0,1));AlertDialog ad=new AlertDialog.Builder(this).setTitle("حساب‌های تفصیلی پارسیان").setView(ql).setNegativeButton("بستن",null).create();Runnable load=()->api.request("GET","/api/parsian/student-accounts?q="+Uri.encode(q.getText().toString().trim()),null,new ApiClient.Callback(){public void ok(JSONObject o){list.removeAllViews();JSONArray a=o.optJSONArray("data");int n=Math.min(100,a==null?0:a.length());for(int i=0;i<n;i++){JSONObject x=a.optJSONObject(i);Button b=btn(x.optString("code")+"\n"+x.optString("name"));b.setMinHeight((int)fs(72));list.addView(b);gapView(list);b.setOnClickListener(vv->{parsianCode[0]=x.optString("code");updateCodeInfo.run();ad.dismiss();});}if(n==0)list.addView(tv("حسابی پیدا نشد.",15));}public void fail(String m){toast(m);}});q.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int b,int c){load.run();}public void afterTextChanged(Editable e){}});ad.show();load.run();});
+        newCode.setOnClickListener(v->{Spinner sp=new Spinner(this);String[] opts={"1 - گروه معین 1","2 - گروه معین 2","3 - گروه معین 3","4 - گروه معین 4"};sp.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,opts));new AlertDialog.Builder(this).setTitle("گروه معین پارسیان").setMessage("کد کلی دانش‌آموزان در فایل پارسیان 67 است. کد معین را مطابق ساختار حساب‌های موجود انتخاب کنید.").setView(sp).setPositiveButton("ساخت",(d,w)->{JSONObject z=new JSONObject();try{z.put("name",n.getText().toString().trim());z.put("grade",grades[g.getSelectedItemPosition()]);z.put("moeen",String.valueOf(sp.getSelectedItemPosition()+1));}catch(Exception ignored){}api.request("POST","/api/parsian/student-account/allocate",z,new ApiClient.Callback(){public void ok(JSONObject o){JSONObject x=o.optJSONObject("data");if(x!=null){parsianCode[0]=x.optString("code");updateCodeInfo.run();toast("حساب پارسیان ایجاد شد: "+parsianCode[0]);}}public void fail(String m){toast(m);}});}).setNegativeButton("انصراف",null).show();});
+        dlg.setOnShowListener(x->{Button save=dlg.getButton(AlertDialog.BUTTON_POSITIVE);if("admin".equals(me.optString("role"))){save.setEnabled(false);api.request("GET","/api/schools",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");if(a!=null){for(int i=0;i<a.length()&&i<9;i++){JSONObject ss=a.optJSONObject(i);if(ss==null)continue;schoolNames.add(canonicalSchoolName(i));schoolIds.add(ss.optLong("id"));}}school.setAdapter(new ArrayAdapter<String>(MainActivity.this,android.R.layout.simple_spinner_dropdown_item,schoolNames));if(old!=null){long sid=old.optLong("school_id");for(int i=0;i<schoolIds.size();i++)if(schoolIds.get(i)==sid)school.setSelection(i);}save.setEnabled(!schoolIds.isEmpty());loadSchoolMap.run();}public void fail(String m){showFormError(error,m);}});}else loadSchoolMap.run();save.setOnClickListener(v->{String name=n.getText().toString().trim(),p=phone.getText().toString().trim(),nid=national.getText().toString().trim();if(name.isEmpty()){showFormError(error,"نام دانش‌آموز را وارد کنید.");return;}if(!p.matches("0\\d{10}")){showFormError(error,"شماره تلفن باید دقیقاً مانند 09131112222 باشد.");return;}if(!nid.matches("\\d{10}")){showFormError(error,"کد ملی باید دقیقاً ۱۰ رقم انگلیسی باشد.");return;}if(!parsianCode[0].matches("\\d+-\\d+-67")){showFormError(error,"حساب پارسیان دانش‌آموز الزامی است.");return;}if("admin".equals(me.optString("role"))&&schoolIds.isEmpty()){showFormError(error,"مدرسه برای انتخاب وجود ندارد.");return;}try{JSONObject z=new JSONObject();z.put("name",name);z.put("grade",grades[g.getSelectedItemPosition()]);z.put("phone",p);z.put("national_id",nid);z.put("parsian_account_code",parsianCode[0]);if("admin".equals(me.optString("role")))z.put("school_id",schoolIds.get(school.getSelectedItemPosition()));String path=old==null?"/api/students":"/api/students/"+old.optLong("id");api.request(old==null?"POST":"PATCH",path,z,new ApiClient.Callback(){public void ok(JSONObject o){dlg.dismiss();students();}public void fail(String m){showFormError(error,m);}});}catch(Exception e){showFormError(error,"اطلاعات دانش‌آموز کامل نیست.");}});});dlg.show();
     }
 
     void showFormError(TextView error,String message){
@@ -214,49 +149,32 @@ public class MainActivity extends Activity {
     void pickStudentExcel(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,89);}
     void tuition(){
         base("شهریه و درآمد");
-        EditText search=edit("نام، کد یا کد ملی (اختیاری)");
-        Button find=btn("🔎 نمایش و انتخاب دانش‌آموز");content.addView(find);gap();
+        EditText search=edit("جست‌وجوی نام، کد یا کد ملی");
+        Button find=btn("🔎 جست‌وجوی دانش‌آموز");content.addView(find);gap();
         TextView selected=tv("دانش‌آموزی انتخاب نشده",17);selected.setBackground(bg(Color.WHITE,22));content.addView(selected);gap();
-        Button debt=btn("➕ ثبت بدهی شهریه");Button pay=btn("💳 ثبت پرداخت شهریه");
-        content.addView(debt);gap();content.addView(pay);gap();
-        LinearLayout photoRow=new LinearLayout(this);photoRow.setOrientation(LinearLayout.HORIZONTAL);
-        Button camera=btn("📷 دوربین");Button gallery=btn("🖼 گالری");
-        photoRow.addView(camera,new LinearLayout.LayoutParams(0,58,1));photoRow.addView(gallery,new LinearLayout.LayoutParams(0,58,1));
-        content.addView(photoRow);gap();
-        camera.setOnClickListener(v->takePhoto());gallery.setOnClickListener(v->pickImage());
+        LinearLayout history=new LinearLayout(this);history.setOrientation(LinearLayout.VERTICAL);content.addView(history);
+        Button debt=btn("➕ ثبت بدهی شهریه");Button pay=btn("💳 ثبت پرداخت شهریه");content.addView(debt);gap();content.addView(pay);gap();
+        LinearLayout photoRow=new LinearLayout(this);photoRow.setOrientation(LinearLayout.HORIZONTAL);Button camera=btn("📷\nدوربین");Button gallery=btn("🖼\nگالری");photoRow.addView(camera,new LinearLayout.LayoutParams(0,90,1));photoRow.addView(gallery,new LinearLayout.LayoutParams(0,90,1));content.addView(photoRow);gap();camera.setOnClickListener(v->takePhoto());gallery.setOnClickListener(v->pickImage());
         final JSONObject[] student={null};
-        Runnable choose=()->api.request("GET","/api/students?q="+Uri.encode(search.getText().toString()),null,new ApiClient.Callback(){
-            public void ok(JSONObject o){JSONArray ar=o.optJSONArray("data");if(ar==null||ar.length()==0){toast("دانش‌آموزی پیدا نشد");return;}
-                String[] names=new String[ar.length()];for(int i=0;i<ar.length();i++){JSONObject x=ar.optJSONObject(i);names[i]=x.optString("name")+" | "+x.optString("grade")+" | "+x.optString("national_id");}
-                new AlertDialog.Builder(MainActivity.this).setTitle("انتخاب دانش‌آموز").setItems(names,(d,which)->{student[0]=ar.optJSONObject(which);selected.setText("انتخاب: "+student[0].optString("name")+" | "+student[0].optString("grade")+"\nکد ملی: "+student[0].optString("national_id"));loadBalance(student[0],selected);}).show();
-            }public void fail(String m){toast(m);}});
+        Runnable choose=()->{String term=search.getText().toString().trim();if(term.isEmpty()){toast("نام یا کد ملی دانش‌آموز را وارد کنید.");search.requestFocus();return;}api.request("GET","/api/students?q="+Uri.encode(term),null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray ar=o.optJSONArray("data");if(ar==null||ar.length()==0){toast("دانش‌آموزی با این مشخصات پیدا نشد");return;}String[] names=new String[ar.length()];for(int i=0;i<ar.length();i++){JSONObject x=ar.optJSONObject(i);names[i]=x.optString("name")+" | "+x.optString("grade")+" | "+x.optString("national_id");}new AlertDialog.Builder(MainActivity.this).setTitle("نتیجه جست‌وجو").setItems(names,(d,w)->{student[0]=ar.optJSONObject(w);selected.setText("انتخاب: "+student[0].optString("name")+" | "+student[0].optString("grade")+"\nکد ملی: "+student[0].optString("national_id"));loadBalance(student[0],selected);loadTuitionHistory(student[0],history);}).show();}public void fail(String m){toast(m);}});};
         find.setOnClickListener(v->choose.run());
-        debt.setOnClickListener(v->{if(student[0]==null){toast("ابتدا دانش‌آموز را انتخاب کنید");return;}amountDialog("ثبت بدهی شهریه","/api/tuition/debt",student[0],false,null);});
-        pay.setOnClickListener(v->{if(student[0]==null){toast("ابتدا دانش‌آموز را انتخاب کنید");return;}amountDialog("ثبت پرداخت شهریه","/api/tuition/payment",student[0],true,null);});
-        choose.run();back();
+        debt.setOnClickListener(v->{if(student[0]==null){toast("ابتدا دانش‌آموز را جست‌وجو و انتخاب کنید");return;}amountDialog("ثبت بدهی شهریه","/api/tuition/debt",student[0],false,null);});
+        pay.setOnClickListener(v->{if(student[0]==null){toast("ابتدا دانش‌آموز را جست‌وجو و انتخاب کنید");return;}amountDialog("ثبت پرداخت شهریه","/api/tuition/payment",student[0],true,null);});
+        back();
     }
+    void loadTuitionHistory(JSONObject student,LinearLayout history){history.removeAllViews();api.request("GET","/api/transactions?student_id="+student.optLong("id"),null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");history.addView(tv("سوابق شهریه",18));if(a==null||a.length()==0){history.addView(tv("هنوز تراکنشی ثبت نشده است.",15));return;}for(int i=0;i<a.length();i++){JSONObject t=a.optJSONObject(i);String k=t.optString("kind");if(!"شهریه".equals(k)&&!"شهریه_بدهی".equals(k))continue;String title="شهریه_بدهی".equals(k)?"بدهی":"پرداخت";LinearLayout row=new LinearLayout(MainActivity.this);row.setOrientation(LinearLayout.VERTICAL);row.setPadding(8,8,8,8);row.setBackground(bg(Color.WHITE,20));row.addView(tv(title+" | "+fmt(t.optLong("debit")+t.optLong("credit"))+" ریال | "+jalaliFromGregorian(t.optString("date")),16));LinearLayout actions=new LinearLayout(MainActivity.this);Button edit=btn("✏ ویرایش"),del=btn("🗑 حذف");actions.addView(edit,new LinearLayout.LayoutParams(0,62,1));actions.addView(del,new LinearLayout.LayoutParams(0,62,1));row.addView(actions);history.addView(row);gapView(history);edit.setOnClickListener(v->studentForEdit(t));del.setOnClickListener(v->deleteTransaction(t,history,student));}}public void fail(String m){toast(m);}});}
+    String jalaliFromGregorian(String iso){try{String[] p=iso.substring(0,10).split("-");int[] j=gregorianToJalali(Integer.parseInt(p[0]),Integer.parseInt(p[1]),Integer.parseInt(p[2]));return String.format(Locale.US,"%04d/%02d/%02d",j[0],j[1],j[2]);}catch(Exception e){return iso==null?"":iso;}}
+    void deleteTransaction(JSONObject t,LinearLayout history,JSONObject student){new AlertDialog.Builder(this).setTitle("حذف تراکنش").setMessage("این تراکنش حذف شود؟").setPositiveButton("حذف",(d,w)->api.request("DELETE","/api/transactions/"+t.optLong("id"),null,new ApiClient.Callback(){public void ok(JSONObject o){toast("تراکنش حذف شد");loadTuitionHistory(student,history);}public void fail(String m){toast(m);}})).setNegativeButton("انصراف",null).show();}
+    
     void loadBalance(JSONObject s,TextView t){api.request("GET","/api/students/"+s.optLong("id")+"/balance",null,new ApiClient.Callback(){public void ok(JSONObject o){t.setText("انتخاب: "+s.optString("name")+"\nبدهی باقی‌مانده: "+fmt(o.optLong("balance"))+" ریال");}public void fail(String m){}});}
     void amountDialog(String title,String path,JSONObject student,boolean payment,JSONObject old){
-        LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);
-        TextView error=new TextView(this);error.setTextColor(Color.rgb(190,30,30));error.setVisibility(View.GONE);
-        EditText a=amountField();EditText tr=field("شماره پیگیری (اختیاری)");
+        LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);TextView error=new TextView(this);error.setTextColor(Color.rgb(190,30,30));error.setVisibility(View.GONE);
+        EditText a=amountField();EditText tr=field("شماره پیگیری (اختیاری)");TextView date=dateButton(old==null?todayJalali():jalaliFromGregorian(old.optString("date")));
+        l.addView(error);l.addView(tv("تاریخ ثبت *",14));l.addView(date);gapView(l);l.addView(a);l.addView(tr);
         if(old!=null){a.setText(fmt(payment?old.optLong("credit"):old.optLong("debit")));tr.setText(old.optString("tracking_code",""));}
-        l.addView(error);l.addView(a);l.addView(tr);
         AlertDialog dlg=new AlertDialog.Builder(this).setTitle(title).setView(l).setPositiveButton(old==null?"ثبت":"ذخیره",null).setNegativeButton("انصراف",null).create();
-        dlg.setOnShowListener(x->dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
-            try{
-                long amount=money(a);if(amount<=0){showFormError(error,"مبلغ را وارد کنید.");return;}
-                JSONObject z=new JSONObject();z.put("amount",amount);z.put("student_id",student.optLong("id"));
-                if(student.has("school_id"))z.put("school_id",student.optLong("school_id"));
-                if(payment)z.put("tracking_code",tr.getText().toString().trim());
-                String method=old==null?"POST":"PATCH", endpoint=old==null?path:"/api/transactions/"+old.optLong("id");
-                api.request(method,endpoint,z,new ApiClient.Callback(){
-                    public void ok(JSONObject o){if(old==null&&o.optJSONObject("data")!=null){long id=o.optJSONObject("data").optLong("id");if(pendingImage!=null){uploadAttachment("tuition",id,pendingImage);pendingImage=null;}}dlg.dismiss();toast(old==null?"ثبت شد":"ویرایش شد");tuition();}
-                    public void fail(String m){showFormError(error,m);}
-                });
-            }catch(Exception e){showFormError(error,"مبلغ معتبر نیست.");}
-        }));dlg.show();
-    }
+        dlg.setOnShowListener(x->dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{long amount=money(a);if(amount<=0){showFormError(error,"مبلغ را وارد کنید.");return;}String ds=date.getText().toString().trim();if(!ds.matches("\\d{4}/\\d{2}/\\d{2}")){showFormError(error,"تاریخ الزامی است.");return;}JSONObject z=new JSONObject();z.put("amount",amount);z.put("student_id",student.optLong("id"));z.put("date",jalaliToGregorianString(ds));if(student.has("school_id"))z.put("school_id",student.optLong("school_id"));if(payment)z.put("tracking_code",tr.getText().toString().trim());String method=old==null?"POST":"PATCH",endpoint=old==null?path:"/api/transactions/"+old.optLong("id");api.request(method,endpoint,z,new ApiClient.Callback(){public void ok(JSONObject o){if(old==null&&o.optJSONObject("data")!=null){long id=o.optJSONObject("data").optLong("id");if(pendingImage!=null){uploadAttachment("tuition",id,pendingImage);pendingImage=null;}}dlg.dismiss();toast(old==null?"ثبت شد":"ویرایش شد");tuition();}public void fail(String m){showFormError(error,m);}});}catch(Exception e){showFormError(error,"مبلغ یا تاریخ معتبر نیست.");}}));dlg.show();}
+    
     void expenses(){
         base("هزینه‌ها");Button add=btn("➕ ثبت هزینه");content.addView(add);gap();
         Button cats=btn("⚙ مدیریت لیست هزینه‌ها");if("admin".equals(me.optString("role")))content.addView(cats);gap();
@@ -270,26 +188,8 @@ public class MainActivity extends Activity {
     String expenseComment(JSONObject t){String c=t.optString("comment","");return c.replaceFirst("^\\[expense_category_id=\\d+\\]\\s*","");}
     void expenseDialog(){expenseEdit(null);}
     void expenseEdit(JSONObject old){
-        api.request("GET","/api/expense-categories",null,new ApiClient.Callback(){public void ok(JSONObject o){
-            JSONArray ar=o.optJSONArray("data");ArrayList<JSONObject> cats=new ArrayList<>();ArrayList<String> names=new ArrayList<>();
-            for(int i=0;i<(ar==null?0:ar.length());i++){JSONObject x=ar.optJSONObject(i);if(x.optBoolean("active",true)||old!=null){cats.add(x);names.add(x.optString("name"));}}
-            LinearLayout l=new LinearLayout(MainActivity.this);l.setOrientation(LinearLayout.VERTICAL);
-            TextView error=new TextView(MainActivity.this);error.setTextColor(Color.rgb(190,30,30));error.setVisibility(View.GONE);l.addView(error);
-            Spinner sp=new Spinner(MainActivity.this);sp.setAdapter(new ArrayAdapter<String>(MainActivity.this,android.R.layout.simple_spinner_dropdown_item,names));
-            EditText amount=amountField();EditText comment=field("شرح (اختیاری)");
-            if(old!=null){amount.setText(fmt(old.optLong("debit")));comment.setText(expenseComment(old));String marker=old.optString("comment","");int id=0;java.util.regex.Matcher mm=java.util.regex.Pattern.compile("expense_category_id=(\\d+)").matcher(marker);if(mm.find())id=Integer.parseInt(mm.group(1));for(int i=0;i<cats.size();i++)if(cats.get(i).optInt("id")==id)sp.setSelection(i);}
-            l.addView(sp);l.addView(amount);l.addView(comment);
-            LinearLayout photo=new LinearLayout(MainActivity.this);Button camera=btn("📷 دوربین");Button gallery=btn("🖼 گالری");photo.addView(camera,new LinearLayout.LayoutParams(0,58,1));photo.addView(gallery,new LinearLayout.LayoutParams(0,58,1));l.addView(photo);
-            camera.setOnClickListener(v->takePhoto());gallery.setOnClickListener(v->pickImage());
-            AlertDialog dlg=new AlertDialog.Builder(MainActivity.this).setTitle(old==null?"ثبت هزینه":"ویرایش هزینه").setView(l).setPositiveButton(old==null?"ثبت":"ذخیره",null).setNegativeButton("انصراف",null).create();
-            dlg.setOnShowListener(x->dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{
-                long val=money(amount);if(val<=0){showFormError(error,"مبلغ را وارد کنید.");return;}if(cats.isEmpty()){showFormError(error,"نوع هزینه انتخاب نشده است.");return;}
-                JSONObject z=new JSONObject();z.put("category_id",cats.get(sp.getSelectedItemPosition()).optLong("id"));z.put("amount",val);z.put("comment",comment.getText().toString());
-                String method=old==null?"POST":"PATCH",endpoint=old==null?"/api/expenses":"/api/transactions/"+old.optLong("id");
-                api.request(method,endpoint,z,new ApiClient.Callback(){public void ok(JSONObject r){if(old==null&&r.optJSONObject("data")!=null){long id=r.optJSONObject("data").optLong("id");if(pendingImage!=null){uploadAttachment("expense",id,pendingImage);pendingImage=null;}}dlg.dismiss();toast(old==null?"هزینه ثبت شد":"هزینه ویرایش شد");expenses();}public void fail(String m){showFormError(error,m);}});
-            }catch(Exception e){showFormError(error,"مبلغ را وارد کنید.");}}));dlg.show();
-        }public void fail(String m){toast(m);}});
-    }
+        api.request("GET","/api/expense-categories",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray ar=o.optJSONArray("data");ArrayList<JSONObject> cats=new ArrayList<>();ArrayList<String> names=new ArrayList<>();for(int i=0;i<(ar==null?0:ar.length());i++){JSONObject x=ar.optJSONObject(i);if(x.optBoolean("active",true)||old!=null){cats.add(x);names.add(x.optString("name"));}}LinearLayout l=new LinearLayout(MainActivity.this);l.setOrientation(LinearLayout.VERTICAL);TextView error=new TextView(MainActivity.this);error.setTextColor(Color.rgb(190,30,30));error.setVisibility(View.GONE);l.addView(error);Spinner sp=new Spinner(MainActivity.this);sp.setAdapter(new ArrayAdapter<String>(MainActivity.this,android.R.layout.simple_spinner_dropdown_item,names));EditText amount=amountField();EditText comment=field("شرح (اختیاری)");TextView date=dateButton(old==null?todayJalali():jalaliFromGregorian(old.optString("date")));l.addView(tv("تاریخ ثبت *",14));l.addView(date);l.addView(sp);l.addView(amount);l.addView(comment);if(old!=null){amount.setText(fmt(old.optLong("debit")));comment.setText(expenseComment(old));String marker=old.optString("comment","");java.util.regex.Matcher mm=java.util.regex.Pattern.compile("expense_category_id=(\\d+)").matcher(marker);if(mm.find()){int id=Integer.parseInt(mm.group(1));for(int i=0;i<cats.size();i++)if(cats.get(i).optInt("id")==id)sp.setSelection(i);}}LinearLayout photo=new LinearLayout(MainActivity.this);Button camera=btn("📷\nدوربین");Button gallery=btn("🖼\nگالری");photo.addView(camera,new LinearLayout.LayoutParams(0,90,1));photo.addView(gallery,new LinearLayout.LayoutParams(0,90,1));l.addView(photo);camera.setOnClickListener(v->takePhoto());gallery.setOnClickListener(v->pickImage());AlertDialog dlg=new AlertDialog.Builder(MainActivity.this).setTitle(old==null?"ثبت هزینه":"ویرایش هزینه").setView(l).setPositiveButton(old==null?"ثبت":"ذخیره",null).setNegativeButton("انصراف",null).create();dlg.setOnShowListener(x->dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{long val=money(amount);if(val<=0){showFormError(error,"مبلغ را وارد کنید.");return;}if(cats.isEmpty()){showFormError(error,"نوع هزینه انتخاب نشده است.");return;}String ds=date.getText().toString();if(!ds.matches("\\d{4}/\\d{2}/\\d{2}")){showFormError(error,"تاریخ الزامی است.");return;}JSONObject z=new JSONObject();z.put("category_id",cats.get(sp.getSelectedItemPosition()).optLong("id"));z.put("amount",val);z.put("comment",comment.getText().toString());z.put("date",jalaliToGregorianString(ds));String method=old==null?"POST":"PATCH",endpoint=old==null?"/api/expenses":"/api/transactions/"+old.optLong("id");api.request(method,endpoint,z,new ApiClient.Callback(){public void ok(JSONObject r){if(old==null&&r.optJSONObject("data")!=null){long id=r.optJSONObject("data").optLong("id");if(pendingImage!=null){uploadAttachment("expense",id,pendingImage);pendingImage=null;}}dlg.dismiss();toast(old==null?"هزینه ثبت شد":"هزینه ویرایش شد");expenses();}public void fail(String m){showFormError(error,m);}});}catch(Exception e){showFormError(error,"مبلغ یا تاریخ معتبر نیست.");}}));dlg.show();}public void fail(String m){toast(m);}});}
+    
     void categories(){base("لیست هزینه‌ها");Button add=btn("➕ افزودن نوع هزینه");content.addView(add);gap();LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);api.request("GET","/api/expense-categories",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");for(int i=0;i<(a==null?0:a.length());i++){JSONObject x=a.optJSONObject(i);Button b=btn(x.optString("name")+(x.optBoolean("active",true)?"":" | غیرفعال"));list.addView(b);gapView(list);b.setOnClickListener(v->{if("admin".equals(me.optString("role")))categoryEdit(x);});}}public void fail(String m){toast(m);}});add.setOnClickListener(v->{EditText n=new EditText(this);n.setHint("نام هزینه");new AlertDialog.Builder(this).setTitle("افزودن نوع هزینه").setView(n).setPositiveButton("ذخیره",(d,w)->{JSONObject x=new JSONObject();try{x.put("name",n.getText().toString());}catch(Exception ignored){}api.request("POST","/api/expense-categories",x,new ApiClient.Callback(){public void ok(JSONObject o){categories();}public void fail(String m){toast(m);}});}).setNegativeButton("انصراف",null).show();});back();}
     void categoryEdit(JSONObject old){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText n=new EditText(this);n.setText(old.optString("name"));CheckBox a=new CheckBox(this);a.setText("فعال");a.setChecked(old.optBoolean("active",true));l.addView(n);l.addView(a);new AlertDialog.Builder(this).setTitle("ویرایش نوع هزینه").setView(l).setPositiveButton("ذخیره",(d,w)->{JSONObject x=new JSONObject();try{x.put("name",n.getText().toString());x.put("active",a.isChecked());}catch(Exception ignored){}api.request("PATCH","/api/expense-categories/"+old.optLong("id"),x,new ApiClient.Callback(){public void ok(JSONObject o){categories();}public void fail(String m){toast(m);}});}).setNegativeButton("انصراف",null).show();}
     void uploadAttachment(String type,long id,Uri uri){JSONObject f=new JSONObject();try{f.put("entity_type",type);f.put("entity_id",id);}catch(Exception ignored){}api.upload(uri,"file","/api/attachments",f,new ApiClient.Callback(){public void ok(JSONObject o){toast("تصویر کم‌حجم با DPI=96 ذخیره شد");}public void fail(String m){toast(m);}});}
@@ -307,15 +207,17 @@ public class MainActivity extends Activity {
     void uploadBank(){JSONObject f=new JSONObject();try{f.put("school_id",me.optLong("school_id"));}catch(Exception ignored){}api.uploadFile(pendingBank,"file","/api/bank/upload",f,"bank-file","application/octet-stream",new ApiClient.Callback(){public void ok(JSONObject o){toast("فایل بانک وارد شد: "+o.optInt("count")+" تراکنش");pendingBank=null;}public void fail(String m){toast(m);}});}
     void uploadStudentExcel(Uri uri){if(!"admin".equals(me.optString("role"))){doStudentExcelUpload(uri,me.optLong("school_id"));return;}api.request("GET","/api/schools",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");if(a==null||a.length()==0){toast("مدرسه‌ای برای ورود دانش‌آموزان وجود ندارد");return;}String[] names=new String[a.length()];for(int i=0;i<a.length();i++){JSONObject s=a.optJSONObject(i);names[i]=s.optString("name")+" | "+s.optString("code");}new AlertDialog.Builder(MainActivity.this).setTitle("انتخاب مدرسه برای Excel").setItems(names,(d,w)->doStudentExcelUpload(uri,a.optJSONObject(w).optLong("id"))).show();}public void fail(String m){toast(m);}});}
     void doStudentExcelUpload(Uri uri,long schoolId){JSONObject f=new JSONObject();try{f.put("school_id",schoolId);}catch(Exception ignored){}api.uploadFile(uri,"file","/api/students/import",f,"students.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",new ApiClient.Callback(){public void ok(JSONObject o){toast("ورود دانش‌آموزان انجام شد: "+o.optInt("count"));students();}public void fail(String m){toast(m);}});}
-    void bank(){base("تطبیق بانک");content.addView(tv("مدیر ارشد می‌تواند فایل CSV یا Excel بانک را وارد و با شهریه‌های ثبت‌شده تطبیق دهد.",16));gap();Button upload=btn("📄 انتخاب فایل بانک");content.addView(upload);gap();Button rec=btn("🔄 تطبیق تراکنش‌ها");content.addView(rec);gap();LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);upload.setOnClickListener(v->{Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("*/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,88);});rec.setOnClickListener(v->api.request("POST","/api/bank/reconcile",new JSONObject(),new ApiClient.Callback(){public void ok(JSONObject o){toast("تطبیق شد: "+o.optInt("matched")+" | بدون تطبیق: "+o.optInt("unmatched"));unmatched(list);}public void fail(String m){toast(m);}}));unmatched(list);back();}
-    void unmatched(LinearLayout list){api.request("GET","/api/bank/unmatched",null,new ApiClient.Callback(){public void ok(JSONObject o){list.removeAllViews();JSONArray a=o.optJSONArray("data");for(int i=0;i<(a==null?0:a.length());i++){JSONObject x=a.optJSONObject(i);LinearLayout r=new LinearLayout(MainActivity.this);r.setOrientation(LinearLayout.VERTICAL);r.addView(tv(fmt(x.optLong("amount"))+" ریال | "+x.optString("comment"),14));Button b=btn("مرجوع به مدیر");r.addView(b);list.addView(r);gapView(list);b.setOnClickListener(v->api.request("POST","/api/bank/"+x.optLong("id")+"/return",new JSONObject(),new ApiClient.Callback(){public void ok(JSONObject z){toast(z.optString("message"));unmatched(list);}public void fail(String m){toast(m);}}));}}public void fail(String m){toast(m);}});}
+    void bank(){base("تطبیق بانک");content.addView(tv("تمام تراکنش‌های ثبت‌شده توسط مدیران در این بخش نمایش داده می‌شود. تیک سبز یعنی با بانک تطبیق شده و ضربدر قرمز یعنی مغایرت/عدم تطبیق.",16));gap();Button upload=btn("📄\nانتخاب فایل بانک");Button rec=btn("🔄\nتطبیق تراکنش‌ها");content.addView(upload);gap();content.addView(rec);gap();LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);upload.setOnClickListener(v->{Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("*/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,88);});rec.setOnClickListener(v->api.request("POST","/api/bank/reconcile",new JSONObject(),new ApiClient.Callback(){public void ok(JSONObject o){toast("تطبیق انجام شد: "+o.optInt("matched")+" مورد؛ "+o.optInt("unmatched")+" مورد بدون تطبیق");bankReview(list);}public void fail(String m){toast(m);}}));bankReview(list);back();}
+    void bankReview(LinearLayout list){api.request("GET","/api/bank/review",null,new ApiClient.Callback(){public void ok(JSONObject o){list.removeAllViews();JSONArray a=o.optJSONArray("data");for(int i=0;i<(a==null?0:a.length());i++){JSONObject t=a.optJSONObject(i);String k=t.optString("kind");if(!"شهریه".equals(k)&&!"شهریه_بدهی".equals(k)&&!"هزینه".equals(k))continue;boolean ok=t.optBoolean("reconciled",false);TextView s=tv((ok?"✓ ":"✕ ")+(ok?"تأیید شده توسط مدیر ارشد":"مغایرت / در انتظار تطبیق با بانک"),15);s.setTextColor(ok?Color.rgb(20,150,70):Color.rgb(200,40,40));LinearLayout row=new LinearLayout(MainActivity.this);row.setOrientation(LinearLayout.VERTICAL);row.setPadding(8,8,8,8);row.setBackground(bg(Color.WHITE,20));String title="هزینه".equals(k)?expenseComment(t):("شهریه_بدهی".equals(k)?"بدهی شهریه":"پرداخت شهریه");row.addView(tv(title+" | "+fmt(t.optLong("debit")+t.optLong("credit"))+" ریال",16));row.addView(tv("تاریخ: "+jalaliFromGregorian(t.optString("date")),14));row.addView(s);list.addView(row);gapView(list);}}public void fail(String m){toast(m);}});}
+    void unmatched(LinearLayout list){bankReview(list);}
+    
     void report(){
         base("گزارش مالی");
         api.request("GET","/api/transactions",null,new ApiClient.Callback(){public void ok(JSONObject o){
             JSONArray ar=o.optJSONArray("data");long debt=0,paid=0;java.util.LinkedHashMap<String,Long> costs=new java.util.LinkedHashMap<>();
             for(int i=0;i<(ar==null?0:ar.length());i++){JSONObject x=ar.optJSONObject(i);String k=x.optString("kind");
                 if("شهریه_بدهی".equals(k))debt+=x.optLong("debit");else if("شهریه".equals(k))paid+=x.optLong("credit");
-                else if("هزینه".equals(k)){String c=expenseComment(x);if(c.length()==0)c="هزینه‌های متفرقه";String marker=x.optString("comment","");java.util.regex.Matcher mm=java.util.regex.Pattern.compile("\\[expense_category_id=(\\d+)\\]").matcher(marker);String key=mm.find()?"نوع هزینه "+mm.group(1):"هزینه‌ها";Long old=costs.get(key);costs.put(key,(old==null?0:old)+x.optLong("debit"));}
+                else if("هزینه".equals(k)){String key=x.optString("expense_category_name","هزینه‌های متفرقه");Long old=costs.get(key);costs.put(key,(old==null?0:old)+x.optLong("debit"));}
             }
             content.addView(tv("جمع بدهی باقی‌مانده شهریه: "+fmt(Math.max(0,debt-paid))+" ریال",19));gap();
             content.addView(tv("جمع هزینه‌ها به تفکیک:",19));gap();
@@ -333,7 +235,7 @@ public class MainActivity extends Activity {
     }
     void exportParsian(){
         if(!"admin".equals(me.optString("role"))){toast("فقط مدیر ارشد به خروجی پارسیان دسترسی دارد");return;}
-        api.request("GET","/api/schools",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray ar=o.optJSONArray("data");ArrayList<String> names=new ArrayList<>();ArrayList<Long> ids=new ArrayList<>();names.add("همه مدارس");ids.add(0L);for(int i=0;i<(ar==null?0:ar.length());i++){JSONObject x=ar.optJSONObject(i);names.add(x.optString("name"));ids.add(x.optLong("id"));}new AlertDialog.Builder(MainActivity.this).setTitle("خروجی Excel پارسیان").setItems(names.toArray(new String[0]), (d,w)->downloadParsian(ids.get(w))).show();}public void fail(String m){toast(m);}});
+        api.request("GET","/api/schools",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray ar=o.optJSONArray("data");ArrayList<String> names=new ArrayList<>();ArrayList<Long> ids=new ArrayList<>();names.add("همه مدارس");ids.add(0L);for(int i=0;i<(ar==null?0:ar.length());i++){JSONObject x=ar.optJSONObject(i);names.add(x.optString("name"));ids.add(x.optLong("id"));}new AlertDialog.Builder(MainActivity.this).setTitle("خروجی Excel پارسیان").setItems(names.toArray(new String[0]),(d,w)->downloadParsian(ids.get(w))).show();}public void fail(String m){toast(m);}});
     }
     void downloadParsian(long schoolId){
         new Thread(()->{try{
@@ -510,7 +412,8 @@ public class MainActivity extends Activity {
         dlg.show();
     }
 
-    void settings(){base("تنظیمات");content.addView(tv("ارتباط با سرور: Render\nپایگاه داده: Supabase\nنسخه API: 2.1.0",16));gap();content.addView(tv("اندازه نوشته‌ها",18));LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER);Button minus=btn("A−"),plus=btn("A+");row.addView(minus,new LinearLayout.LayoutParams(0,60,1));row.addView(plus,new LinearLayout.LayoutParams(0,60,1));content.addView(row);gap();minus.setOnClickListener(v->{fontScale=Math.max(.85f,fontScale-.05f);prefs.edit().putFloat("font_scale",fontScale).apply();settings();});plus.setOnClickListener(v->{fontScale=Math.min(1.25f,fontScale+.05f);prefs.edit().putFloat("font_scale",fontScale).apply();settings();});Button out=btn("خروج از حساب");content.addView(out);gap();out.setOnClickListener(v->{api.request("POST","/api/logout",null,new ApiClient.Callback(){public void ok(JSONObject o){api.clearToken();showLogin();}public void fail(String m){api.clearToken();showLogin();}});});back();}
+    void settings(){base("تنظیمات");content.addView(tv("ارتباط با سرور: Render\nپایگاه داده: Supabase",16));gap();content.addView(tv("تم رنگی",18));LinearLayout themes=new LinearLayout(this);themes.setOrientation(LinearLayout.VERTICAL);String[] names={"سبز فیروزه‌ای","آبی","بنفش","نارنجی","سبز","سبز تیره"};for(int i=0;i<names.length;i++){final int idx=i;Button b=btn(names[i]);b.setTextColor(Color.WHITE);themes.addView(b,new LinearLayout.LayoutParams(-1,70));gapView(themes);b.setOnClickListener(v->{themeIndex=idx;prefs.edit().putInt("theme_index",idx).apply();settings();});}content.addView(themes);gap();content.addView(tv("اندازه نوشته‌ها",18));LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER);Button minus=btn("A−"),plus=btn("A+");row.addView(minus,new LinearLayout.LayoutParams(0,68,1));row.addView(plus,new LinearLayout.LayoutParams(0,68,1));content.addView(row);gap();minus.setOnClickListener(v->{fontScale=Math.max(.85f,fontScale-.05f);prefs.edit().putFloat("font_scale",fontScale).apply();settings();});plus.setOnClickListener(v->{fontScale=Math.min(1.25f,fontScale+.05f);prefs.edit().putFloat("font_scale",fontScale).apply();settings();});Button out=btn("خروج از حساب");content.addView(out);gap();out.setOnClickListener(v->{api.request("POST","/api/logout",null,new ApiClient.Callback(){public void ok(JSONObject o){api.clearToken();showLogin();}public void fail(String m){api.clearToken();showLogin();}});});back();}
+    
     String fmt(long n){return NumberFormat.getNumberInstance(Locale.US).format(n);}
     String encrypt(String plain){try{KeyStore ks=KeyStore.getInstance("AndroidKeyStore");ks.load(null);if(!ks.containsAlias(KEY_ALIAS)){KeyGenerator kg=KeyGenerator.getInstance("AES","AndroidKeyStore");kg.init(new android.security.keystore.KeyGenParameterSpec.Builder(KEY_ALIAS,android.security.keystore.KeyProperties.PURPOSE_ENCRYPT|android.security.keystore.KeyProperties.PURPOSE_DECRYPT).setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE).build());kg.generateKey();}SecretKey key=((KeyStore.SecretKeyEntry)ks.getEntry(KEY_ALIAS,null)).getSecretKey();Cipher c=Cipher.getInstance("AES/GCM/NoPadding");c.init(Cipher.ENCRYPT_MODE,key);byte[] iv=c.getIV(),ct=c.doFinal(plain.getBytes(StandardCharsets.UTF_8));return Base64.encodeToString(iv,2)+":"+Base64.encodeToString(ct,2);}catch(Exception e){return "";}}
     String decrypt(String enc){try{if(enc==null||enc.isEmpty())return "";String[] p=enc.split(":",2);KeyStore ks=KeyStore.getInstance("AndroidKeyStore");ks.load(null);SecretKey key=((KeyStore.SecretKeyEntry)ks.getEntry(KEY_ALIAS,null)).getSecretKey();Cipher c=Cipher.getInstance("AES/GCM/NoPadding");c.init(Cipher.DECRYPT_MODE,key,new GCMParameterSpec(128,Base64.decode(p[0],2)));return new String(c.doFinal(Base64.decode(p[1],2)),StandardCharsets.UTF_8);}catch(Exception e){return "";}}
