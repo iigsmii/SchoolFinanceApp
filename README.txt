@@ -1,14 +1,7 @@
-SchoolFinanceApp - اصلاح MainActivity
+نسخه اصلاح‌شده سیستم حسابداری مدرسه
 
-فایل اصلی اصلاح شده:
-app/src/main/java/com/example/hesabdari/MainActivity.java
+مهم: این نسخه package.json را داخل server دارد تا Render بتواند npm install را انجام دهد.
+در GitHub فقط فایل‌های هم‌مسیر را جایگزین کنید و package-lock قبلی مخزن را حذف نکنید.
 
-اصلاح اصلی این نسخه:
-- رفع خطای کامپایل setItems در خروجی Excel پارسیان
-- حفظ قابلیت‌های نسخه پارسیان شامل تراکنش‌ها، ویرایش هزینه/شهریه/بدهی، دوربین و گزارش مالی
-- AndroidManifest شامل مجوز دوربین
-- server/server.js نسخه نهایی هماهنگ با این MainActivity
-
-برای GitHub:
-فایل MainActivity.java را دقیقاً در مسیر بالا جایگزین کنید.
-اگر server.js و AndroidManifest قبلاً از نسخه نهایی هستند، نیاز به جایگزینی آنها نیست.
+Render Start Command: npm start
+Node: >=18
