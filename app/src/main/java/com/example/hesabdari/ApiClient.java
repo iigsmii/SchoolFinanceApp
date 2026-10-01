@@ -54,9 +54,10 @@ public class ApiClient {
         if(p.equals("/api/transactions"))return "transactions";
         if(p.matches("/api/transactions/\\d+/review")){put(b,"id",Long.parseLong(p.split("/")[3]));return "transaction_review";}
         if(p.matches("/api/transactions/\\d+")){put(b,"id",Long.parseLong(tail(p)));return "transaction_delete";}
-        if(p.equals("/api/bank/review"))return "transactions";
+        if(p.equals("/api/bank/review"))return "bank_review";
         if(p.equals("/api/bank/reconcile"))return "bank_reconcile";
         if(p.equals("/api/bank/upload"))return "bank_upload";
+        if(p.equals("/api/students/import"))return "students_import";
         if(p.equals("/api/senior-messages"))return method.equals("GET")?"messages":"message_add";
         if(p.startsWith("/api/senior-messages/")){put(b,"id",Long.parseLong(tail(p)));return "message_delete";}
         if(p.equals("/api/managers"))return method.equals("GET")?"managers":"manager_add";
@@ -89,7 +90,7 @@ public class ApiClient {
         if(path.matches("/api/students/\\d+/balance")){
             long balance=0; JSONArray a=o.optJSONArray("data"); if(a!=null) for(int i=0;i<a.length();i++){JSONObject x=a.optJSONObject(i); if(x==null)continue; long amount=x.optLong("amount"); if("debt".equals(x.optString("type"))) balance+=amount; else if("payment".equals(x.optString("type"))) balance-=amount;} JSONObject r=new JSONObject(); r.put("success",true); r.put("balance",Math.max(0,balance)); return r;
         }
-        if(path.startsWith("/api/transactions")){
+        if(path.startsWith("/api/transactions")||path.equals("/api/bank/review")){
             JSONArray a=o.optJSONArray("data");
             if(a!=null){for(int i=0;i<a.length();i++){JSONObject t=a.optJSONObject(i);if(t==null)continue;String kind=t.optString("kind");if("debt".equals(kind))kind="شهریه_بدهی";else if("payment".equals(kind))kind="شهریه";else if("expense".equals(kind))kind="هزینه";t.put("kind",kind);long amount=t.optLong("amount");t.put("debit","هزینه".equals(kind)||"شهریه_بدهی".equals(kind)?amount:0);t.put("credit","شهریه".equals(kind)?amount:0);t.put("comment",t.optString("description"));t.put("attachment_url",t.optString("attachment_url",t.optString("image_url","")));t.put("reconciled",t.optBoolean("reconciled",false));t.put("review_status",t.optBoolean("approved",false)?"approved":"pending");}}
         }
@@ -110,8 +111,14 @@ public class ApiClient {
     public void upload(Uri uri,String field,String path,JSONObject fields,Callback cb){uploadFile(uri,field,path,fields,"file","image/jpeg",cb);}
     public void uploadFile(Uri uri,String field,String path,JSONObject fields,String fileName,String mime,Callback cb){
         pool.execute(()->{try{
-            byte[] data=readUri(uri);JSONObject b=fields==null?new JSONObject():new JSONObject(fields.toString());b.put("base64",android.util.Base64.encodeToString(data,android.util.Base64.NO_WRAP));b.put("file_name",fileName);b.put("mime_type",mime);b.put("source_type",fields==null?"general":fields.optString("entity_type",fields.optString("source_type","general")));b.put("source_id",fields==null?"":fields.optString("entity_id",fields.optString("source_id","")));b.put("action","attachment");if(token!=null)b.put("token",token);JSONObject o=postJson(b);if(o.optBoolean("success",false))main.post(()->cb.ok(o));else main.post(()->cb.fail(o.optString("message",o.optString("error","آپلود انجام نشد"))));
+            byte[] data=readUri(uri);JSONObject b=fields==null?new JSONObject():new JSONObject(fields.toString());b.put("base64",android.util.Base64.encodeToString(data,android.util.Base64.NO_WRAP));b.put("file_name",fileName);b.put("mime_type",mime);b.put("source_type",fields==null?"general":fields.optString("entity_type",fields.optString("source_type","general")));b.put("source_id",fields==null?"":fields.optString("entity_id",fields.optString("source_id","")));b.put("action", uploadAction(path));if(token!=null)b.put("token",token);JSONObject o=postJson(b);if(o.optBoolean("success",false))main.post(()->cb.ok(o));else main.post(()->cb.fail(o.optString("message",o.optString("error","آپلود انجام نشد"))));
         }catch(Exception e){main.post(()->cb.fail("آپلود فایل انجام نشد"));}});
+    }
+
+    private String uploadAction(String path){
+        if("/api/students/import".equals(path)) return "students_import";
+        if("/api/bank/upload".equals(path)) return "bank_upload";
+        return "attachment";
     }
     private byte[] readUri(Uri uri)throws Exception{try(InputStream in=context.getContentResolver().openInputStream(uri);ByteArrayOutputStream out=new ByteArrayOutputStream()){if(in==null)throw new IOException();byte[] buf=new byte[8192];int n;while((n=in.read(buf))!=-1)out.write(buf,0,n);return out.toByteArray();}}
     private static String tail(String p){String s=p.substring(p.lastIndexOf('/')+1);int q=s.indexOf('?');return q>=0?s.substring(0,q):s;}

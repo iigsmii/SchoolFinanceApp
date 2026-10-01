@@ -268,6 +268,7 @@ function doPost(e) {
       case 'school_delete': return json_(schoolDelete_(body));
       case 'students': return json_(students_(body));
       case 'student_add': return json_(studentAdd_(body));
+      case 'students_import': return json_(studentsImport_(body));
       case 'student_update': return json_(studentUpdate_(body));
       case 'student_delete': return json_(studentDelete_(body));
       case 'tuition': return json_(tuition_(body));
@@ -281,6 +282,7 @@ function doPost(e) {
       case 'transactions': return json_(transactions_(body));
       case 'transaction_delete': return json_(transactionDelete_(body));
       case 'bank': return json_(bank_(body));
+      case 'bank_review': return json_(bankReview_(body));
       case 'bank_match': return json_(bankMatch_(body));
       case 'bank_reconcile': return json_(bankReconcile_(body));
       case 'bank_upload': return json_(bankUpload_(body));
@@ -352,10 +354,31 @@ function auth_(b, roles) {
   return u;
 }
 
+/* ---------- CORE SEED SAFETY ---------- */
+function ensureCoreData_() {
+  const schools = sheet_('Schools');
+  const existingSchools = {};
+  rows_('Schools').forEach(x => existingSchools[String(x.obj.id)] = x.obj);
+  SCHOOLS.forEach(x => {
+    if (!existingSchools[String(x[0])]) schools.appendRow([x[0],x[1],x[2],x[3],now_()]);
+  });
+  const managers = sheet_('Managers');
+  const existingManagers = {};
+  rows_('Managers').forEach(x => existingManagers[String(x.obj.username||'').trim()] = x.obj);
+  if (!existingManagers['admin']) managers.appendRow([1,'مدیر ارشد','admin',sha256_('Admin@123456'),'','senior',true,now_()]);
+  ATTACHED_MANAGERS.forEach(m => {
+    const u=String(m.username||'').trim(); if(!u) return;
+    const hit=findManagerByUsername_(u);
+    if(!hit) managers.appendRow([nextId_('Managers'),String(m.name||''),u,String(m.password_hash||''),m.school_id==null?'':String(m.school_id),'manager',true,now_()]);
+    else if(u==='آرزو طالب پور' && String(hit.obj.school_id||'')!=='10') updateRow_('Managers',hit.row,[hit.obj.id,hit.obj.name,hit.obj.username,hit.obj.password,'10',hit.obj.role||'manager',hit.obj.active,hit.obj.created_at]);
+  });
+}
+
 /* ---------- SCHOOLS ---------- */
 
 function schools_(b) {
   const u=auth_(b);
+  ensureCoreData_();
   const data=rows_('Schools').map(x=>x.obj).filter(x=>String(x.active)!=='false');
   if(u.role!=='senior') return {success:true,data:data.filter(x=>String(x.id)===String(u.school_id))};
   return {success:true,data:data};
@@ -396,6 +419,81 @@ function studentAdd_(b) {
   ]);
   return {success:true,id:id};
 }
+
+function studentsImport_(b) {
+  const u=auth_(b);
+  const schoolId=u.role==='senior' ? String(b.school_id||'') : String(u.school_id||'');
+  if(!schoolId) throw new Error('مدرسه برای ورود دانش‌آموزان مشخص نشده است.');
+  if(!b.base64) throw new Error('فایل Excel ارسال نشده است.');
+  const grade=String(b.grade||'').trim();
+  const rows=readStudentXlsx_(b.base64);
+  let added=0, skipped=0;
+  const existing=rows_('Students').map(x=>x.obj).filter(x=>String(x.school_id)===schoolId);
+  rows.forEach(r=>{
+    const name=String(r.name||'').trim();
+    if(!name) return;
+    const nid=digits_(r.national_id||'');
+    const duplicate=existing.some(x=>String(x.name).trim()===name && (nid ? String(x.national_id)===nid : true));
+    if(duplicate){skipped++;return;}
+    const id=nextId_('Students');
+    sheet_('Students').appendRow([id,name,grade,String(r.phone||''),nid,schoolId,'67','','',true,now_()]);
+    existing.push({name:name,national_id:nid,school_id:schoolId}); added++;
+  });
+  return {success:true,added:added,skipped:skipped,total:rows.length,note:'این فایل شماره شناسنامه دارد و کد ملی در آن وجود ندارد؛ کد ملی و حساب پارسیان برای هر دانش‌آموز بعداً قابل تکمیل است.'};
+}
+
+function readStudentXlsx_(base64) {
+  let clean=String(base64); if(clean.indexOf(',')>=0) clean=clean.substring(clean.indexOf(',')+1);
+  const blob=Utilities.newBlob(Utilities.base64Decode(clean),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','students.xlsx');
+  const files=Utilities.unzip(blob); const by={}; files.forEach(f=>by[f.getName()]=f);
+  const shared=[];
+  if(by['xl/sharedStrings.xml']) {
+    const root=XmlService.parse(by['xl/sharedStrings.xml'].getDataAsString()).getRootElement();
+    root.getChildren().forEach(si=>{ let txt=''; si.getDescendants().forEach(n=>{ if(n.getType()===XmlService.ContentTypes.TEXT) txt+=n.asText(); }); shared.push(txt); });
+  }
+  const sheet=by['xl/worksheets/sheet1.xml']; if(!sheet) throw new Error('برگه اول Excel پیدا نشد.');
+  const root=XmlService.parse(sheet.getDataAsString()).getRootElement();
+  const rows=[];
+  const sheetData=root.getChildren().filter(x=>x.getName()==='sheetData')[0]; if(!sheetData) return rows;
+  sheetData.getChildren().filter(x=>x.getName()==='row').forEach(row=>{
+    const cells={}; row.getChildren().filter(x=>x.getName()==='c').forEach(c=>{
+      const ref=String(c.getAttribute('r').getValue()); const col=ref.replace(/\d/g,'');
+      const vEl=c.getChildren().filter(x=>x.getName()==='v')[0]; let v=vEl?vEl.getText():'';
+      const typ=c.getAttribute('t'); if(typ && typ.getValue()==='s' && v!=='') v=shared[Number(v)]||'';
+      if(typ && typ.getValue()==='inlineStr'){ const is=c.getChildren().filter(x=>x.getName()==='is')[0]; v=is?is.getDescendants().filter(n=>n.getType()===XmlService.ContentTypes.TEXT).map(n=>n.asText()).join(''):''; }
+      cells[col]=v;
+    });
+    rows.push(cells);
+  });
+  if(rows.length<2) return [];
+  const header=rows[1]; const map={}; Object.keys(header).forEach(k=>map[String(header[k]).trim()]=k);
+  const nameCol=map['نام'], lastCol=map['نام خانوادگی'], nidCol=map['کد ملی'], birthNoCol=map['شماره شناسنامه'], phoneCol=map['شماره تلفن'];
+  const out=[];
+  for(let i=2;i<rows.length;i++){
+    const r=rows[i]; const name=[r[nameCol]||'',r[lastCol]||''].join(' ').replace(/\s+/g,' ').trim();
+    if(!name) continue;
+    out.push({name:name,national_id:nidCol?digits_(r[nidCol]||''):'',birth_certificate_no:birthNoCol?String(r[birthNoCol]||''):'',phone:phoneCol?digits_(r[phoneCol]||''):''});
+  }
+  return out;
+}
+
+function importBankXlsx_(base64,schoolId){
+  let clean=String(base64); if(clean.indexOf(',')>=0) clean=clean.substring(clean.indexOf(',')+1);
+  const blob=Utilities.newBlob(Utilities.base64Decode(clean),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','bank.xlsx');
+  const files=Utilities.unzip(blob); const by={}; files.forEach(f=>by[f.getName()]=f);
+  const shared=[]; if(by['xl/sharedStrings.xml']){const sr=XmlService.parse(by['xl/sharedStrings.xml'].getDataAsString()).getRootElement();sr.getChildren().forEach(si=>{let txt='';si.getDescendants().forEach(n=>{if(n.getType()===XmlService.ContentTypes.TEXT)txt+=n.asText();});shared.push(txt);});}
+  const sheet=by['xl/worksheets/sheet1.xml']; if(!sheet) throw new Error('برگه اول Excel پیدا نشد.');
+  const root=XmlService.parse(sheet.getDataAsString()).getRootElement(); const sd=root.getChildren().filter(x=>x.getName()==='sheetData')[0]; if(!sd) return {added:0,skipped:0};
+  const out=[]; sd.getChildren().filter(x=>x.getName()==='row').forEach(row=>{const c={};row.getChildren().filter(x=>x.getName()==='c').forEach(cell=>{const ref=String(cell.getAttribute('r').getValue()).replace(/\d/g,'');const v=cell.getChildren().filter(x=>x.getName()==='v')[0];let val=v?v.getText():'';const typ=cell.getAttribute('t');if(typ&&typ.getValue()==='s'&&val!=='')val=shared[Number(val)]||'';c[ref]=val;});out.push(c);});
+  if(out.length<2)return {added:0,skipped:0};
+  const h=out[0]; const map={};Object.keys(h).forEach(k=>map[String(h[k]).trim().toLowerCase()]=k);
+  const amountCol=map['مبلغ']||map['amount']||map['مبلغ تراکنش']; const dateCol=map['تاریخ']||map['date']; const descCol=map['شرح']||map['description']; const trackCol=map['شماره پیگیری']||map['tracking_code']||map['پیگیری'];
+  if(!amountCol) throw new Error('ستون مبلغ در فایل بانک پیدا نشد.');
+  let added=0,skipped=0; const sh=sheet_('Bank');
+  for(let i=1;i<out.length;i++){const r=out[i];const amount=Number(String(r[amountCol]||'').replace(/,/g,''));if(!amount){skipped++;continue;}const track=String(r[trackCol]||'');const dup=rows_('Bank').some(x=>Number(x.obj.amount)===amount&&String(x.obj.tracking_code||'')===track&&String(x.obj.school_id||'')===String(schoolId||''));if(dup){skipped++;continue;}sh.appendRow([nextId_('Bank'),String(r[dateCol]||''),String(schoolId||''),amount,String(r[descCol]||''),track,'',now_(),'','false','false']);added++;}
+  return {added:added,skipped:skipped};
+}
+function importBankCsv_(base64,schoolId){ return {added:0,skipped:0}; }
 
 function studentUpdate_(b) {
   const u=auth_(b);
@@ -584,6 +682,26 @@ function bank_(b) {
   return {success:true,data:data};
 }
 
+function bankReview_(b) {
+  const u=auth_(b,['senior']);
+  const banks=rows_('Bank').map(x=>x.obj);
+  const tx=rows_('Transactions').map(x=>x.obj);
+  const schools={}; rows_('Schools').forEach(x=>schools[String(x.obj.id)]=x.obj.name);
+  const data=tx.map(t=>{
+    const candidates=banks.filter(x=>Number(x.amount)===Number(t.amount) && String(x.school_id)===String(t.school_id));
+    const hit=candidates.length?candidates[0]:null;
+    const o=Object.assign({},t);
+    o.school_name=schools[String(t.school_id)]||'';
+    o.bank_found=!!hit;
+    o.bank_id=hit?hit.id:'';
+    o.bank_amount=hit?hit.amount:'';
+    o.bank_tracking_code=hit?hit.tracking_code:'';
+    o.reconciled=String(t.reconciled)==='true' && String(t.approved)==='true';
+    return o;
+  });
+  return {success:true,data:data,bank_count:banks.length,transaction_count:tx.length};
+}
+
 function bankMatch_(b) {
   const u=auth_(b,['senior']);
   const hit=findRow_('Bank',b.id);
@@ -608,8 +726,28 @@ function bankMatch_(b) {
 }
 
 function transactionReview_(b){ const u=auth_(b,['senior']); const hit=findRow_('Transactions',b.id); if(!hit) throw new Error('تراکنش یافت نشد.'); const r=hit.obj; const approved=String(b.status||'')==='approved'; updateRow_('Transactions',hit.row,[r.id,r.date,r.school_id,r.kind,r.amount,r.description,r.tracking_code,r.image_url,r.created_by,r.created_at,r.reconciled,approved,r.source_id]); return {success:true,approved:approved}; }
-function bankReconcile_(b){ auth_(b,['senior']); const tx=rows_('Transactions').map(x=>x.obj); let matched=0,unmatched=0; tx.forEach(t=>String(t.reconciled)==='true'?matched++:unmatched++); return {success:true,matched:matched,unmatched:unmatched}; }
-function bankUpload_(b){ auth_(b,['senior']); if(b.base64) saveAttachment_(b.base64,b.file_name||'bank_upload.csv',b.mime_type||'text/csv',Utilities.getUuid(),'','bank',''); return {success:true,message:'فایل بانک دریافت شد.'}; }
+function bankReconcile_(b){
+  auth_(b,['senior']);
+  const banks=rows_('Bank').map(x=>x.obj);
+  const txRows=rows_('Transactions'); let matched=0,unmatched=0;
+  txRows.forEach(x=>{
+    const t=x.obj;
+    const hit=banks.find(z=>Number(z.amount)===Number(t.amount) && String(z.school_id)===String(t.school_id));
+    const ok=!!hit;
+    if(ok){ matched++; updateRow_('Transactions',x.row,[t.id,t.date,t.school_id,t.kind,t.amount,t.description,t.tracking_code,t.image_url,t.created_by,t.created_at,true,t.approved,t.source_id]); }
+    else { unmatched++; updateRow_('Transactions',x.row,[t.id,t.date,t.school_id,t.kind,t.amount,t.description,t.tracking_code,t.image_url,t.created_by,t.created_at,false,t.approved,t.source_id]); }
+  });
+  return {success:true,matched:matched,unmatched:unmatched};
+}
+function bankUpload_(b){
+  auth_(b,['senior']);
+  if(!b.base64) throw new Error('فایل بانک ارسال نشده است.');
+  const name=String(b.file_name||'bank_upload.xlsx').toLowerCase();
+  let result={added:0,skipped:0};
+  if(name.endsWith('.xlsx')) result=importBankXlsx_(b.base64,b.school_id||'');
+  else result=importBankCsv_(b.base64,b.school_id||'');
+  return {success:true,message:'فایل بانک وارد شد.',count:result.added,skipped:result.skipped};
+}
 
 /* ---------- CATEGORIES ---------- */
 
@@ -671,6 +809,7 @@ function messageDelete_(b) {
 
 function managers_(b) {
   auth_(b,['senior']);
+  ensureCoreData_();
   return {success:true,data:rows_('Managers').map(x=>{
     const r=Object.assign({},x.obj);
     delete r.password;
