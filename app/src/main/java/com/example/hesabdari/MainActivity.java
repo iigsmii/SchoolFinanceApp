@@ -254,7 +254,37 @@ public class MainActivity extends Activity {
         }catch(Exception e){runOnUiThread(()->toast("ذخیره فایل پارسیان انجام نشد"));}}).start();
     }
 
-    void managers(){base("مدیریت مدیران");Button add=btn("➕ افزودن مدیر");content.addView(add);gap();LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);api.request("GET","/api/managers",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");for(int i=0;i<(a==null?0:a.length());i++){JSONObject m=a.optJSONObject(i);Button b=btn("👤 "+m.optString("name")+"\n"+m.optString("username")+" | "+m.optString("role"));list.addView(b);gapView(list);b.setOnClickListener(v->managerEdit(m));}}public void fail(String m){toast(m);}});add.setOnClickListener(v->managerEdit(null));back();}
+    void managers(){
+        base("لیست مدیران");
+        Button importBtn=btn("📥 افزودن مدیران از فایل پیوست"); content.addView(importBtn);gap();
+        Button add=btn("➕ افزودن مدیر جدید"); content.addView(add);gap();
+        TextView note=tv("لیست مدیران فایل «مدیر ها.xlsx» در سیستم آماده ورود است. مدیرانی که قبلاً وجود داشته باشند دوباره ساخته نمی‌شوند.",14);
+        note.setTextColor(Color.DKGRAY);content.addView(note);gap();
+        LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);
+        final Runnable[] reload=new Runnable[1];
+        reload[0]=()->api.request("GET","/api/managers",null,new ApiClient.Callback(){
+            public void ok(JSONObject o){
+                list.removeAllViews(); JSONArray a=o.optJSONArray("data");
+                if(a==null||a.length()==0){list.addView(tv("مدیری ثبت نشده است.",16));return;}
+                for(int i=0;i<a.length();i++){
+                    JSONObject m=a.optJSONObject(i); if(m==null)continue;
+                    String school=m.optString("school_name"); if(school.isEmpty())school="مرکز/مدرسه ثبت نشده";
+                    Button b=btn("👤 "+m.optString("name")+"\nنام کاربری: "+m.optString("username")+
+                            "\nمدرسه/مرکز: "+school+"\nوضعیت: "+(m.optBoolean("active",true)?"فعال":"غیرفعال"));
+                    list.addView(b);gapView(list);b.setOnClickListener(v->managerEdit(m));
+                }
+            }
+            public void fail(String m){toast(m);}
+        });
+        importBtn.setOnClickListener(v->{
+            importBtn.setEnabled(false);
+            api.request("POST","/api/managers/import-attached",new JSONObject(),new ApiClient.Callback(){
+                public void ok(JSONObject o){importBtn.setEnabled(true);toast("لیست مدیران اضافه شد: "+o.optInt("added")+" مدیر جدید؛ "+o.optInt("skipped")+" مورد قبلی");reload[0].run();}
+                public void fail(String m){importBtn.setEnabled(true);toast(m);}
+            });
+        });
+        add.setOnClickListener(v->managerEdit(null)); reload[0].run(); back();
+    }
     void managerEdit(JSONObject old){
         LinearLayout l=new LinearLayout(this);
         l.setOrientation(LinearLayout.VERTICAL);

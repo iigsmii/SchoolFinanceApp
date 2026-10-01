@@ -60,6 +60,7 @@ public class ApiClient {
         if(p.equals("/api/senior-messages"))return method.equals("GET")?"messages":"message_add";
         if(p.startsWith("/api/senior-messages/")){put(b,"id",Long.parseLong(tail(p)));return "message_delete";}
         if(p.equals("/api/managers"))return method.equals("GET")?"managers":"manager_add";
+        if(p.equals("/api/managers/import-attached"))return "manager_import_attached";
         if(p.startsWith("/api/managers/")){put(b,"id",Long.parseLong(tail(p)));return method.equals("DELETE")?"manager_delete":"manager_update";}
         if(p.equals("/api/schools"))return method.equals("GET")?"schools":"school_add";
         if(p.startsWith("/api/schools/")){put(b,"id",Long.parseLong(tail(p)));return method.equals("DELETE")?"school_delete":"school_update";}

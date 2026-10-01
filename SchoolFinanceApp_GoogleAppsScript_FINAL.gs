@@ -54,6 +54,107 @@ const SCHOOLS = [
   [9,'مهد منظریه','MEHR5',true]
 ];
 
+const ATTACHED_MANAGERS = [
+  {
+    "name": "محمدرضا آقاسی",
+    "username": "محمدرضا آقاسی",
+    "password_hash": "81926c93fd1a4a8b6a94e6fd62bde8d14695d609358910faf8f87ba4c174efe6",
+    "school_id": 1,
+    "source_center": "نور 1"
+  },
+  {
+    "name": "محمد عربی",
+    "username": "محمد عربی",
+    "password_hash": "b608cbd77863c5cf775c8ba9d8e4ae603ef14e9985bf9d7e886fc153d0517312",
+    "school_id": 2,
+    "source_center": "نور 2"
+  },
+  {
+    "name": "آرزو میرزایی",
+    "username": "آرزو میرزایی",
+    "password_hash": "346dc9a9cdadb637d10492b264be914c5a45490f96f258f61acf3e407eecafb0",
+    "school_id": 3,
+    "source_center": "تبیان 1"
+  },
+  {
+    "name": "فریبا سبزواری",
+    "username": "فریبا سبزواری",
+    "password_hash": "50de9b33189ecf51452048e277bd300ecd5084309a7241fdc27b0a8fc6165e66",
+    "school_id": 4,
+    "source_center": "تبیان 2"
+  },
+  {
+    "name": "ام البنین صدری",
+    "username": "ام البنین صدری",
+    "password_hash": "36a62f5ba7beda8657cbe6c891e2cc2876b71c64d82832c67e39e0df2afb2f95",
+    "school_id": 5,
+    "source_center": "مهد مرکزی صبح"
+  },
+  {
+    "name": "مریم سروری",
+    "username": "مریم سروری",
+    "password_hash": "f06d3fc0ec735ebc7d257448dd20904ed8393a89ed549ee45003032603fc2a62",
+    "school_id": 6,
+    "source_center": "مهد مرکزی عصر"
+  },
+  {
+    "name": "زهرا گلزار",
+    "username": "زهرا گلزار",
+    "password_hash": "4c72722c35406acc6987ff669b89d2725ad3c83b786ee12871f5b3ef98869f0c",
+    "school_id": 7,
+    "source_center": "مهد ابراهیم خلیل"
+  },
+  {
+    "name": "خدیجه عمرانپور",
+    "username": "خدیجه عمرانپور",
+    "password_hash": "a13514ea36daf730b8c24ca223a07600774ac9bb701ac82d90f6ddc30a2d9f39",
+    "school_id": 8,
+    "source_center": "مهد سروستان"
+  },
+  {
+    "name": "آرزو طالب پور",
+    "username": "آرزو طالب پور",
+    "password_hash": "4f12aab72444972af28afc9e3ce610ecbb032fa6ca6cd141206e7d9ec3a8ca7e",
+    "school_id": null,
+    "source_center": "مهد تبیان 2"
+  },
+  {
+    "name": "زهرا ستاری",
+    "username": "زهرا ستاری",
+    "password_hash": "7d950570e385db54ffe244da88abd510c54e65b10047ce69334926de81c6333a",
+    "school_id": 9,
+    "source_center": "مهد منظریه"
+  },
+  {
+    "name": "سیدمحمدرضا گلزاری",
+    "username": "گلزاری",
+    "password_hash": "dbe501ef6880a80e99f04131108ae7285daebac0dad9f3e5b7d94c50821784f4",
+    "school_id": null,
+    "source_center": "تن خواه گردان"
+  },
+  {
+    "name": "عبدالعلی بوانی",
+    "username": "بوانی",
+    "password_hash": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+    "school_id": null,
+    "source_center": ""
+  },
+  {
+    "name": "علی هاشمیان",
+    "username": "هاشمیان",
+    "password_hash": "205ee5f9d6edf37ed1740c9ed4c2e8be3ababec39885c42cc06eb1ae4b2047a9",
+    "school_id": null,
+    "source_center": ""
+  },
+  {
+    "name": "ذبیح الله کرمانپور",
+    "username": "کرمانپور",
+    "password_hash": "4bbc45cb2c3a0be615a35f2af8350174d495dd08645b6d0d668fcec65deb692e",
+    "school_id": null,
+    "source_center": ""
+  }
+];
+
 const SCHOOL_TUITION = {
   1:'0-1-40', 2:'0-2-40', 3:'0-3-40', 4:'0-4-40',
   7:'0-5-40', 8:'0-7-40', 6:'0-8-40', 9:'0-9-40', 5:'0-10-40'
@@ -160,6 +261,7 @@ function doPost(e) {
       case 'manager_add': return json_(managerAdd_(body));
       case 'manager_update': return json_(managerUpdate_(body));
       case 'manager_delete': return json_(managerDelete_(body));
+      case 'manager_import_attached': return json_(managerImportAttached_(body));
       case 'attachment': return json_(attachment_(body));
       case 'parsian_export': return json_(parsianExport_(body));
       case 'parsian_school_map': return json_(parsianSchoolMap_(body));
@@ -531,7 +633,10 @@ function messageDelete_(b) {
 function managers_(b) {
   auth_(b,['senior']);
   return {success:true,data:rows_('Managers').map(x=>{
-    const r=x.obj; delete r.password; return r;
+    const r=Object.assign({},x.obj);
+    delete r.password;
+    r.school_name = r.school_id ? schoolName_(r.school_id) : '';
+    return r;
   })};
 }
 
@@ -566,6 +671,24 @@ function managerDelete_(b) {
   if(!hit) throw new Error('مدیر یافت نشد.');
   sheet_('Managers').getRange(hit.row,7).setValue(false);
   return {success:true};
+}
+
+function managerImportAttached_(b) {
+  auth_(b,['senior']);
+  const existing = {};
+  rows_('Managers').forEach(x => existing[String(x.obj.username)] = x.obj);
+  let added = 0, skipped = 0;
+  ATTACHED_MANAGERS.forEach(m => {
+    const username = String(m.username || '').trim();
+    if (!username) return;
+    if (existing[username]) { skipped++; return; }
+    sheet_('Managers').appendRow([
+      nextId_('Managers'), String(m.name || ''), username, String(m.password_hash || ''),
+      m.school_id == null ? '' : String(m.school_id), 'manager', true, now_()
+    ]);
+    added++;
+  });
+  return {success:true,added:added,skipped:skipped,total:ATTACHED_MANAGERS.length};
 }
 
 /* ---------- ATTACHMENTS / DRIVE ---------- */

@@ -21,61 +21,9 @@ workflows:
       - name: Build Android Release APK
         script: |
           chmod +x ./gradlew
-
           ./gradlew clean assembleRelease \
             -PversionCode=$BUILD_NUMBER \
             -PversionName=1.0.$BUILD_NUMBER
 
-      - name: Sign Release APK
-        script: |
-          set -e
-
-          APK_DIR="app/build/outputs/apk/release"
-          UNSIGNED_APK=$(find "$APK_DIR" -maxdepth 1 -name "*-unsigned.apk" | head -n 1)
-
-          if [ -z "$UNSIGNED_APK" ]; then
-            echo "ERROR: Unsigned APK not found."
-            ls -lah "$APK_DIR"
-            exit 1
-          fi
-
-          echo "Unsigned APK:"
-          echo "$UNSIGNED_APK"
-
-          BUILD_TOOLS=$(find "$ANDROID_SDK_ROOT/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -n 1)
-
-          if [ -z "$BUILD_TOOLS" ]; then
-            echo "ERROR: Android Build Tools not found."
-            exit 1
-          fi
-
-          APKSIGNER="$BUILD_TOOLS/apksigner"
-
-          if [ ! -f "$APKSIGNER" ]; then
-            echo "ERROR: apksigner not found:"
-            echo "$APKSIGNER"
-            exit 1
-          fi
-
-          SIGNED_APK="$APK_DIR/app-release.apk"
-
-          "$APKSIGNER" sign \
-            --ks "$CM_KEYSTORE_PATH" \
-            --ks-key-alias "$CM_KEY_ALIAS" \
-            --ks-pass "pass:$CM_KEYSTORE_PASSWORD" \
-            --key-pass "pass:$CM_KEY_PASSWORD" \
-            --out "$SIGNED_APK" \
-            "$UNSIGNED_APK"
-
-          echo "Signed APK created:"
-          ls -lh "$SIGNED_APK"
-
-          "$APKSIGNER" verify --verbose "$SIGNED_APK"
-
-          rm -f "$UNSIGNED_APK"
-
-          echo "Final APK:"
-          ls -lh "$APK_DIR"
-
     artifacts:
-      - app/build/outputs/apk/release/app-release.apk
+      - app/build/outputs/apk/release/*.apk
