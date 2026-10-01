@@ -328,11 +328,12 @@ function login_(b) {
         return {success:false,error:'نام کاربری یا رمز عبور اشتباه است.'};
       }
       const token = Utilities.getUuid()+'-'+Utilities.getUuid();
+      const normalizedRole = (String(r.role||'').toLowerCase()==='senior' || String(r.role||'').toLowerCase()==='admin') ? 'admin' : 'manager';
       CacheService.getScriptCache().put('sess_'+token, JSON.stringify({
-        id:r.id,name:r.name,username:r.username,school_id:r.school_id,role:(String(r.role)==='senior'?'admin':r.role)
+        id:r.id,name:r.name,username:r.username,school_id:r.school_id,role:normalizedRole
       }), CFG.SESSION_HOURS*3600);
       return {success:true,token:token,user:{
-        id:r.id,name:r.name,username:r.username,school_id:r.school_id,role:(String(r.role)==='senior'?'admin':r.role)
+        id:r.id,name:r.name,username:r.username,school_id:r.school_id,role:normalizedRole
       }};
     }
   }
@@ -350,6 +351,7 @@ function auth_(b, roles) {
   const raw=CacheService.getScriptCache().get('sess_'+token);
   if(!raw) throw new Error('نشست منقضی شده است. دوباره وارد شوید.');
   const u=JSON.parse(raw);
+  if (u.role==='admin') u.role='senior';
   if (roles && roles.length && roles.indexOf(u.role)<0) throw new Error('دسترسی مجاز نیست.');
   return u;
 }
@@ -443,40 +445,75 @@ function studentsImport_(b) {
 }
 
 function readStudentXlsx_(base64) {
-  let clean=String(base64); if(clean.indexOf(',')>=0) clean=clean.substring(clean.indexOf(',')+1);
+  let clean=String(base64||'');
+  if(clean.indexOf(',')>=0) clean=clean.substring(clean.indexOf(',')+1);
+  if(!clean) throw new Error('محتوای فایل Excel خالی است.');
   const blob=Utilities.newBlob(Utilities.base64Decode(clean),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','students.xlsx');
   const files=Utilities.unzip(blob); const by={}; files.forEach(f=>by[f.getName()]=f);
   const shared=[];
   if(by['xl/sharedStrings.xml']) {
     const root=XmlService.parse(by['xl/sharedStrings.xml'].getDataAsString()).getRootElement();
-    root.getChildren().forEach(si=>{ let txt=''; si.getDescendants().forEach(n=>{ if(n.getType()===XmlService.ContentTypes.TEXT) txt+=n.asText(); }); shared.push(txt); });
-  }
-  const sheet=by['xl/worksheets/sheet1.xml']; if(!sheet) throw new Error('برگه اول Excel پیدا نشد.');
-  const root=XmlService.parse(sheet.getDataAsString()).getRootElement();
-  const rows=[];
-  const sheetData=root.getChildren().filter(x=>x.getName()==='sheetData')[0]; if(!sheetData) return rows;
-  sheetData.getChildren().filter(x=>x.getName()==='row').forEach(row=>{
-    const cells={}; row.getChildren().filter(x=>x.getName()==='c').forEach(c=>{
-      const ref=String(c.getAttribute('r').getValue()); const col=ref.replace(/\d/g,'');
-      const vEl=c.getChildren().filter(x=>x.getName()==='v')[0]; let v=vEl?vEl.getText():'';
-      const typ=c.getAttribute('t'); if(typ && typ.getValue()==='s' && v!=='') v=shared[Number(v)]||'';
-      if(typ && typ.getValue()==='inlineStr'){ const is=c.getChildren().filter(x=>x.getName()==='is')[0]; v=is?is.getDescendants().filter(n=>n.getType()===XmlService.ContentTypes.TEXT).map(n=>n.asText()).join(''):''; }
-      cells[col]=v;
+    root.getChildren().forEach(si=>{
+      let txt='';
+      si.getDescendants().forEach(n=>{ if(n.getType()===XmlService.ContentTypes.TEXT) txt+=n.asText(); });
+      shared.push(txt);
     });
-    rows.push(cells);
-  });
-  if(rows.length<2) return [];
-  const header=rows[1]; const map={}; Object.keys(header).forEach(k=>map[String(header[k]).trim()]=k);
-  const nameCol=map['نام'], lastCol=map['نام خانوادگی'], nidCol=map['کد ملی'], birthNoCol=map['شماره شناسنامه'], phoneCol=map['شماره تلفن'];
-  const out=[];
-  for(let i=2;i<rows.length;i++){
-    const r=rows[i]; const name=[r[nameCol]||'',r[lastCol]||''].join(' ').replace(/\s+/g,' ').trim();
-    if(!name) continue;
-    out.push({name:name,national_id:nidCol?digits_(r[nidCol]||''):'',birth_certificate_no:birthNoCol?String(r[birthNoCol]||''):'',phone:phoneCol?digits_(r[phoneCol]||''):''});
   }
+  const sheet=by['xl/worksheets/sheet1.xml'];
+  if(!sheet) throw new Error('برگه اول Excel پیدا نشد.');
+  const root=XmlService.parse(sheet.getDataAsString()).getRootElement();
+  const sheetData=root.getChildren().filter(x=>x.getName()==='sheetData')[0];
+  if(!sheetData) return [];
+  const rawRows=[];
+  sheetData.getChildren().filter(x=>x.getName()==='row').forEach(row=>{
+    const cells={};
+    row.getChildren().filter(x=>x.getName()==='c').forEach(c=>{
+      const refAttr=c.getAttribute('r'); if(!refAttr) return;
+      const ref=String(refAttr.getValue());
+      const col=ref.replace(/\d/g,'');
+      const vEl=c.getChildren().filter(x=>x.getName()==='v')[0];
+      let v=vEl?vEl.getText():'';
+      const typ=c.getAttribute('t');
+      const type=typ?String(typ.getValue()):'';
+      if(type==='s' && v!=='') v=shared[Number(v)]||'';
+      if(type==='inlineStr') {
+        const is=c.getChildren().filter(x=>x.getName()==='is')[0];
+        v=is?is.getDescendants().filter(n=>n.getType()===XmlService.ContentTypes.TEXT).map(n=>n.asText()).join(''):'';
+      }
+      cells[col]=String(v==null?'':v);
+    });
+    rawRows.push(cells);
+  });
+  if(rawRows.length===0) return [];
+
+  // Find the real header row instead of assuming it is always row 2.
+  let headerIndex=-1, header={};
+  for(let i=0;i<Math.min(rawRows.length,10);i++) {
+    const keys=Object.keys(rawRows[i]);
+    const vals=keys.map(k=>String(rawRows[i][k]||'').trim());
+    if(vals.indexOf('نام')>=0 && vals.indexOf('نام خانوادگی')>=0) { headerIndex=i; header=rawRows[i]; break; }
+  }
+  if(headerIndex<0) throw new Error('ردیف عنوان ستون‌های Excel پیدا نشد. ستون‌های «نام» و «نام خانوادگی» لازم است.');
+
+  const map={}; Object.keys(header).forEach(k=>map[String(header[k]||'').trim()]=k);
+  const nameCol=map['نام'], lastCol=map['نام خانوادگی'];
+  const nidCol=map['کد ملی'], birthNoCol=map['شماره شناسنامه'], phoneCol=map['شماره تلفن'];
+  if(!nameCol || !lastCol) throw new Error('ستون‌های «نام» و «نام خانوادگی» در فایل Excel یافت نشدند.');
+  const out=[];
+  for(let i=headerIndex+1;i<rawRows.length;i++) {
+    const r=rawRows[i];
+    const name=[r[nameCol]||'',r[lastCol]||''].join(' ').replace(/\s+/g,' ').trim();
+    if(!name) continue;
+    out.push({
+      name:name,
+      national_id:nidCol?digits_(r[nidCol]||''):'',
+      birth_certificate_no:birthNoCol?String(r[birthNoCol]||''):'',
+      phone:phoneCol?digits_(r[phoneCol]||''):''
+    });
+  }
+  if(out.length===0) throw new Error('هیچ دانش‌آموزی از فایل Excel خوانده نشد.');
   return out;
 }
-
 function importBankXlsx_(base64,schoolId){
   let clean=String(base64); if(clean.indexOf(',')>=0) clean=clean.substring(clean.indexOf(',')+1);
   const blob=Utilities.newBlob(Utilities.base64Decode(clean),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','bank.xlsx');
