@@ -269,8 +269,6 @@ function doPost(e) {
       case 'students': return json_(students_(body));
       case 'student_add': return json_(studentAdd_(body));
       case 'students_import': return json_(studentsImport_(body));
-      case 'student_import': return json_(studentsImport_(body));
-      case 'students-import': return json_(studentsImport_(body));
       case 'student_update': return json_(studentUpdate_(body));
       case 'student_delete': return json_(studentDelete_(body));
       case 'tuition': return json_(tuition_(body));
@@ -296,7 +294,6 @@ function doPost(e) {
       case 'messages': return json_(messages_(body));
       case 'message_add': return json_(messageAdd_(body));
       case 'message_delete': return json_(messageDelete_(body));
-      case 'senior_message_delete': return json_(messageDelete_(body));
       case 'managers': return json_(managers_(body));
       case 'manager_add': return json_(managerAdd_(body));
       case 'manager_update': return json_(managerUpdate_(body));
@@ -332,10 +329,10 @@ function login_(b) {
       }
       const token = Utilities.getUuid()+'-'+Utilities.getUuid();
       CacheService.getScriptCache().put('sess_'+token, JSON.stringify({
-        id:r.id,name:r.name,username:r.username,school_id:r.school_id,role:(String(r.role)==='senior'?'admin':r.role)
+        id:r.id,name:r.name,username:r.username,school_id:r.school_id,role:((String(r.role)==='senior'||String(r.username)==='admin')?'admin':r.role)
       }), CFG.SESSION_HOURS*3600);
       return {success:true,token:token,user:{
-        id:r.id,name:r.name,username:r.username,school_id:r.school_id,role:(String(r.role)==='senior'?'admin':r.role)
+        id:r.id,name:r.name,username:r.username,school_id:r.school_id,role:((String(r.role)==='senior'||String(r.username)==='admin')?'admin':r.role)
       }};
     }
   }
@@ -396,7 +393,7 @@ function schoolDelete_(b){ auth_(b,['senior','admin']); const hit=findRow_('Scho
 function students_(b) {
   const u=auth_(b);
   let data=rows_('Students').map(x=>x.obj).filter(x=>String(x.active)!=='false');
-  if(u.role!=='senior') data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>String(x.school_id)===String(u.school_id));
   if(b.school_id) data=data.filter(x=>String(x.school_id)===String(b.school_id));
   if(b.id) data=data.filter(x=>String(x.id)===String(b.id));
   if(b.q) {
@@ -439,58 +436,82 @@ function studentsImport_(b) {
     const duplicate=existing.some(x=>String(x.name).trim()===name && (nid ? String(x.national_id)===nid : true));
     if(duplicate){skipped++;return;}
     const id=nextId_('Students');
-    const rowGrade=String(r.grade||'').trim() || grade;
-    sheet_('Students').appendRow([id,name,rowGrade,String(r.phone||''),nid,schoolId,'67','','',true,now_()]);
+    sheet_('Students').appendRow([id,name,grade,String(r.phone||''),nid,schoolId,'67','','',true,now_()]);
     existing.push({name:name,national_id:nid,school_id:schoolId}); added++;
   });
   return {success:true,added:added,skipped:skipped,total:rows.length,note:'این فایل شماره شناسنامه دارد و کد ملی در آن وجود ندارد؛ کد ملی و حساب پارسیان برای هر دانش‌آموز بعداً قابل تکمیل است.'};
 }
 
 function readStudentXlsx_(base64) {
-  let clean=String(base64); if(clean.indexOf(',')>=0) clean=clean.substring(clean.indexOf(',')+1);
+  let clean=String(base64);
+  if(clean.indexOf(',')>=0) clean=clean.substring(clean.indexOf(',')+1);
   const blob=Utilities.newBlob(Utilities.base64Decode(clean),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','students.xlsx');
-  const files=Utilities.unzip(blob); const by={}; files.forEach(f=>by[f.getName()]=f);
+  const files=Utilities.unzip(blob);
+  const by={}; files.forEach(f=>by[f.getName()]=f);
+  const textOf = el => {
+    if(!el) return '';
+    let out='';
+    el.getDescendants().forEach(n=>{ if(n.getType()===XmlService.ContentTypes.TEXT) out+=n.asText(); });
+    return out;
+  };
   const shared=[];
   if(by['xl/sharedStrings.xml']) {
     const root=XmlService.parse(by['xl/sharedStrings.xml'].getDataAsString()).getRootElement();
-    root.getChildren().forEach(si=>{ let txt=''; si.getDescendants().forEach(n=>{ if(n.getType()===XmlService.ContentTypes.TEXT) txt+=n.asText(); }); shared.push(txt); });
+    root.getDescendants().filter(n=>n.getType()===XmlService.ContentTypes.ELEMENT && n.getName()==='si').forEach(si=>shared.push(textOf(si)));
   }
-  const sheet=by['xl/worksheets/sheet1.xml']; if(!sheet) throw new Error('برگه اول Excel پیدا نشد.');
+  const sheet=by['xl/worksheets/sheet1.xml'];
+  if(!sheet) throw new Error('برگه اول Excel پیدا نشد.');
   const root=XmlService.parse(sheet.getDataAsString()).getRootElement();
+  const rowEls=root.getDescendants().filter(n=>n.getType()===XmlService.ContentTypes.ELEMENT && n.getName()==='row');
   const rows=[];
-  const sheetData=root.getChildren().filter(x=>x.getName()==='sheetData')[0]; if(!sheetData) return rows;
-  sheetData.getChildren().filter(x=>x.getName()==='row').forEach(row=>{
-    const cells={}; row.getChildren().filter(x=>x.getName()==='c').forEach(c=>{
-      const ref=String(c.getAttribute('r').getValue()); const col=ref.replace(/\d/g,'');
-      const vEl=c.getChildren().filter(x=>x.getName()==='v')[0]; let v=vEl?vEl.getText():'';
-      const typ=c.getAttribute('t'); if(typ && typ.getValue()==='s' && v!=='') v=shared[Number(v)]||'';
-      if(typ && typ.getValue()==='inlineStr'){ const is=c.getChildren().filter(x=>x.getName()==='is')[0]; v=is?is.getDescendants().filter(n=>n.getType()===XmlService.ContentTypes.TEXT).map(n=>n.asText()).join(''):''; }
+  rowEls.forEach(row=>{
+    const cells={};
+    row.getChildren().forEach(c=>{
+      if(c.getName()!=='c') return;
+      const a=c.getAttribute('r'); if(!a) return;
+      const ref=String(a.getValue());
+      const col=ref.replace(/\d/g,'');
+      const t=c.getAttribute('t');
+      const typ=t?String(t.getValue()):'';
+      const vEl=c.getChildren().find(x=>x.getName()==='v');
+      let v=vEl?String(vEl.getText()):'';
+      if(typ==='s' && v!=='') v=shared[Number(v)]||'';
+      else if(typ==='inlineStr') {
+        const is=c.getChildren().find(x=>x.getName()==='is');
+        v=textOf(is);
+      }
       cells[col]=v;
     });
     rows.push(cells);
   });
-  if(rows.length<2) return [];
-  // Find the real header row (some school files have a title row above it).
-  let headerIndex=-1, header=null;
-  for(let hi=0;hi<Math.min(8,rows.length);hi++){
-    const vals=Object.keys(rows[hi]).map(k=>String(rows[hi][k]||'').trim());
-    if(vals.indexOf('نام')>=0 && vals.indexOf('نام خانوادگی')>=0){ headerIndex=hi; header=rows[hi]; break; }
+  if(rows.length<2) throw new Error('ردیف‌های Excel قابل خواندن نیستند.');
+
+  // The supplied Noor 1 file has a title row, then the real header row.
+  let headerIndex=0;
+  for(let i=0;i<Math.min(rows.length,10);i++) {
+    const vals=Object.keys(rows[i]).map(k=>String(rows[i][k]||'').trim());
+    if(vals.indexOf('نام')>=0 && vals.indexOf('نام خانوادگی')>=0) { headerIndex=i; break; }
   }
-  if(headerIndex<0) throw new Error('سطر عنوان ستون‌های نام و نام خانوادگی در Excel پیدا نشد.');
-  const map={}; Object.keys(header).forEach(k=>map[String(header[k]).trim()]=k);
-  const pickCol=(names)=>{for(let i=0;i<names.length;i++){if(map[names[i]]) return map[names[i]];} return null;};
-  const nameCol=pickCol(['نام']);
-  const lastCol=pickCol(['نام خانوادگی','نام‌خانوادگی']);
-  const nidCol=pickCol(['کد ملی','کدملی','شماره ملی','شماره ملی دانش آموز']);
-  const birthNoCol=pickCol(['شماره شناسنامه']);
-  const phoneCol=pickCol(['شماره تلفن','تلفن همراه','شماره همراه','موبایل','شماره موبایل']);
-  const gradeCol=pickCol(['پایه','کلاس','پایه تحصیلی','کلاس تحصیلی','مقطع']);
+  const header=rows[headerIndex];
+  const map={}; Object.keys(header).forEach(k=>map[String(header[k]||'').trim()]=k);
+  const nameCol=map['نام'], lastCol=map['نام خانوادگی'];
+  const nidCol=map['کد ملی'];
+  const birthNoCol=map['شماره شناسنامه'];
+  const phoneCol=map['شماره تلفن'];
+  if(!nameCol || !lastCol) throw new Error('ستون‌های نام و نام خانوادگی در فایل Excel پیدا نشد.');
   const out=[];
-  for(let i=headerIndex+1;i<rows.length;i++){
-    const r=rows[i]; const name=[r[nameCol]||'',r[lastCol]||''].join(' ').replace(/\s+/g,' ').trim();
+  for(let i=headerIndex+1;i<rows.length;i++) {
+    const r=rows[i];
+    const name=[r[nameCol]||'',r[lastCol]||''].join(' ').replace(/\s+/g,' ').trim();
     if(!name) continue;
-    out.push({name:name,national_id:nidCol?digits_(r[nidCol]||''):'',birth_certificate_no:birthNoCol?String(r[birthNoCol]||''):'',phone:phoneCol?digits_(r[phoneCol]||''):'',grade:gradeCol?String(r[gradeCol]||'').trim():''});
+    out.push({
+      name:name,
+      national_id:nidCol?digits_(r[nidCol]||''):'',
+      birth_certificate_no:birthNoCol?String(r[birthNoCol]||''):'',
+      phone:phoneCol?digits_(r[phoneCol]||''):''
+    });
   }
+  if(!out.length) throw new Error('هیچ دانش‌آموزی از فایل Excel خوانده نشد.');
   return out;
 }
 
@@ -545,7 +566,7 @@ function studentDelete_(b) {
 function tuition_(b) {
   const u=auth_(b);
   let data=rows_('Tuition').map(x=>x.obj);
-  if(u.role!=='senior') data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>String(x.school_id)===String(u.school_id));
   if(b.student_id) data=data.filter(x=>String(x.student_id)===String(b.student_id));
   if(b.school_id) data=data.filter(x=>String(x.school_id)===String(b.school_id));
   return {success:true,data:data};
@@ -553,7 +574,7 @@ function tuition_(b) {
 
 function tuitionAdd_(b) {
   const u=auth_(b);
-  const schoolId=u.role==='senior'?b.school_id:u.school_id;
+  const schoolId=(u.role==='senior'||u.role==='admin')?b.school_id:u.school_id;
   if(!schoolId || !b.student_id) throw new Error('مدرسه و دانش‌آموز الزامی است.');
   const type=String(b.type||'payment');
   const amount=amount_(b.amount);
@@ -607,14 +628,18 @@ function tuitionDelete_(b) {
 function expenses_(b) {
   const u=auth_(b);
   let data=rows_('Expenses').map(x=>x.obj);
-  if(u.role!=='senior') data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>String(x.school_id)===String(u.school_id));
   return {success:true,data:data};
 }
 
 function expenseAdd_(b) {
   const u=auth_(b);
-  const schoolId=u.role==='senior'?b.school_id:u.school_id;
-  const category=String(b.category||'').trim();
+  const schoolId=(u.role==='senior'||u.role==='admin')?String(b.school_id||''):String(u.school_id||'');
+  let category=String(b.category||'').trim();
+  if(!category && b.category_id){
+    const ch=findRow_('ExpenseCategories',b.category_id);
+    if(ch) category=String(ch.obj.name||'').trim();
+  }
   const amount=amount_(b.amount);
   if(!schoolId || !category || amount<=0) throw new Error('مدرسه، دسته هزینه و مبلغ الزامی است.');
   if(!String(b.tracking_code||'').trim()) throw new Error('شماره پیگیری الزامی است.');
@@ -664,7 +689,7 @@ function expenseDelete_(b) {
 function transactions_(b) {
   const u=auth_(b);
   let data=rows_('Transactions').map(x=>x.obj);
-  if(u.role!=='senior') data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>String(x.school_id)===String(u.school_id));
   if(b.student_id) data=data.filter(x=>{ const hit=findRow_('Tuition',x.source_id); return String(hit&&hit.obj.student_id)===String(b.student_id); });
   if(b.kind_query) data=data.filter(x=>b.kind_query==='هزینه' ? String(x.kind)==='expense' : (b.kind_query==='شهریه' ? String(x.kind)==='payment' : String(x.kind)===b.kind_query));
   const students=rows_('Students').map(x=>x.obj); const tuition=rows_('Tuition').map(x=>x.obj); const expenses=rows_('Expenses').map(x=>x.obj);
@@ -695,7 +720,7 @@ function transactionDelete_(b) {
 function bank_(b) {
   const u=auth_(b);
   let data=rows_('Bank').map(x=>x.obj);
-  if(u.role!=='senior') data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>String(x.school_id)===String(u.school_id));
   return {success:true,data:data};
 }
 
