@@ -1,6 +1,6 @@
 workflows:
   android-release:
-    name: School Finance Android Release (Signed)
+    name: School Finance Android Release
     max_build_duration: 60
 
     environment:
@@ -10,43 +10,28 @@ workflows:
         - school_finance_keystore
 
     scripts:
-      - name: Check Gradle and signing environment
+      - name: Check Gradle
         script: |
-          set -e
           gradle --version
-          test -n "$CM_KEYSTORE_PATH"
-          test -f "$CM_KEYSTORE_PATH"
-          test -n "$CM_KEYSTORE_PASSWORD"
-          test -n "$CM_KEY_ALIAS"
-          test -n "$CM_KEY_PASSWORD"
-          echo "Android keystore is available to Gradle."
 
       - name: Generate Gradle Wrapper
         script: |
-          set -e
           gradle wrapper --gradle-version 7.0.2
 
       - name: Build signed Android Release APK
         script: |
-          set -e
           chmod +x ./gradlew
           ./gradlew clean assembleRelease \
             -PversionCode=$BUILD_NUMBER \
-            -PversionName=1.0.$BUILD_NUMBER
+            -PversionName=2.0.$BUILD_NUMBER
 
-      - name: Verify APK is signed
+      - name: Verify APK signature
         script: |
           set -e
-          APK="app/build/outputs/apk/release/app-release.apk"
-          test -f "$APK"
-          if unzip -p "$APK" META-INF/*.RSA META-INF/*.DSA META-INF/*.EC 2>/dev/null | head -c 1 | grep -q .; then
-            echo "APK contains a signing certificate."
-          else
-            echo "ERROR: APK is unsigned."
-            exit 1
-          fi
-          echo "APK: $APK"
-          ls -lh "$APK"
+          APK=$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' ! -name '*-unsigned.apk' | head -n 1)
+          test -n "$APK"
+          BUILD_TOOLS=$(find "$ANDROID_SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          "$BUILD_TOOLS/apksigner" verify --verbose "$APK"
 
     artifacts:
-      - app/build/outputs/apk/release/app-release.apk
+      - app/build/outputs/apk/release/*.apk

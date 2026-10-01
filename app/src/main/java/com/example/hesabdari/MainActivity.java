@@ -139,7 +139,7 @@ public class MainActivity extends Activity {
         AlertDialog dlg=new AlertDialog.Builder(this).setTitle(old==null?"افزودن دانش‌آموز":"ویرایش دانش‌آموز").setView(l).setPositiveButton("ذخیره",null).setNegativeButton("انصراف",null).create();
         chooseCode.setOnClickListener(v->{LinearLayout ql=new LinearLayout(this);ql.setOrientation(LinearLayout.VERTICAL);EditText q=field("جست‌وجو با کد یا نام حساب");ql.addView(q);LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);ScrollView sv=new ScrollView(this);sv.addView(list);ql.addView(sv,new LinearLayout.LayoutParams(-1,0,1));AlertDialog ad=new AlertDialog.Builder(this).setTitle("حساب‌های تفصیلی پارسیان").setView(ql).setNegativeButton("بستن",null).create();Runnable load=()->api.request("GET","/api/parsian/student-accounts?q="+Uri.encode(q.getText().toString().trim()),null,new ApiClient.Callback(){public void ok(JSONObject o){list.removeAllViews();JSONArray a=o.optJSONArray("data");int n=Math.min(100,a==null?0:a.length());for(int i=0;i<n;i++){JSONObject x=a.optJSONObject(i);Button b=btn(x.optString("code")+"\n"+x.optString("name"));b.setMinHeight((int)fs(72));list.addView(b);gapView(list);b.setOnClickListener(vv->{parsianCode[0]=x.optString("code");updateCodeInfo.run();ad.dismiss();});}if(n==0)list.addView(tv("حسابی پیدا نشد.",15));}public void fail(String m){toast(m);}});q.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int b,int c){load.run();}public void afterTextChanged(Editable e){}});ad.show();load.run();});
         newCode.setOnClickListener(v->{Spinner sp=new Spinner(this);String[] opts={"1 - گروه معین 1","2 - گروه معین 2","3 - گروه معین 3","4 - گروه معین 4"};sp.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,opts));new AlertDialog.Builder(this).setTitle("گروه معین پارسیان").setMessage("کد کلی دانش‌آموزان در فایل پارسیان 67 است. کد معین را مطابق ساختار حساب‌های موجود انتخاب کنید.").setView(sp).setPositiveButton("ساخت",(d,w)->{JSONObject z=new JSONObject();try{z.put("name",n.getText().toString().trim());z.put("grade",grades[g.getSelectedItemPosition()]);z.put("moeen",String.valueOf(sp.getSelectedItemPosition()+1));}catch(Exception ignored){}api.request("POST","/api/parsian/student-account/allocate",z,new ApiClient.Callback(){public void ok(JSONObject o){JSONObject x=o.optJSONObject("data");if(x!=null){parsianCode[0]=x.optString("code");updateCodeInfo.run();toast("حساب پارسیان ایجاد شد: "+parsianCode[0]);}}public void fail(String m){toast(m);}});}).setNegativeButton("انصراف",null).show();});
-        dlg.setOnShowListener(x->{Button save=dlg.getButton(AlertDialog.BUTTON_POSITIVE);if("admin".equals(me.optString("role"))){save.setEnabled(false);api.request("GET","/api/schools",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");if(a!=null){for(int i=0;i<a.length()&&i<10;i++){JSONObject ss=a.optJSONObject(i);if(ss==null)continue;schoolNames.add(canonicalSchoolName(i));schoolIds.add(ss.optLong("id"));}}school.setAdapter(new ArrayAdapter<String>(MainActivity.this,android.R.layout.simple_spinner_dropdown_item,schoolNames));if(old!=null){long sid=old.optLong("school_id");for(int i=0;i<schoolIds.size();i++)if(schoolIds.get(i)==sid)school.setSelection(i);}save.setEnabled(!schoolIds.isEmpty());loadSchoolMap.run();}public void fail(String m){showFormError(error,m);}});}else loadSchoolMap.run();save.setOnClickListener(v->{String name=n.getText().toString().trim(),p=phone.getText().toString().trim(),nid=national.getText().toString().trim();if(name.isEmpty()){showFormError(error,"نام دانش‌آموز را وارد کنید.");return;}if(!p.matches("0\\d{10}")){showFormError(error,"شماره تلفن باید دقیقاً مانند 09131112222 باشد.");return;}if(!nid.matches("\\d{10}")){showFormError(error,"کد ملی باید دقیقاً ۱۰ رقم انگلیسی باشد.");return;}if(!parsianCode[0].matches("\\d+-\\d+-67")){showFormError(error,"حساب پارسیان دانش‌آموز الزامی است.");return;}if("admin".equals(me.optString("role"))&&schoolIds.isEmpty()){showFormError(error,"مدرسه برای انتخاب وجود ندارد.");return;}try{JSONObject z=new JSONObject();z.put("name",name);z.put("grade",grades[g.getSelectedItemPosition()]);z.put("phone",p);z.put("national_id",nid);z.put("parsian_account_code",parsianCode[0]);if("admin".equals(me.optString("role")))z.put("school_id",schoolIds.get(school.getSelectedItemPosition()));String path=old==null?"/api/students":"/api/students/"+old.optLong("id");api.request(old==null?"POST":"PATCH",path,z,new ApiClient.Callback(){public void ok(JSONObject o){dlg.dismiss();students();}public void fail(String m){showFormError(error,m);}});}catch(Exception e){showFormError(error,"اطلاعات دانش‌آموز کامل نیست.");}});});dlg.show();
+        dlg.setOnShowListener(x->{Button save=dlg.getButton(AlertDialog.BUTTON_POSITIVE);if("admin".equals(me.optString("role"))){save.setEnabled(false);api.request("GET","/api/schools",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");if(a!=null){for(int i=0;i<a.length();i++){JSONObject ss=a.optJSONObject(i);if(ss==null)continue;schoolNames.add(ss.optString("name",canonicalSchoolName(i)));schoolIds.add(ss.optLong("id"));}}school.setAdapter(new ArrayAdapter<String>(MainActivity.this,android.R.layout.simple_spinner_dropdown_item,schoolNames));if(old!=null){long sid=old.optLong("school_id");for(int i=0;i<schoolIds.size();i++)if(schoolIds.get(i)==sid)school.setSelection(i);}save.setEnabled(!schoolIds.isEmpty());loadSchoolMap.run();}public void fail(String m){showFormError(error,m);}});}else loadSchoolMap.run();save.setOnClickListener(v->{String name=n.getText().toString().trim(),p=phone.getText().toString().trim(),nid=national.getText().toString().trim();if(name.isEmpty()){showFormError(error,"نام دانش‌آموز را وارد کنید.");return;}if(!p.matches("0\\d{10}")){showFormError(error,"شماره تلفن باید دقیقاً مانند 09131112222 باشد.");return;}if(!nid.matches("\\d{10}")){showFormError(error,"کد ملی باید دقیقاً ۱۰ رقم انگلیسی باشد.");return;}if(!parsianCode[0].matches("\\d+-\\d+-67")){showFormError(error,"حساب پارسیان دانش‌آموز الزامی است.");return;}if("admin".equals(me.optString("role"))&&schoolIds.isEmpty()){showFormError(error,"مدرسه برای انتخاب وجود ندارد.");return;}try{JSONObject z=new JSONObject();z.put("name",name);z.put("grade",grades[g.getSelectedItemPosition()]);z.put("phone",p);z.put("national_id",nid);z.put("parsian_account_code",parsianCode[0]);if("admin".equals(me.optString("role")))z.put("school_id",schoolIds.get(school.getSelectedItemPosition()));String path=old==null?"/api/students":"/api/students/"+old.optLong("id");api.request(old==null?"POST":"PATCH",path,z,new ApiClient.Callback(){public void ok(JSONObject o){dlg.dismiss();students();}public void fail(String m){showFormError(error,m);}});}catch(Exception e){showFormError(error,"اطلاعات دانش‌آموز کامل نیست.");}});});dlg.show();
     }
 
     void showFormError(TextView error,String message){
@@ -242,54 +242,62 @@ public class MainActivity extends Activity {
         api.request("GET","/api/schools",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray ar=o.optJSONArray("data");ArrayList<String> names=new ArrayList<>();ArrayList<Long> ids=new ArrayList<>();names.add("همه مدارس");ids.add(0L);for(int i=0;i<(ar==null?0:ar.length());i++){JSONObject x=ar.optJSONObject(i);names.add(x.optString("name"));ids.add(x.optLong("id"));}new AlertDialog.Builder(MainActivity.this).setTitle("خروجی Excel پارسیان").setItems(names.toArray(new String[0]),(d,w)->downloadParsian(ids.get(w))).show();}public void fail(String m){toast(m);}});
     }
     void downloadParsian(long schoolId){
-        new Thread(()->{try{
-            java.net.URL u=new java.net.URL("https://schoolfinanceapp.onrender.com/api/export/parsian"+(schoolId>0?"?school_id="+schoolId:""));
-            java.net.HttpURLConnection c=(java.net.HttpURLConnection)u.openConnection();c.setRequestProperty("Authorization","Bearer "+api.getToken());c.setConnectTimeout(15000);c.setReadTimeout(60000);
-            int code=c.getResponseCode();if(code<200||code>=300){runOnUiThread(()->toast("ساخت فایل پارسیان انجام نشد"));return;}
-            byte[] data;try(java.io.InputStream in=c.getInputStream();java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream()){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);data=out.toByteArray();}
-            android.content.ContentValues cv=new android.content.ContentValues();cv.put(MediaStore.Downloads.DISPLAY_NAME,"parsian-"+System.currentTimeMillis()+".xlsx");cv.put(MediaStore.Downloads.MIME_TYPE,"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");cv.put(MediaStore.Downloads.RELATIVE_PATH,"Download/SchoolFinance");
-            Uri uri=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,cv);if(uri==null)throw new Exception("save");
-            try(java.io.OutputStream out=getContentResolver().openOutputStream(uri)){out.write(data);}
-            runOnUiThread(()->toast("فایل Excel پارسیان در پوشه Download/SchoolFinance ذخیره شد"));
-        }catch(Exception e){runOnUiThread(()->toast("ذخیره فایل پارسیان انجام نشد"));}}).start();
+        JSONObject body=new JSONObject();
+        try{if(schoolId>0)body.put("school_id",schoolId);}catch(Exception ignored){}
+        api.request("POST","/api/parsian/export",body,new ApiClient.Callback(){
+            public void ok(JSONObject o){
+                String url=o.optString("file_url","");
+                if(url.isEmpty()){toast("فایل Excel پارسیان آماده نشد");return;}
+                new Thread(()->{try{
+                    java.net.HttpURLConnection c=(java.net.HttpURLConnection)new java.net.URL(url).openConnection();
+                    c.setConnectTimeout(15000);c.setReadTimeout(60000);
+                    int code=c.getResponseCode();if(code<200||code>=300)throw new Exception("download");
+                    byte[] data;try(java.io.InputStream in=c.getInputStream();java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream()){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);data=out.toByteArray();}
+                    android.content.ContentValues cv=new android.content.ContentValues();
+                    cv.put(MediaStore.Downloads.DISPLAY_NAME,"parsian-"+System.currentTimeMillis()+".xlsx");
+                    cv.put(MediaStore.Downloads.MIME_TYPE,"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+                    cv.put(MediaStore.Downloads.RELATIVE_PATH,"Download/SchoolFinance");
+                    Uri uri=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,cv);if(uri==null)throw new Exception("save");
+                    try(java.io.OutputStream out=getContentResolver().openOutputStream(uri)){out.write(data);}
+                    runOnUiThread(()->toast("فایل Excel پارسیان در پوشه Download/SchoolFinance ذخیره شد"));
+                }catch(Exception e){runOnUiThread(()->toast("ذخیره فایل پارسیان انجام نشد"));}}).start();
+            }
+            public void fail(String m){toast(m);}
+        });
     }
 
     void managers(){
-        base("مدیریت مدیران");
-        Button add=btn("➕ افزودن مدیر");
-        Button refresh=btn("🔄 بروزرسانی لیست مدیران");
-        content.addView(add);gap();content.addView(refresh);gap();
+        base("لیست مدیران");
+        Button importBtn=btn("📥 همگام‌سازی مدیران با Google Sheets"); content.addView(importBtn);gap();
+        Button refresh=btn("🔄 بروزرسانی لیست مدیران"); content.addView(refresh);gap();
+        Button add=btn("➕ افزودن مدیر جدید"); content.addView(add);gap();
+        TextView note=tv("لیست مدیران فایل «مدیر ها.xlsx» در سیستم آماده ورود است. مدیرانی که قبلاً وجود داشته باشند دوباره ساخته نمی‌شوند.",14);
+        note.setTextColor(Color.DKGRAY);content.addView(note);gap();
         LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);
         final Runnable[] reload=new Runnable[1];
         reload[0]=()->api.request("GET","/api/managers",null,new ApiClient.Callback(){
             public void ok(JSONObject o){
-                JSONArray a=o.optJSONArray("data");
-                api.request("GET","/api/schools",null,new ApiClient.Callback(){
-                    public void ok(JSONObject so){
-                        java.util.HashMap<Long,String> schoolMap=new java.util.HashMap<>();
-                        JSONArray sa=so.optJSONArray("data");
-                        for(int i=0;i<(sa==null?0:sa.length());i++){JSONObject x=sa.optJSONObject(i);if(x!=null)schoolMap.put(x.optLong("id"),x.optString("name"));}
-                        list.removeAllViews();
-                        for(int i=0;i<(a==null?0:a.length());i++){
-                            JSONObject m=a.optJSONObject(i);if(m==null)continue;
-                            String schoolName=schoolMap.get(m.optLong("school_id"));
-                            if(schoolName==null||schoolName.isEmpty())schoolName="همه مدارس";
-                            Button b=btn("👤 "+m.optString("name")+"\n"+m.optString("username")+" | "+m.optString("role")+"\n🏫 "+schoolName);
-                            list.addView(b);gapView(list);b.setOnClickListener(v->managerEdit(m));
-                        }
-                        if((a==null||a.length()==0))list.addView(tv("مدیری ثبت نشده است.",16));
-                    }
-                    public void fail(String m){list.removeAllViews();toast(m);}
-                });
+                list.removeAllViews(); JSONArray a=o.optJSONArray("data");
+                if(a==null||a.length()==0){list.addView(tv("مدیری ثبت نشده است.",16));return;}
+                for(int i=0;i<a.length();i++){
+                    JSONObject m=a.optJSONObject(i); if(m==null)continue;
+                    String school=m.optString("school_name"); if(school.isEmpty())school="مرکز/مدرسه ثبت نشده";
+                    Button b=btn("👤 "+m.optString("name")+"\nنام کاربری: "+m.optString("username")+
+                            "\nمدرسه/مرکز: "+school+"\nوضعیت: "+(m.optBoolean("active",true)?"فعال":"غیرفعال"));
+                    list.addView(b);gapView(list);b.setOnClickListener(v->managerEdit(m));
+                }
             }
             public void fail(String m){toast(m);}
         });
-        add.setOnClickListener(v->managerEdit(null));
-        refresh.setOnClickListener(v->reload[0].run());
-        reload[0].run();
-        back();
+        importBtn.setOnClickListener(v->{
+            importBtn.setEnabled(false);
+            api.request("POST","/api/managers/import-attached",new JSONObject(),new ApiClient.Callback(){
+                public void ok(JSONObject o){importBtn.setEnabled(true);toast("لیست مدیران اضافه شد: "+o.optInt("added")+" مدیر جدید؛ "+o.optInt("skipped")+" مورد قبلی");reload[0].run();}
+                public void fail(String m){importBtn.setEnabled(true);toast(m);}
+            });
+        });
+        refresh.setOnClickListener(v->reload[0].run()); add.setOnClickListener(v->managerEdit(null)); reload[0].run(); back();
     }
-
     void managerEdit(JSONObject old){
         LinearLayout l=new LinearLayout(this);
         l.setOrientation(LinearLayout.VERTICAL);
@@ -327,10 +335,10 @@ public class MainActivity extends Activity {
                 public void ok(JSONObject o){
                     JSONArray a=o.optJSONArray("data");
                     if(a!=null){
-                        for(int i=0;i<a.length() && i<9;i++){
+                        for(int i=0;i<a.length();i++){
                             JSONObject s=a.optJSONObject(i);
                             if(s==null)continue;
-                            schoolNames.add(canonicalSchoolName(i));
+                            schoolNames.add(s.optString("name",canonicalSchoolName(i)));
                             schoolIds.add(s.optLong("id"));
                         }
                     }
@@ -389,8 +397,7 @@ public class MainActivity extends Activity {
             "مهد مرکزی عصر",
             "مهد ابراهیم خلیل",
             "مهد سروستان",
-            "مهد منظریه",
-            "مهد برهان"
+            "مهد منظریه"
         };
         return index>=0&&index<names.length?names[index]:"مدرسه";
     }
@@ -407,11 +414,11 @@ public class MainActivity extends Activity {
             public void ok(JSONObject o){
                 list.removeAllViews();
                 JSONArray a=o.optJSONArray("data");
-                int count=Math.min(10,a==null?0:a.length());
+                int count=a==null?0:a.length();
                 for(int i=0;i<count;i++){
                     JSONObject s=a.optJSONObject(i);
                     if(s==null)continue;
-                    Button b=btn("🏫 "+canonicalSchoolName(i)+"\nکد: "+s.optString("code")+" | "+(s.optBoolean("active",true)?"فعال":"غیرفعال"));
+                    Button b=btn("🏫 "+s.optString("name",canonicalSchoolName(i))+"\nکد: "+s.optString("code")+" | "+(s.optBoolean("active",true)?"فعال":"غیرفعال"));
                     list.addView(b);gapView(list);
                     b.setOnClickListener(v->schoolEdit(s,reload[0]));
                 }
@@ -455,7 +462,7 @@ public class MainActivity extends Activity {
     void loadMessages(LinearLayout box){api.request("GET","/api/senior-messages",null,new ApiClient.Callback(){public void ok(JSONObject o){box.removeAllViews();JSONArray a=o.optJSONArray("data");if(a==null||a.length()==0){box.addView(tv("پیامی از مدیر ارشد ثبت نشده است.",15));return;}for(int i=0;i<a.length();i++){JSONObject m=a.optJSONObject(i);box.addView(tv("📢 "+m.optString("message")+"\n"+jalaliFromGregorian(m.optString("created_at")),15));if(i<a.length()-1)gapView(box);}}public void fail(String m){box.addView(tv("پیام‌ها در دسترس نیستند.",14));}});}
     void messagesAdmin(){base("پیام به مدیران");EditText msg=field("متن پیام مدیر ارشد برای همه مدیران");content.addView(msg);gap();Button send=btn("📢 ارسال پیام");content.addView(send);gap();LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);final Runnable[] loadRef=new Runnable[1]; loadRef[0]=()->api.request("GET","/api/senior-messages",null,new ApiClient.Callback(){public void ok(JSONObject o){list.removeAllViews();JSONArray a=o.optJSONArray("data");for(int i=0;i<(a==null?0:a.length());i++){JSONObject m=a.optJSONObject(i);LinearLayout row=new LinearLayout(MainActivity.this);row.setOrientation(LinearLayout.VERTICAL);row.setBackground(bg(Color.WHITE,20));row.addView(tv(m.optString("message"),16));row.addView(tv("تاریخ: "+jalaliFromGregorian(m.optString("created_at")),13));Button del=btn("🗑 غیرفعال کردن پیام");row.addView(del);list.addView(row);gapView(list);del.setOnClickListener(v->api.request("DELETE","/api/senior-messages/"+m.optLong("id"),null,new ApiClient.Callback(){public void ok(JSONObject x){loadRef[0].run();}public void fail(String z){toast(z);}}));}}public void fail(String m){toast(m);}});send.setOnClickListener(v->{String text=msg.getText().toString().trim();if(text.isEmpty()){toast("متن پیام را وارد کنید");return;}JSONObject z=new JSONObject();try{z.put("message",text);}catch(Exception ignored){}api.request("POST","/api/senior-messages",z,new ApiClient.Callback(){public void ok(JSONObject o){msg.setText("");toast("پیام برای مدیران ارسال شد");loadRef[0].run();}public void fail(String m){toast(m);}});});loadRef[0].run();back();}
 
-    void settings(){base("تنظیمات");content.addView(tv("ارتباط با سرور: Render\nپایگاه داده: Supabase",16));gap();content.addView(tv("تم رنگی",18));String[] names={"سبز فیروزه‌ای","آبی","بنفش","نارنجی","سبز","سبز تیره"};Spinner themeSpinner=new Spinner(this);themeSpinner.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,names));themeSpinner.setSelection(themeIndex);content.addView(themeSpinner,new LinearLayout.LayoutParams(-1,(int)fs(68)));themeSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,View v,int pos,long id){if(pos!=themeIndex){themeIndex=pos;prefs.edit().putInt("theme_index",themeIndex).apply();settings();}}});gap();content.addView(tv("اندازه نوشته‌ها",18));LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER);Button minus=btn("➖\nA");Button plus=btn("➕\nA");minus.setTextSize(fs(21));plus.setTextSize(fs(21));int wh=(int)fs(105);row.addView(minus,new LinearLayout.LayoutParams(wh,wh));Space sp=new Space(this);row.addView(sp,new LinearLayout.LayoutParams(18,1));row.addView(plus,new LinearLayout.LayoutParams(wh,wh));content.addView(row);gap();content.addView(tv("اندازه فعلی: "+Math.round(fontScale*100)+"٪",15));minus.setOnClickListener(v->{fontScale=Math.max(.85f,fontScale-.05f);prefs.edit().putFloat("font_scale",fontScale).apply();settings();});plus.setOnClickListener(v->{fontScale=Math.min(1.25f,fontScale+.05f);prefs.edit().putFloat("font_scale",fontScale).apply();settings();});Button out=btn("خروج از حساب");content.addView(out);gap();out.setOnClickListener(v->{api.request("POST","/api/logout",null,new ApiClient.Callback(){public void ok(JSONObject o){api.clearToken();showLogin();}public void fail(String m){api.clearToken();showLogin();}});});back();}
+    void settings(){base("تنظیمات");content.addView(tv("ارتباط با سرویس: Google Apps Script\nپایگاه داده: Google Sheets / Google Drive",16));gap();content.addView(tv("تم رنگی",18));String[] names={"سبز فیروزه‌ای","آبی","بنفش","نارنجی","سبز","سبز تیره"};Spinner themeSpinner=new Spinner(this);themeSpinner.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,names));themeSpinner.setSelection(themeIndex);content.addView(themeSpinner,new LinearLayout.LayoutParams(-1,(int)fs(68)));themeSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,View v,int pos,long id){if(pos!=themeIndex){themeIndex=pos;prefs.edit().putInt("theme_index",themeIndex).apply();settings();}}});gap();content.addView(tv("اندازه نوشته‌ها",18));LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER);Button minus=btn("➖\nA");Button plus=btn("➕\nA");minus.setTextSize(fs(21));plus.setTextSize(fs(21));int wh=(int)fs(105);row.addView(minus,new LinearLayout.LayoutParams(wh,wh));Space sp=new Space(this);row.addView(sp,new LinearLayout.LayoutParams(18,1));row.addView(plus,new LinearLayout.LayoutParams(wh,wh));content.addView(row);gap();content.addView(tv("اندازه فعلی: "+Math.round(fontScale*100)+"٪",15));minus.setOnClickListener(v->{fontScale=Math.max(.85f,fontScale-.05f);prefs.edit().putFloat("font_scale",fontScale).apply();settings();});plus.setOnClickListener(v->{fontScale=Math.min(1.25f,fontScale+.05f);prefs.edit().putFloat("font_scale",fontScale).apply();settings();});Button out=btn("خروج از حساب");content.addView(out);gap();out.setOnClickListener(v->{api.request("POST","/api/logout",null,new ApiClient.Callback(){public void ok(JSONObject o){api.clearToken();showLogin();}public void fail(String m){api.clearToken();showLogin();}});});back();}
 
     String fmt(long n){return NumberFormat.getNumberInstance(Locale.US).format(n);}
     String encrypt(String plain){try{KeyStore ks=KeyStore.getInstance("AndroidKeyStore");ks.load(null);if(!ks.containsAlias(KEY_ALIAS)){KeyGenerator kg=KeyGenerator.getInstance("AES","AndroidKeyStore");kg.init(new android.security.keystore.KeyGenParameterSpec.Builder(KEY_ALIAS,android.security.keystore.KeyProperties.PURPOSE_ENCRYPT|android.security.keystore.KeyProperties.PURPOSE_DECRYPT).setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE).build());kg.generateKey();}SecretKey key=((KeyStore.SecretKeyEntry)ks.getEntry(KEY_ALIAS,null)).getSecretKey();Cipher c=Cipher.getInstance("AES/GCM/NoPadding");c.init(Cipher.ENCRYPT_MODE,key);byte[] iv=c.getIV(),ct=c.doFinal(plain.getBytes(StandardCharsets.UTF_8));return Base64.encodeToString(iv,2)+":"+Base64.encodeToString(ct,2);}catch(Exception e){return "";}}

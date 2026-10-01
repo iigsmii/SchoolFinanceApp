@@ -51,7 +51,8 @@ const SCHOOLS = [
   [6,'مهد مرکزی عصر','MEHR2',true],
   [7,'مهد ابراهیم خلیل','MEHR3',true],
   [8,'مهد سروستان','MEHR4',true],
-  [9,'مهد منظریه','MEHR5',true]
+  [9,'مهد منظریه','MEHR5',true],
+  [10,'مهد برهان','BORHAN',true]
 ];
 
 const ATTACHED_MANAGERS = [
@@ -180,41 +181,75 @@ const GENERIC_EXPENSE = {
 
 function setup() {
   const ss = SpreadsheetApp.openById(CFG.SPREADSHEET_ID);
+
+  // Non-destructive/idempotent setup: NEVER clear existing financial data.
   CFG.SHEETS.forEach(name => {
     let sh = ss.getSheetByName(name);
     if (!sh) sh = ss.insertSheet(name);
-    sh.clear();
     const h = HEADERS[name];
-    sh.getRange(1,1,1,h.length).setValues([h]);
+    if (sh.getLastRow() === 0) sh.getRange(1,1,1,h.length).setValues([h]);
     sh.setFrozenRows(1);
   });
 
+  // Add missing canonical schools without touching existing rows.
   const schools = sheet_('Schools');
-  schools.getRange(2,1,SCHOOLS.length,4).setValues(
-    SCHOOLS.map(x => [x[0],x[1],x[2],x[3]])
-  );
-  schools.getRange(2,5,SCHOOLS.length,1).setValues(
-    SCHOOLS.map(() => [now_()])
-  );
+  const existingSchools = {};
+  rows_('Schools').forEach(x => { existingSchools[String(x.obj.id)] = x.obj; });
+  SCHOOLS.forEach(x => {
+    if (!existingSchools[String(x[0])]) {
+      schools.appendRow([x[0],x[1],x[2],x[3],now_()]);
+    } else {
+      const hit=findRow_('Schools',x[0]);
+      if (hit && String(x[0])==='10') {
+        updateRow_('Schools',hit.row,[x[0],x[1],x[2],x[3],hit.obj.created_at||now_()]);
+      }
+    }
+  });
 
   const cats = sheet_('ExpenseCategories');
-  cats.getRange(2,1,DEFAULT_CATEGORIES.length,4).setValues(
-    DEFAULT_CATEGORIES.map((x,i) => [i+1,x,true,now_()])
-  );
+  const existingCats = {};
+  rows_('ExpenseCategories').forEach(x => { existingCats[String(x.obj.name)] = true; });
+  DEFAULT_CATEGORIES.forEach(name => {
+    if (!existingCats[String(name)]) cats.appendRow([nextId_('ExpenseCategories'),name,true,now_()]);
+  });
 
-  // Default senior manager. Change this password immediately.
+  // Default senior manager only if it does not already exist.
   const managers = sheet_('Managers');
-  managers.appendRow([1,'مدیر ارشد','admin',sha256_('Admin@123456'),'', 'senior', true, now_()]);
+  const managerRows = rows_('Managers');
+  const usernames = {};
+  managerRows.forEach(x => { usernames[String(x.obj.username||'').trim()] = x; });
+  if (!usernames['admin']) {
+    managers.appendRow([1,'مدیر ارشد','admin',sha256_('Admin@123456'),'','senior',true,now_()]);
+  }
+
+  // Import missing attached managers and synchronize the requested manager/school link.
+  ATTACHED_MANAGERS.forEach(m => {
+    const username=String(m.username||'').trim();
+    if(!username) return;
+    const existing=findManagerByUsername_(username);
+    if(!existing) {
+      managers.appendRow([nextId_('Managers'),String(m.name||''),username,String(m.password_hash||''),m.school_id==null?'':String(m.school_id),'manager',true,now_()]);
+    } else if(username==='آرزو طالب پور') {
+      const schoolId='10';
+      updateRow_('Managers',existing.row,[existing.obj.id,existing.obj.name,existing.obj.username,existing.obj.password,schoolId,existing.obj.role||'manager',existing.obj.active,existing.obj.created_at]);
+    }
+  });
 
   const settings = sheet_('Settings');
-  settings.getRange(2,1,3,3).setValues([
-    ['schoolfinance_version','1.0-google',now_()],
-    ['bank_account_code','0-1-11',now_()],
-    ['currency','IRR',now_()]
-  ]);
+  const settingKeys={};
+  rows_('Settings').forEach(x=>settingKeys[String(x.obj.key||'').trim()]=true);
+  [['schoolfinance_version','2.0-google-final'],['bank_account_code','0-1-11'],['currency','IRR']].forEach(x=>{
+    if(!settingKeys[x[0]]) settings.appendRow([x[0],x[1],now_()]);
+  });
 
   SpreadsheetApp.flush();
-  return {success:true,message:'Setup completed'};
+  return {success:true,message:'Setup completed safely',school_added:'مهد برهان',manager_synced:'آرزو طالب پور'};
+}
+
+function findManagerByUsername_(username) {
+  const rows=rows_('Managers');
+  for(let i=0;i<rows.length;i++) if(String(rows[i].obj.username||'').trim()===String(username).trim()) return rows[i];
+  return null;
 }
 
 function doGet(e) { try { const action=String((e&&e.parameter&&e.parameter.action)||'').toLowerCase(); if(action==='parsian_export') return json_(parsianExport_({token:String(e.parameter.token||'')})); return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'1.1-google',time:now_()}); } catch(err) { return json_({success:false,error:String(err.message||err)}); } }
@@ -532,6 +567,10 @@ function transactionDelete_(b) {
   const hit=findRow_('Transactions',b.id);
   if(!hit) throw new Error('تراکنش یافت نشد.');
   if(u.role!=='senior' && String(hit.obj.created_by)!==String(u.id)) throw new Error('دسترسی مجاز نیست.');
+  const kind=String(hit.obj.kind||'');
+  const sourceId=hit.obj.source_id;
+  if(kind==='expense') softDeleteBySource_('Expenses',sourceId);
+  if(kind==='payment'||kind==='debt') softDeleteBySource_('Tuition',sourceId);
   sheet_('Transactions').deleteRow(hit.row);
   return {success:true};
 }
@@ -675,20 +714,22 @@ function managerDelete_(b) {
 
 function managerImportAttached_(b) {
   auth_(b,['senior']);
-  const existing = {};
-  rows_('Managers').forEach(x => existing[String(x.obj.username)] = x.obj);
-  let added = 0, skipped = 0;
-  ATTACHED_MANAGERS.forEach(m => {
-    const username = String(m.username || '').trim();
-    if (!username) return;
-    if (existing[username]) { skipped++; return; }
-    sheet_('Managers').appendRow([
-      nextId_('Managers'), String(m.name || ''), username, String(m.password_hash || ''),
-      m.school_id == null ? '' : String(m.school_id), 'manager', true, now_()
-    ]);
-    added++;
+  let added=0, updated=0, skipped=0;
+  ATTACHED_MANAGERS.forEach(m=>{
+    const username=String(m.username||'').trim();
+    if(!username) return;
+    const hit=findManagerByUsername_(username);
+    if(!hit){
+      sheet_('Managers').appendRow([nextId_('Managers'),String(m.name||''),username,String(m.password_hash||''),m.school_id==null?'':String(m.school_id),'manager',true,now_()]);
+      added++;
+      return;
+    }
+    if(username==='آرزو طالب پور' && String(hit.obj.school_id||'')!=='10'){
+      updateRow_('Managers',hit.row,[hit.obj.id,hit.obj.name,hit.obj.username,hit.obj.password,'10',hit.obj.role||'manager',hit.obj.active,hit.obj.created_at]);
+      updated++;
+    } else skipped++;
   });
-  return {success:true,added:added,skipped:skipped,total:ATTACHED_MANAGERS.length};
+  return {success:true,added:added,updated:updated,skipped:skipped,total:ATTACHED_MANAGERS.length};
 }
 
 /* ---------- ATTACHMENTS / DRIVE ---------- */
@@ -735,8 +776,9 @@ function parsianExport_(b) {
   const cols=['ID','KolCode','MoeenCode','TafsiliCode','HesabName','Comment','Bed','Bes','Factor_Num','Tick','SanadComment','ChkNum','IsRecPayChk','CostCenterCode'];
   const out=[cols];
 
-  const txs=rows_('Transactions').map(x=>x.obj)
+  let txs=rows_('Transactions').map(x=>x.obj)
     .filter(x=>String(x.reconciled)==='true' && String(x.approved)==='true');
+  if(b.school_id) txs=txs.filter(x=>String(x.school_id)===String(b.school_id));
 
   const students={};
   rows_('Students').forEach(x=>students[String(x.obj.id)]=x.obj);
@@ -771,9 +813,17 @@ function parsianExport_(b) {
     }
   });
 
-  const name='Parsian_'+Utilities.formatDate(new Date(),Session.getScriptTimeZone(),'yyyyMMdd_HHmmss')+'.csv';
-  const csv=out.map(r=>r.map(csvEscape_).join(',')).join('\n');
-  const file=getDriveFolder_().createFile(name,csv,MimeType.CSV);
+  const stamp=Utilities.formatDate(new Date(),Session.getScriptTimeZone(),'yyyyMMdd_HHmmss');
+  const temp=SpreadsheetApp.create('Parsian_temp_'+stamp);
+  const tsh=temp.getSheets()[0];
+  tsh.setName('Sheet1');
+  tsh.getRange(1,1,out.length,cols.length).setValues(out);
+  SpreadsheetApp.flush();
+  const exportUrl='https://docs.google.com/spreadsheets/d/'+temp.getId()+'/export?format=xlsx';
+  const response=UrlFetchApp.fetch(exportUrl,{headers:{Authorization:'Bearer '+ScriptApp.getOAuthToken()},muteHttpExceptions:true});
+  if(response.getResponseCode()<200||response.getResponseCode()>=300){DriveApp.getFileById(temp.getId()).setTrashed(true);throw new Error('ساخت فایل Excel پارسیان انجام نشد.');}
+  const file=getDriveFolder_().createFile(response.getBlob().setName('Parsian_'+stamp+'.xlsx'));
+  DriveApp.getFileById(temp.getId()).setTrashed(true);
   return {success:true,file_url:file.getUrl(),file_id:file.getId(),rows:out.length-1,columns:cols};
 }
 
