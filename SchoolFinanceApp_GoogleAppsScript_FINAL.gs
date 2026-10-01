@@ -380,13 +380,13 @@ function schools_(b) {
   const u=auth_(b);
   ensureCoreData_();
   const data=rows_('Schools').map(x=>x.obj).filter(x=>String(x.active)!=='false');
-  if(u.role!=='senior') return {success:true,data:data.filter(x=>String(x.id)===String(u.school_id))};
+  if(u.role!=='senior' && u.role!=='admin') return {success:true,data:data.filter(x=>String(x.id)===String(u.school_id))};
   return {success:true,data:data};
 }
 
-function schoolAdd_(b){ auth_(b,['senior']); const id=nextId_('Schools'); sheet_('Schools').appendRow([id,String(b.name||''),String(b.code||''),b.active!==false,now_()]); return {success:true,id:id}; }
-function schoolUpdate_(b){ auth_(b,['senior']); const hit=findRow_('Schools',b.id); if(!hit) throw new Error('مدرسه یافت نشد.'); const r=hit.obj; updateRow_('Schools',hit.row,[r.id,b.name!==undefined?b.name:r.name,b.code!==undefined?b.code:r.code,b.active!==undefined?b.active:r.active,r.created_at]); return {success:true}; }
-function schoolDelete_(b){ auth_(b,['senior']); const hit=findRow_('Schools',b.id); if(!hit) throw new Error('مدرسه یافت نشد.'); sheet_('Schools').getRange(hit.row,4).setValue(false); return {success:true}; }
+function schoolAdd_(b){ auth_(b,['senior','admin']); const id=nextId_('Schools'); sheet_('Schools').appendRow([id,String(b.name||''),String(b.code||''),b.active!==false,now_()]); return {success:true,id:id}; }
+function schoolUpdate_(b){ auth_(b,['senior','admin']); const hit=findRow_('Schools',b.id); if(!hit) throw new Error('مدرسه یافت نشد.'); const r=hit.obj; updateRow_('Schools',hit.row,[r.id,b.name!==undefined?b.name:r.name,b.code!==undefined?b.code:r.code,b.active!==undefined?b.active:r.active,r.created_at]); return {success:true}; }
+function schoolDelete_(b){ auth_(b,['senior','admin']); const hit=findRow_('Schools',b.id); if(!hit) throw new Error('مدرسه یافت نشد.'); sheet_('Schools').getRange(hit.row,4).setValue(false); return {success:true}; }
 
 /* ---------- STUDENTS ---------- */
 
@@ -405,7 +405,7 @@ function students_(b) {
 
 function studentAdd_(b) {
   const u=auth_(b);
-  const schoolId=u.role==='senior' ? b.school_id : u.school_id;
+  const schoolId=(u.role==='senior' || u.role==='admin') ? b.school_id : u.school_id;
   if(!schoolId) throw new Error('مدرسه مشخص نشده است.');
   const nid=digits_(b.national_id);
   if(!/^\d{10}$/.test(nid)) throw new Error('کد ملی باید دقیقاً ۱۰ رقم انگلیسی باشد.');
@@ -422,7 +422,7 @@ function studentAdd_(b) {
 
 function studentsImport_(b) {
   const u=auth_(b);
-  const schoolId=u.role==='senior' ? String(b.school_id||'') : String(u.school_id||'');
+  const schoolId=(u.role==='senior' || u.role==='admin') ? String(b.school_id||'') : String(u.school_id||'');
   if(!schoolId) throw new Error('مدرسه برای ورود دانش‌آموزان مشخص نشده است.');
   if(!b.base64) throw new Error('فایل Excel ارسال نشده است.');
   const grade=String(b.grade||'').trim();
@@ -683,7 +683,7 @@ function bank_(b) {
 }
 
 function bankReview_(b) {
-  const u=auth_(b,['senior']);
+  const u=auth_(b,['senior','admin']);
   const banks=rows_('Bank').map(x=>x.obj);
   const tx=rows_('Transactions').map(x=>x.obj);
   const schools={}; rows_('Schools').forEach(x=>schools[String(x.obj.id)]=x.obj.name);
@@ -703,7 +703,7 @@ function bankReview_(b) {
 }
 
 function bankMatch_(b) {
-  const u=auth_(b,['senior']);
+  const u=auth_(b,['senior','admin']);
   const hit=findRow_('Bank',b.id);
   if(!hit) throw new Error('تراکنش بانکی یافت نشد.');
   const transactionId=String(b.transaction_id||'');
@@ -725,9 +725,9 @@ function bankMatch_(b) {
   return {success:true,matched:matched};
 }
 
-function transactionReview_(b){ const u=auth_(b,['senior']); const hit=findRow_('Transactions',b.id); if(!hit) throw new Error('تراکنش یافت نشد.'); const r=hit.obj; const approved=String(b.status||'')==='approved'; updateRow_('Transactions',hit.row,[r.id,r.date,r.school_id,r.kind,r.amount,r.description,r.tracking_code,r.image_url,r.created_by,r.created_at,r.reconciled,approved,r.source_id]); return {success:true,approved:approved}; }
+function transactionReview_(b){ const u=auth_(b,['senior','admin']); const hit=findRow_('Transactions',b.id); if(!hit) throw new Error('تراکنش یافت نشد.'); const r=hit.obj; const approved=String(b.status||'')==='approved'; updateRow_('Transactions',hit.row,[r.id,r.date,r.school_id,r.kind,r.amount,r.description,r.tracking_code,r.image_url,r.created_by,r.created_at,r.reconciled,approved,r.source_id]); return {success:true,approved:approved}; }
 function bankReconcile_(b){
-  auth_(b,['senior']);
+  auth_(b,['senior','admin']);
   const banks=rows_('Bank').map(x=>x.obj);
   const txRows=rows_('Transactions'); let matched=0,unmatched=0;
   txRows.forEach(x=>{
@@ -740,7 +740,7 @@ function bankReconcile_(b){
   return {success:true,matched:matched,unmatched:unmatched};
 }
 function bankUpload_(b){
-  auth_(b,['senior']);
+  auth_(b,['senior','admin']);
   if(!b.base64) throw new Error('فایل بانک ارسال نشده است.');
   const name=String(b.file_name||'bank_upload.xlsx').toLowerCase();
   let result={added:0,skipped:0};
@@ -757,7 +757,7 @@ function categories_(b) {
 }
 
 function categoryAdd_(b) {
-  auth_(b,['senior']);
+  auth_(b,['senior','admin']);
   const name=String(b.name||'').trim();
   if(!name) throw new Error('نام دسته هزینه الزامی است.');
   const id=Utilities.getUuid();
@@ -766,7 +766,7 @@ function categoryAdd_(b) {
 }
 
 function categoryUpdate_(b) {
-  auth_(b,['senior']);
+  auth_(b,['senior','admin']);
   const hit=findRow_('ExpenseCategories',b.id);
   if(!hit) throw new Error('دسته هزینه یافت نشد.');
   updateRow_('ExpenseCategories',hit.row,[hit.obj.id,b.name!==undefined?b.name:hit.obj.name,b.active!==undefined?b.active:hit.obj.active,hit.obj.created_at]);
@@ -774,7 +774,7 @@ function categoryUpdate_(b) {
 }
 
 function categoryDelete_(b) {
-  auth_(b,['senior']);
+  auth_(b,['senior','admin']);
   const hit=findRow_('ExpenseCategories',b.id);
   if(!hit) throw new Error('دسته هزینه یافت نشد.');
   sheet_('ExpenseCategories').getRange(hit.row,3).setValue(false);
@@ -789,7 +789,7 @@ function messages_(b) {
 }
 
 function messageAdd_(b) {
-  const u=auth_(b,['senior']);
+  const u=auth_(b,['senior','admin']);
   const msg=String(b.message||'').trim();
   if(!msg) throw new Error('پیام خالی است.');
   const id=Utilities.getUuid();
@@ -798,7 +798,7 @@ function messageAdd_(b) {
 }
 
 function messageDelete_(b) {
-  auth_(b,['senior']);
+  auth_(b,['senior','admin']);
   const hit=findRow_('Messages',b.id);
   if(!hit) throw new Error('پیام یافت نشد.');
   sheet_('Messages').getRange(hit.row,5).setValue(false);
@@ -808,7 +808,7 @@ function messageDelete_(b) {
 /* ---------- MANAGERS ---------- */
 
 function managers_(b) {
-  auth_(b,['senior']);
+  auth_(b,['senior','admin']);
   ensureCoreData_();
   return {success:true,data:rows_('Managers').map(x=>{
     const r=Object.assign({},x.obj);
@@ -819,7 +819,7 @@ function managers_(b) {
 }
 
 function managerAdd_(b) {
-  auth_(b,['senior']);
+  auth_(b,['senior','admin']);
   if(!b.username || !b.password) throw new Error('نام کاربری و رمز عبور الزامی است.');
   const id=nextId_('Managers');
   sheet_('Managers').appendRow([
@@ -830,7 +830,7 @@ function managerAdd_(b) {
 }
 
 function managerUpdate_(b) {
-  auth_(b,['senior']);
+  auth_(b,['senior','admin']);
   const hit=findRow_('Managers',b.id);
   if(!hit) throw new Error('مدیر یافت نشد.');
   const r=hit.obj;
@@ -844,7 +844,7 @@ function managerUpdate_(b) {
 }
 
 function managerDelete_(b) {
-  auth_(b,['senior']);
+  auth_(b,['senior','admin']);
   const hit=findRow_('Managers',b.id);
   if(!hit) throw new Error('مدیر یافت نشد.');
   sheet_('Managers').getRange(hit.row,7).setValue(false);
@@ -852,7 +852,7 @@ function managerDelete_(b) {
 }
 
 function managerImportAttached_(b) {
-  auth_(b,['senior']);
+  auth_(b,['senior','admin']);
   let added=0, updated=0, skipped=0;
   ATTACHED_MANAGERS.forEach(m=>{
     const username=String(m.username||'').trim();
@@ -911,7 +911,7 @@ function parsianAllocate_(b){ auth_(b); return {success:true,data:{code:'0-'+Str
 /* ---------- PARSIAN ---------- */
 
 function parsianExport_(b) {
-  const u=auth_(b,['senior']);
+  const u=auth_(b,['senior','admin']);
   const cols=['ID','KolCode','MoeenCode','TafsiliCode','HesabName','Comment','Bed','Bes','Factor_Num','Tick','SanadComment','ChkNum','IsRecPayChk','CostCenterCode'];
   const out=[cols];
 
