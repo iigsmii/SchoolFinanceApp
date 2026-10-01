@@ -3,13 +3,36 @@ apply plugin: 'com.android.application'
 android {
     namespace 'com.example.hesabdari'
     compileSdkVersion 31
+
     defaultConfig {
         applicationId 'com.example.hesabdari'
         minSdkVersion 23
         targetSdkVersion 31
-        versionCode 1
-        versionName '1.0.0-win7'
+        versionCode project.hasProperty('versionCode') ? project.property('versionCode').toInteger() : 1
+        versionName project.hasProperty('versionName') ? project.property('versionName').toString() : '1.0.0'
     }
+
+    // Codemagic injects these variables when the configured Android keystore
+    // is selected in codemagic.yaml. Without this block assembleRelease
+    // produces an unsigned APK.
+    signingConfigs {
+        release {
+            if (System.getenv('CI')) {
+                storeFile file(System.getenv('CM_KEYSTORE_PATH'))
+                storePassword System.getenv('CM_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('CM_KEY_ALIAS')
+                keyPassword System.getenv('CM_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
