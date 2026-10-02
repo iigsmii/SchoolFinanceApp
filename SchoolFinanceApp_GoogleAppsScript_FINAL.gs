@@ -252,7 +252,15 @@ function findManagerByUsername_(username) {
   return null;
 }
 
-function doGet(e) { try { const action=String((e&&e.parameter&&e.parameter.action)||'').toLowerCase(); if(action==='parsian_export') return json_(parsianExport_({token:String(e.parameter.token||'')})); return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.1-google-repair',time:now_()}); } catch(err) { return json_({success:false,error:String(err.message||err)}); } }
+function doGet(e) {
+  try {
+    const action=String((e&&e.parameter&&e.parameter.action)||'').replace(/^\/+|\/+$/g,'').toLowerCase();
+    const token=String((e&&e.parameter&&e.parameter.token)||'');
+    if(action==='parsian_export') return json_(parsianExport_({token:token}));
+    if(action==='categories' || action==='expense_categories' || action==='expense-categories') return json_(categories_({token:token}));
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.2-google-repair',time:now_()});
+  } catch(err) { return json_({success:false,error:String(err.message||err)}); }
+}
 
 function ensureStructure_() {
   const ss = SpreadsheetApp.openById(CFG.SPREADSHEET_ID);
@@ -271,7 +279,7 @@ function doPost(e) {
     ensureCoreData_();
     const body = parseBody_(e);
     let action = String(body.action || body.endpoint || '').replace(/^\/+/,'').toLowerCase();
-    const actionAliases = {'students/import':'students_import','api/students/import':'students_import','student_import':'students_import','api/student/import':'students_import'};
+    const actionAliases = {'students/import':'students_import','api/students/import':'students_import','student_import':'students_import','api/student/import':'students_import','expense_categories':'categories','expense-categories':'categories','api/expense-categories':'categories','api/expense_categories':'categories'};
     action = actionAliases[action] || action;
 
     switch(action) {
