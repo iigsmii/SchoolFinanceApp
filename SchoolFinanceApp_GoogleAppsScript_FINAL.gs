@@ -270,7 +270,9 @@ function doPost(e) {
     ensureStructure_();
     ensureCoreData_();
     const body = parseBody_(e);
-    const action = String(body.action || body.endpoint || '').replace(/^\/+/,'').toLowerCase();
+    let action = String(body.action || body.endpoint || '').replace(/^\/+/,'').toLowerCase();
+    const actionAliases = {'students/import':'students_import','api/students/import':'students_import','student_import':'students_import','api/student/import':'students_import'};
+    action = actionAliases[action] || action;
 
     switch(action) {
       case 'login': return json_(login_(body));
@@ -319,7 +321,7 @@ function doPost(e) {
       case 'parsian_allocate': return json_(parsianAllocate_(body));
       case 'summary': return json_(summary_(body));
       case 'health': return json_({success:true});
-      default: return json_({success:false,error:'Unknown action',action:action});
+      default: return json_({success:false,error:'Unknown action',action:action,backend_version:'2026-10-02-students-v2'});
     }
   } catch(err) {
     return json_({success:false,error:'Server error',message:String(err.message || err)});

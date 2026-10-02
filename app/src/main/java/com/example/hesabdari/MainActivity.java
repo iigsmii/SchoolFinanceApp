@@ -218,7 +218,7 @@ public class MainActivity extends Activity {
                 JSONObject f=new JSONObject();try{f.put("school_id",schoolId);f.put("grade",grade.getSelectedItem().toString());}catch(Exception ignored){}
                 api.uploadFile(uri,"file","/api/students/import",f,"students.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",new ApiClient.Callback(){
                     public void ok(JSONObject o){toast("ورود Excel: "+o.optInt("added")+" نفر اضافه شد؛ "+o.optInt("skipped")+" تکراری؛ "+o.optInt("invalid")+" نامعتبر");students();}
-                    public void fail(String m){toast(m);}
+                    public void fail(String m){toast(m.contains("Unknown action")?"نسخه Web App گوگل قدیمی است؛ کد Apps Script جدید را دوباره Deploy کنید.":m);}
                 });
             }).setNegativeButton("انصراف",null).show();
     }
