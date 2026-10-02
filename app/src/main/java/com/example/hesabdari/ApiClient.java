@@ -17,7 +17,7 @@ import java.util.concurrent.Executors;
  * translating them to action-based Google Apps Script calls. */
 public class ApiClient {
     public interface Callback { void ok(JSONObject data); void fail(String message); }
-    private static final String BASE = "https://script.google.com/macros/s/AKfycbzgQ7xg0xIT5BMNEGenVNYtmMyfIGZZkdFVy5IqHrV22y4nzXubs3yAsh7jeewwhwixmA/exec";
+    private static final String BASE = "https://script.google.com/macros/s/AKfycbwX2tqXfFtrwqSncujVq-Dls4MlQXPwXsiFAsQoDi4VDKWhvQsUuUS8R4eyhkI4R96tOA/exec";
     private final Context context;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService pool = Executors.newFixedThreadPool(3);
