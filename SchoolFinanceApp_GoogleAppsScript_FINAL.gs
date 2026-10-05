@@ -254,21 +254,24 @@ function findManagerByUsername_(username) {
 
 function doGet(e) {
   try {
-    const action=String((e&&e.parameter&&e.parameter.action)||'').replace(/^\/+|\/+$/g,'').toLowerCase();
-    const token=String((e&&e.parameter&&e.parameter.token)||'');
-    const b={token:token};
+    const params=(e&&e.parameter)||{};
+    const action=String(params.action||'').replace(/^\/+|\/+$/g,'').toLowerCase();
+    const b={};
+    Object.keys(params).forEach(k=>{if(k!=='action') b[k]=params[k];});
     if(action==='parsian_export') return json_(parsianExport_(b));
     if(action==='categories' || action==='expense_categories' || action==='expense-categories') return json_(categories_(b));
     if(action==='transactions') return json_(transactions_(b));
-    if(action==='students'){ if(e.parameter.q!==undefined) b.q=String(e.parameter.q||''); return json_(students_(b)); }
+    if(action==='students'){ return json_(students_(b)); }
     if(action==='schools') return json_(schools_(b));
+    if(action==='managers') return json_(managers_(b));
     if(action==='expenses') return json_(expenses_(b));
-    if(action==='tuition'){ if(e.parameter.student_id) b.student_id=e.parameter.student_id; return json_(tuition_(b)); }
+    if(action==='tuition') return json_(tuition_(b));
     if(action==='messages') return json_(messages_(b));
     if(action==='bank_review') return json_(bankReview_(b));
     if(action==='parsian_school_map') return json_(parsianSchoolMap_(b));
-    if(action==='parsian_student_accounts'){ if(e.parameter.q) b.q=String(e.parameter.q); return json_(parsianStudentAccounts_(b)); }
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.3-google-read-fix',time:now_()});
+    if(action==='parsian_student_accounts') return json_(parsianStudentAccounts_(b));
+    if(action==='summary') return json_(summary_(b));
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.4-google-read-fix',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
@@ -460,6 +463,8 @@ function studentAdd_(b) {
   if(!/^\d{10}$/.test(nid)) throw new Error('کد ملی باید دقیقاً ۱۰ رقم انگلیسی باشد.');
   const phone=digits_(b.phone);
   if(phone && !/^0\d{10}$/.test(phone)) throw new Error('شماره تلفن باید ۱۱ رقم و با ۰ شروع شود.');
+  const duplicate=rows_('Students').some(x=>String(x.obj.school_id)===String(schoolId) && String(x.obj.national_id||'')===nid && String(x.obj.active)!=='false');
+  if(duplicate) throw new Error('این کد ملی قبلاً برای یک دانش‌آموز فعال در همین مدرسه ثبت شده است.');
   const id=nextId_('Students');
   sheet_('Students').appendRow([
     id,String(b.name||'').trim(),String(b.grade||''),phone,nid,String(schoolId),
@@ -489,13 +494,13 @@ function studentsImport_(b) {
     const last=String(r.last_name||'').trim();
     const name=String(r.name||[first,last].filter(Boolean).join(' ')).replace(/\s+/g,' ').trim();
     const nid=digits_(r.national_id||'');
-    const grade=normalizeGrade_(r.grade||selectedGrade);
+    const grade=selectedGrade;
 
     if(!name){ invalid++; reasons.push('نام خالی'); return; }
     if(!/^\d{10}$/.test(nid)){ invalid++; reasons.push('کد ملی نامعتبر برای '+name); return; }
     if(!grade){ invalid++; reasons.push('پایه نامشخص برای '+name); return; }
 
-    const duplicate=existing.some(x=>String(x.name).trim()===name && String(x.national_id||'')===nid);
+    const duplicate=existing.some(x=>String(x.national_id||'')===nid);
     if(duplicate){skipped++;return;}
 
     const id=nextId_('Students');
@@ -530,7 +535,7 @@ function normalizeGrade_(v){
 
 function readStudentXlsx_(base64) {
   let clean=String(base64); if(clean.indexOf(',')>=0) clean=clean.substring(clean.indexOf(',')+1);
-  const blob=Utilities.newBlob(Utilities.base64Decode(clean),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','students.xlsx');
+  const blob=Utilities.newBlob(Utilities.base64Decode(clean),'application/zip','students.xlsx');
   const files=Utilities.unzip(blob); const by={}; files.forEach(f=>by[f.getName()]=f);
   const shared=[];
   if(by['xl/sharedStrings.xml']) {
@@ -596,7 +601,7 @@ function readStudentXlsx_(base64) {
 
 function importBankXlsx_(base64,schoolId){
   let clean=String(base64); if(clean.indexOf(',')>=0) clean=clean.substring(clean.indexOf(',')+1);
-  const blob=Utilities.newBlob(Utilities.base64Decode(clean),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','bank.xlsx');
+  const blob=Utilities.newBlob(Utilities.base64Decode(clean),'application/zip','bank.xlsx');
   const files=Utilities.unzip(blob); const by={}; files.forEach(f=>by[f.getName()]=f);
   const shared=[]; if(by['xl/sharedStrings.xml']){const sr=XmlService.parse(by['xl/sharedStrings.xml'].getDataAsString()).getRootElement();sr.getChildren().forEach(si=>{let txt='';si.getDescendants().forEach(n=>{if(n.getType()===XmlService.ContentTypes.TEXT)txt+=n.asText();});shared.push(txt);});}
   const sheet=by['xl/worksheets/sheet1.xml']; if(!sheet) throw new Error('برگه اول Excel پیدا نشد.');
@@ -618,13 +623,17 @@ function studentUpdate_(b) {
   if(!hit) throw new Error('دانش‌آموز یافت نشد.');
   const old=hit.obj;
   if(u.role!=='senior' && String(old.school_id)!==String(u.school_id)) throw new Error('دسترسی مجاز نیست.');
-  const nid=digits_(b.national_id || old.national_id);
+  const targetSchool=(u.role==='senior' || u.role==='admin') ? String(b.school_id!==undefined?b.school_id:old.school_id) : String(u.school_id);
+  const targetNid=digits_(b.national_id!==undefined?b.national_id:old.national_id);
+  if(!/^\d{10}$/.test(targetNid)) throw new Error('کد ملی باید دقیقاً ۱۰ رقم انگلیسی باشد.');
+  const duplicate=rows_('Students').some(x=>String(x.obj.id)!==String(old.id) && String(x.obj.school_id)===targetSchool && String(x.obj.national_id||'')===targetNid && String(x.obj.active)!=='false');
+  if(duplicate) throw new Error('این کد ملی قبلاً برای یک دانش‌آموز فعال در همین مدرسه ثبت شده است.');
   const phone=digits_(b.phone || old.phone);
-  if(!/^\d{10}$/.test(nid)) throw new Error('کد ملی باید دقیقاً ۱۰ رقم باشد.');
+  if(!/^\d{10}$/.test(targetNid)) throw new Error('کد ملی باید دقیقاً ۱۰ رقم باشد.');
   if(phone && !/^0\d{10}$/.test(phone)) throw new Error('شماره تلفن نامعتبر است.');
   updateRow_('Students',hit.row,[
     old.id,b.name!==undefined?b.name:old.name,b.grade!==undefined?b.grade:old.grade,
-    phone,nid,old.school_id,b.kol_code!==undefined?b.kol_code:old.kol_code,
+    phone,targetNid,targetSchool,b.kol_code!==undefined?b.kol_code:old.kol_code,
     b.moeen_code!==undefined?b.moeen_code:old.moeen_code,
     b.tafsili_code!==undefined?b.tafsili_code:old.tafsili_code,old.active,old.created_at
   ]);
