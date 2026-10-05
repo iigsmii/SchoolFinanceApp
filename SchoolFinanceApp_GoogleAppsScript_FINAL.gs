@@ -499,34 +499,51 @@ function studentsImport_(b) {
     const existing=rows_('Students').map(x=>x.obj);
     const seen={};
 
-    imported.forEach(r=>{
+    imported.forEach((r,idx)=>{
+      const rowNo=Number(r.row_number||idx+1);
       const first=String(r.first_name||'').trim();
       const last=String(r.last_name||'').trim();
       const name=String(r.name||[first,last].filter(Boolean).join(' ')).replace(/\s+/g,' ').trim();
       const nid=digits_(r.national_id||'');
       const grade=normalizeGrade_(r.grade||'');
+      const rowErrors=[];
 
-      if(!name){ invalid++; reasons.push('نام خالی'); return; }
-      if(!/^\d{10}$/.test(nid)){ invalid++; reasons.push('کد ملی نامعتبر برای '+name); return; }
-      if(!grade){ invalid++; reasons.push('پایه/کلاس نامعتبر یا خالی برای '+name); return; }
+      if(!name) { rowErrors.push('نام خالی'); }
+      if(!grade) { rowErrors.push('پایه/کلاس نامعتبر یا خالی'); }
 
-      // National ID is globally unique across every school, including
-      // duplicates occurring twice inside the same Excel file.
-      if(seen[nid] || existing.some(x=>digits_(x.national_id||'')===nid)){
+      // National ID is checked globally only when it is a complete 10-digit ID.
+      // Invalid IDs are STILL imported so the manager can open/edit the student later.
+      if(!/^\d{10}$/.test(nid)) {
+        rowErrors.push('کد ملی نامعتبر ('+(nid ? nid.length+' رقمی' : 'خالی')+')');
+      } else if(seen[nid] || existing.some(x=>digits_(x.national_id||'')===nid)) {
         skipped++;
-        reasons.push('کد ملی تکراری برای '+name);
+        reasons.push('ردیف '+rowNo+' — '+name+' — کد ملی تکراری');
         return;
       }
 
+      if(!name) {
+        invalid++;
+        reasons.push('ردیف '+rowNo+' — نام خالی — دانش‌آموز ساخته نشد');
+        return;
+      }
+
+      // Keep a row even when its national ID or grade needs correction.
+      // The result reports the exact problem so the manager can edit it afterwards.
+      const storedGrade=grade || String(r.grade||'').trim() || 'نیازمند اصلاح';
       const id=nextId_('Students');
-      const codes=studentAccountCodes_(id,grade);
+      const codes=studentAccountCodes_(id,storedGrade);
       sheet_('Students').appendRow([
-        id,name,grade,digits_(r.phone||''),nid,schoolId,
+        id,name,storedGrade,digits_(r.phone||''),nid,schoolId,
         codes.kol,codes.moeen,codes.tafsili,true,now_()
       ]);
-      seen[nid]=true;
       existing.push({name:name,national_id:nid,school_id:schoolId});
+      if(/^\d{10}$/.test(nid)) seen[nid]=true;
       added++;
+
+      if(rowErrors.length) {
+        invalid++;
+        reasons.push('ردیف '+rowNo+' — '+name+' — '+rowErrors.join('، ')+' — دانش‌آموز ساخته شد و باید اصلاح شود');
+      }
     });
 
     return {
@@ -535,8 +552,8 @@ function studentsImport_(b) {
       skipped:skipped,
       invalid:invalid,
       total:imported.length,
-      message:'ورود Excel انجام شد.',
-      details:reasons.slice(0,10)
+      message:'ورود Excel انجام شد. موارد نامعتبر نیز ساخته شدند تا بعداً قابل اصلاح باشند.',
+      details:reasons.slice(0,20)
     };
   } finally {
     lock.releaseLock();
@@ -554,7 +571,8 @@ function studentAccountCodes_(studentId,grade){
 }
 
 function normalizeGrade_(v){
-  const x=String(v||'').replace(/[\u200c\u200f\u202a-\u202e]/g,'').replace(/\s+/g,'').trim();
+  const x0=String(v||'').replace(/[۰-۹]/g,c=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(c))).replace(/[٠-٩]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c)));
+  const x=x0.replace(/[\u200c\u200f\u202a-\u202e]/g,'').replace(/\s+/g,'').trim();
   const map={
     'مهد':'مهد','پیشدبستانی':'مهد','پیشدبستان':'مهد',
     'اول':'اول','دوم':'دوم','سوم':'سوم','چهارم':'چهارم','پنجم':'پنجم','ششم':'ششم',
@@ -633,7 +651,8 @@ function readStudentXlsx_(base64) {
       national_id:digits_(r[nidCol]||''),
       phone:phoneCol?digits_(r[phoneCol]||''):'',
       grade:gradeCol?String(r[gradeCol]||'').trim():'',
-      birth_date:birthCol?String(r[birthCol]||'').trim():''
+      birth_date:birthCol?String(r[birthCol]||'').trim():'',
+      row_number:i+1
     });
   }
   return out;
