@@ -116,7 +116,7 @@ const ATTACHED_MANAGERS = [
     "name": "آرزو طالب پور",
     "username": "آرزو طالب پور",
     "password_hash": "4f12aab72444972af28afc9e3ce610ecbb032fa6ca6cd141206e7d9ec3a8ca7e",
-    "school_id": null,
+    "school_id": 10,
     "source_center": "مهد تبیان 2"
   },
   {
