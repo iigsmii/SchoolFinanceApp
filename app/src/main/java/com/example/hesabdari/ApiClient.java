@@ -33,7 +33,7 @@ public class ApiClient {
             String action=actionFor(method,p,b);
             b.put("action",action);
             if(token!=null && token.length()>0)b.put("token",token);
-            JSONObject o=postJson(b);
+            JSONObject o=method.equalsIgnoreCase("GET") ? getJson(b) : postJson(b);
             JSONObject result=adaptResponse(p,o);
             if(result.optBoolean("success",false)) main.post(()->cb.ok(result));
             else main.post(()->cb.fail(result.optString("message",result.optString("error","خطا در ارتباط با سرویس گوگل"))));
@@ -98,6 +98,25 @@ public class ApiClient {
     }
 
     private static void put(JSONObject b,String k,Object v){try{b.put(k,v);}catch(Exception ignored){}}
+
+    private JSONObject getJson(JSONObject b)throws Exception{
+        StringBuilder q=new StringBuilder();
+        JSONArray names=b.names();
+        if(names!=null) for(int i=0;i<names.length();i++){
+            String k=names.optString(i);
+            if("action".equals(k)) continue;
+            if(q.length()>0) q.append('&');
+            q.append(URLEncoder.encode(k,"UTF-8")).append('=')
+             .append(URLEncoder.encode(b.optString(k,""),"UTF-8"));
+        }
+        URL u=new URL(BASE+(q.length()>0?"?"+q:""));
+        HttpURLConnection c=(HttpURLConnection)u.openConnection();
+        c.setRequestMethod("GET"); c.setDoInput(true); c.setConnectTimeout(15000); c.setReadTimeout(45000);
+        c.setRequestProperty("Accept","application/json");
+        int code=c.getResponseCode(); InputStream in=code>=200&&code<400?c.getInputStream():c.getErrorStream();
+        String text=read(in); c.disconnect();
+        return text.isEmpty()?new JSONObject():new JSONObject(text);
+    }
 
     private JSONObject postJson(JSONObject b)throws Exception{
         HttpURLConnection c=null;

@@ -256,13 +256,25 @@ function doGet(e) {
   try {
     const action=String((e&&e.parameter&&e.parameter.action)||'').replace(/^\/+|\/+$/g,'').toLowerCase();
     const token=String((e&&e.parameter&&e.parameter.token)||'');
-    if(action==='parsian_export') return json_(parsianExport_({token:token}));
-    if(action==='categories' || action==='expense_categories' || action==='expense-categories') return json_(categories_({token:token}));
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.2-google-repair',time:now_()});
+    const b={token:token};
+    if(action==='parsian_export') return json_(parsianExport_(b));
+    if(action==='categories' || action==='expense_categories' || action==='expense-categories') return json_(categories_(b));
+    if(action==='transactions') return json_(transactions_(b));
+    if(action==='students'){ if(e.parameter.q!==undefined) b.q=String(e.parameter.q||''); return json_(students_(b)); }
+    if(action==='schools') return json_(schools_(b));
+    if(action==='expenses') return json_(expenses_(b));
+    if(action==='tuition'){ if(e.parameter.student_id) b.student_id=e.parameter.student_id; return json_(tuition_(b)); }
+    if(action==='messages') return json_(messages_(b));
+    if(action==='bank_review') return json_(bankReview_(b));
+    if(action==='parsian_school_map') return json_(parsianSchoolMap_(b));
+    if(action==='parsian_student_accounts'){ if(e.parameter.q) b.q=String(e.parameter.q); return json_(parsianStudentAccounts_(b)); }
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.3-google-read-fix',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
 function ensureStructure_() {
+  const cache=CacheService.getScriptCache();
+  if(cache.get('structure_ready_v23')==='1') return;
   const ss = SpreadsheetApp.openById(CFG.SPREADSHEET_ID);
   CFG.SHEETS.forEach(name => {
     let sh = ss.getSheetByName(name);
@@ -271,6 +283,7 @@ function ensureStructure_() {
     if (sh.getLastRow() === 0) sh.getRange(1,1,1,h.length).setValues([h]);
     sh.setFrozenRows(1);
   });
+  cache.put('structure_ready_v23','1',300);
 }
 
 function doPost(e) {
@@ -379,6 +392,8 @@ function auth_(b, roles) {
 
 /* ---------- CORE SEED SAFETY ---------- */
 function ensureCoreData_() {
+  const cache=CacheService.getScriptCache();
+  if(cache.get('core_ready_v23')==='1') return;
   // Keep the backend self-healing: every API call makes sure the canonical
   // schools, managers and expense categories exist, without deleting data.
   const schools = sheet_('Schools');
@@ -404,6 +419,7 @@ function ensureCoreData_() {
     if(!hit) managers.appendRow([nextId_('Managers'),String(m.name||''),u,String(m.password_hash||''),m.school_id==null?'':String(m.school_id),'manager',true,now_()]);
     else if(u==='آرزو طالب پور' && String(hit.obj.school_id||'')!=='10') updateRow_('Managers',hit.row,[hit.obj.id,hit.obj.name,hit.obj.username,hit.obj.password,'10',hit.obj.role||'manager',hit.obj.active,hit.obj.created_at]);
   });
+  cache.put('core_ready_v23','1',300);
 }
 
 /* ---------- SCHOOLS ---------- */
