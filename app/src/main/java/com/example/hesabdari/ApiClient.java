@@ -42,11 +42,16 @@ public class ApiClient {
 
     private String actionFor(String method,String path,JSONObject b){
         String p=path;
-        if(p.startsWith("/api/students?q=")){put(b,"q",Uri.decode(p.substring(p.indexOf('=')+1)));return "students";}
+        if(p.startsWith("/api/students?")){
+            String qs=p.substring(p.indexOf('?')+1);
+            for(String part:qs.split("&")){int eq=part.indexOf('=');if(eq>0){String k=Uri.decode(part.substring(0,eq));String v=Uri.decode(part.substring(eq+1));put(b,k,v);}}
+            return "students";
+        }
         if(p.equals("/api/students")) return method.equals("GET")?"students":"student_add";
         if(p.matches("/api/students/\\d+")){put(b,"id",Long.parseLong(p.substring(p.lastIndexOf('/')+1)));return method.equals("GET")?"students":method.equals("DELETE")?"student_delete":"student_update";}
         if(p.matches("/api/students/\\d+/balance")){put(b,"student_id",Long.parseLong(p.split("/")[3]));return "tuition";}
         if(p.equals("/api/tuition/debt")||p.equals("/api/tuition/payment")){put(b,"type",p.endsWith("/debt")?"debt":"payment");return "tuition_add";}
+        if(p.equals("/api/tuition/bulk-debt")) return "tuition_bulk_debt";
         if(p.equals("/api/expenses"))return method.equals("GET")?"expenses": "expense_add";
         if(p.startsWith("/api/expense-categories")){String id=tail(p);if(id.length()>0)put(b,"id",id);return method.equals("GET")?"categories":method.equals("DELETE")?"category_delete":id.length()==0?"category_add":"category_update";}
         if(p.startsWith("/api/transactions?student_id=")){put(b,"student_id",Long.parseLong(p.substring(p.indexOf('=')+1)));return "transactions";}
@@ -70,6 +75,8 @@ public class ApiClient {
         if(p.startsWith("/api/parsian/student-accounts")){int q=p.indexOf("?q=");if(q>=0)put(b,"q",Uri.decode(p.substring(q+3)));return "parsian_student_accounts";}
         if(p.equals("/api/parsian/student-account/allocate"))return "parsian_allocate";
         if(p.equals("/api/attachments"))return "attachment";
+        if(p.equals("/api/activity-logs")) return "activity_logs";
+        if(p.startsWith("/api/activity-logs?")){int q=p.indexOf("?");String qs=p.substring(q+1);for(String part:qs.split("&")){int eq=part.indexOf('=');if(eq>0)put(b,Uri.decode(part.substring(0,eq)),Uri.decode(part.substring(eq+1)));}return "activity_logs";}
         if(p.equals("/api/login"))return "login";
         if(p.equals("/api/logout"))return "logout";
         return pathToAction(p);

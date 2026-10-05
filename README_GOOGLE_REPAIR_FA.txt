@@ -13,3 +13,5 @@
 مهم: فایل SchoolFinanceApp_GoogleAppsScript_FINAL.gs را در Google Apps Script جایگزین نسخه قبلی کنید، Save بزنید، سپس Deploy > Manage deployments > Edit > New version > Deploy را انجام دهید. همان URL /exec قبلی را نگه دارید.
 
 بعد از انتشار Backend، APK را از همین پروژه در CodeMagic بسازید. این محیط Gradle/Android SDK کامل ندارد، بنابراین APK را اینجا ادعا نمی‌کنیم که Build شده است.
+
+نسخه 2.11: ثبت گروهی بدهی شهریه با انتخاب/عدم انتخاب دانش‌آموزان و ثبت گزارش فعالیت مدیران.

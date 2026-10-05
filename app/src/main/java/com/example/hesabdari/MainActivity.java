@@ -107,10 +107,10 @@ public class MainActivity extends Activity {
         base("داشبورد");
         LinearLayout welcome=new LinearLayout(this);welcome.setOrientation(LinearLayout.VERTICAL);welcome.setPadding(8,8,8,8);welcome.setBackground(bg(Color.WHITE,28));
         welcome.addView(tv("خوش آمدید، "+me.optString("name","مدیر"),20));welcome.addView(tv("مدرسه: "+me.optString("school_name","همه مدارس"),15));dashboardClock=tv("",18);dashboardClock.setTextColor(accent());welcome.addView(dashboardClock);content.addView(welcome);startClock();gap();
-        String[][] ms={{"👨‍🎓\nدانش‌آموزان","students"},{"💳\nشهریه و درآمد","tuition"},{"🧾\nهزینه‌ها","expenses"},{"🔄\nتراکنش‌ها","transactions"},{"📊\nگزارش مالی","report"},{"⚙️\nتنظیمات","settings"}};
-        if(isSeniorUser())ms=new String[][]{{"👨‍🎓\nدانش‌آموزان","students"},{"💳\nشهریه و درآمد","tuition"},{"🧾\nهزینه‌ها","expenses"},{"🏦\nتطبیق بانک","bank"},{"👤\nمدیران","managers"},{"🏫\nمدارس","schools"},{"📊\nگزارش مالی","report"},{"📥\nخروجی پارسیان","export"},{"📢\nپیام به مدیران","messages"},{"⚙️\nتنظیمات","settings"}};
+        String[][] ms={{"👨‍🎓\nدانش‌آموزان","students"},{"💳\nشهریه و درآمد","tuition"},{"🧾\nهزینه‌ها","expenses"},{"🔄\nتراکنش‌ها","transactions"},{"📊\nگزارش مالی","report"},{"📝\nگزارش فعالیت","activity"},{"⚙️\nتنظیمات","settings"}};
+        if(isSeniorUser())ms=new String[][]{{"👨‍🎓\nدانش‌آموزان","students"},{"💳\nشهریه و درآمد","tuition"},{"🧾\nهزینه‌ها","expenses"},{"🏦\nتطبیق بانک","bank"},{"👤\nمدیران","managers"},{"🏫\nمدارس","schools"},{"📊\nگزارش مالی","report"},{"📝\nگزارش فعالیت","activity"},{"📥\nخروجی پارسیان","export"},{"📢\nپیام به مدیران","messages"},{"⚙️\nتنظیمات","settings"}};
         GridLayout grid=new GridLayout(this);grid.setColumnCount(2);grid.setUseDefaultMargins(false);content.addView(grid);
-        for(String[] m:ms){Button b=cardBtn(m[0]);GridLayout.LayoutParams gp=new GridLayout.LayoutParams();gp.width=0;gp.height=(int)fs(145);gp.columnSpec=GridLayout.spec(GridLayout.UNDEFINED,1f);gp.setMargins(7,21,7,21);grid.addView(b,gp);b.setOnClickListener(v->{switch(m[1]){case"students":students();break;case"tuition":tuition();break;case"expenses":expenses();break;case"bank":bank();break;case"managers":managers();break;case"schools":schools();break;case"report":report();break;case"transactions":transactionsScreen();break;case"export":exportParsian();break;case"messages":messagesAdmin();break;default:settings();}});}
+        for(String[] m:ms){Button b=cardBtn(m[0]);GridLayout.LayoutParams gp=new GridLayout.LayoutParams();gp.width=0;gp.height=(int)fs(145);gp.columnSpec=GridLayout.spec(GridLayout.UNDEFINED,1f);gp.setMargins(7,21,7,21);grid.addView(b,gp);b.setOnClickListener(v->{switch(m[1]){case"students":students();break;case"tuition":tuition();break;case"expenses":expenses();break;case"bank":bank();break;case"managers":managers();break;case"schools":schools();break;case"report":report();break;case"transactions":transactionsScreen();break;case"export":exportParsian();break;case"messages":messagesAdmin();break;case"activity":activityLog();break;default:settings();}});}
         gap();content.addView(tv("پیام کاربر ارشد به مدیران",19));LinearLayout msgBox=new LinearLayout(this);msgBox.setOrientation(LinearLayout.VERTICAL);msgBox.setPadding(8,4,8,8);msgBox.setBackground(bg(Color.WHITE,24));content.addView(msgBox);loadMessages(msgBox);
     }
     void back(){gap();Button b=btn("↩ بازگشت به داشبورد");content.addView(b);b.setOnClickListener(v->showHome());}
@@ -198,13 +198,63 @@ public class MainActivity extends Activity {
         Button find=btn("🔎 جست‌وجوی دانش‌آموز");content.addView(find);gap();
         TextView selected=tv("دانش‌آموزی انتخاب نشده",17);selected.setBackground(bg(Color.WHITE,22));content.addView(selected);gap();
         LinearLayout history=new LinearLayout(this);history.setOrientation(LinearLayout.VERTICAL);content.addView(history);
-        Button debt=btn("➕ ثبت بدهی شهریه");Button pay=btn("💳 ثبت پرداخت شهریه");content.addView(debt);gap();content.addView(pay);gap();
+        Button debt=btn("➕ ثبت بدهی شهریه");Button bulkDebt=btn("📋 ثبت گروهی بدهی شهریه");Button pay=btn("💳 ثبت پرداخت شهریه");content.addView(debt);gap();content.addView(bulkDebt);gap();content.addView(pay);gap();
         final JSONObject[] student={null};
         Runnable choose=()->{String term=search.getText().toString().trim();if(term.isEmpty()){toast("نام یا کد ملی دانش‌آموز را وارد کنید.");search.requestFocus();return;}api.request("GET","/api/students?q="+Uri.encode(term),null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray ar=o.optJSONArray("data");if(ar==null||ar.length()==0){toast("دانش‌آموزی با این مشخصات پیدا نشد");return;}String[] names=new String[ar.length()];for(int i=0;i<ar.length();i++){JSONObject x=ar.optJSONObject(i);names[i]=x.optString("name")+" | "+x.optString("grade")+" | "+x.optString("national_id");}new AlertDialog.Builder(MainActivity.this).setTitle("نتیجه جست‌وجو").setItems(names,(d,w)->{student[0]=ar.optJSONObject(w);selected.setText("انتخاب: "+student[0].optString("name")+" | "+student[0].optString("grade")+"\nکد ملی: "+student[0].optString("national_id"));loadBalance(student[0],selected);loadTuitionHistory(student[0],history);}).show();}public void fail(String m){toast(m);}});};
         find.setOnClickListener(v->choose.run());
         debt.setOnClickListener(v->{if(student[0]==null){toast("ابتدا دانش‌آموز را جست‌وجو و انتخاب کنید");return;}amountDialog("ثبت بدهی شهریه","/api/tuition/debt",student[0],false,null);});
         pay.setOnClickListener(v->{if(student[0]==null){toast("ابتدا دانش‌آموز را جست‌وجو و انتخاب کنید");return;}amountDialog("ثبت پرداخت شهریه","/api/tuition/payment",student[0],true,null);});
+        bulkDebt.setOnClickListener(v->bulkDebtDialog());
         back();
+    }
+
+    void bulkDebtDialog(){
+        final Runnable openForSchool = () -> {
+            final long schoolId = me==null?0:me.optLong("school_id");
+            loadBulkStudentsAndShow(schoolId);
+        };
+        if(isSeniorUser()){
+            api.request("GET","/api/schools",null,new ApiClient.Callback(){public void ok(JSONObject o){
+                JSONArray ar=o.optJSONArray("data"); if(ar==null||ar.length()==0){toast("مدرسه‌ای پیدا نشد");return;}
+                ArrayList<String> names=new ArrayList<>();ArrayList<Long> ids=new ArrayList<>();
+                for(int i=0;i<ar.length();i++){JSONObject x=ar.optJSONObject(i);if(x!=null){names.add(x.optString("name"));ids.add(x.optLong("id"));}}
+                new AlertDialog.Builder(MainActivity.this).setTitle("انتخاب مدرسه برای ثبت گروهی")
+                    .setItems(names.toArray(new String[0]),(d,w)->loadBulkStudentsAndShow(ids.get(w))).show();
+            }public void fail(String m){toast(m);}});
+        }else openForSchool.run();
+    }
+
+    void loadBulkStudentsAndShow(long schoolId){
+        String path="/api/students?school_id="+schoolId;
+        api.request("GET",path,null,new ApiClient.Callback(){public void ok(JSONObject o){
+            JSONArray ar=o.optJSONArray("data"); if(ar==null||ar.length()==0){toast("دانش‌آموزی برای این مدرسه پیدا نشد");return;}
+            final ArrayList<JSONObject> allStudents=new ArrayList<>();for(int i=0;i<ar.length();i++){JSONObject x=ar.optJSONObject(i);if(x!=null)allStudents.add(x);}
+            final HashSet<Long> selectedIds=new HashSet<>();for(JSONObject x:allStudents)selectedIds.add(x.optLong("id"));
+            LinearLayout box=new LinearLayout(MainActivity.this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(10,4,10,4);
+            TextView error=tv("",14);error.setTextColor(Color.rgb(190,30,30));error.setVisibility(View.GONE);box.addView(error);
+            EditText amount=amountField();box.addView(amount);gapView(box);
+            EditText desc=field("عنوان بدهی (مثلاً اردو یا شهریه مهر) *");box.addView(desc);gapView(box);
+            TextView date=dateButton(todayJalali());box.addView(tv("تاریخ ثبت *",14));box.addView(date);gapView(box);
+            LinearLayout tools=new LinearLayout(MainActivity.this);tools.setOrientation(LinearLayout.HORIZONTAL);
+            CheckBox selectAll=new CheckBox(MainActivity.this);selectAll.setText("انتخاب همه");selectAll.setChecked(true);selectAll.setTextSize(fs(15));tools.addView(selectAll,new LinearLayout.LayoutParams(0,70,1));
+            TextView count=tv("تعداد انتخاب: "+selectedIds.size(),15);tools.addView(count,new LinearLayout.LayoutParams(0,70,1));box.addView(tools);
+            EditText filter=edit("جست‌وجوی دانش‌آموز برای انتخاب");box.addView(filter);gapView(box);
+            LinearLayout list=new LinearLayout(MainActivity.this);list.setOrientation(LinearLayout.VERTICAL);
+            ScrollView scroll=new ScrollView(MainActivity.this);scroll.addView(list,new ScrollView.LayoutParams(-1,-2));box.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+            final HashMap<Long,CheckBox> visibleChecks=new HashMap<>();
+            Runnable rebuild=()->{
+                list.removeAllViews();visibleChecks.clear();String q=filter.getText().toString().trim().toLowerCase(Locale.ROOT);
+                for(JSONObject st:allStudents){String name=st.optString("name");String nid=st.optString("national_id");String grade=st.optString("grade");String hay=(name+" "+nid+" "+grade).toLowerCase(Locale.ROOT);if(!q.isEmpty()&&!hay.contains(q))continue;
+                    CheckBox cb=new CheckBox(MainActivity.this);cb.setText(name+" | "+grade+" | "+(nid.isEmpty()?"بدون کد ملی":nid));cb.setTextSize(fs(15));cb.setPadding(4,8,4,8);long id=st.optLong("id");cb.setChecked(selectedIds.contains(id));cb.setOnCheckedChangeListener((v,checked)->{if(checked)selectedIds.add(id);else selectedIds.remove(id);count.setText("تعداد انتخاب: "+selectedIds.size());if(selectedIds.size()!=allStudents.size())selectAll.setOnCheckedChangeListener(null);selectAll.setChecked(selectedIds.size()==allStudents.size());selectAll.setOnCheckedChangeListener((vv,cc)->{if(cc){for(JSONObject z:allStudents)selectedIds.add(z.optLong("id"));}else selectedIds.clear();count.setText("تعداد انتخاب: "+selectedIds.size());rebuild.run();});});visibleChecks.put(id,cb);list.addView(cb);gapView(list);
+                }
+            };
+            selectAll.setOnCheckedChangeListener((v,checked)->{if(checked){for(JSONObject st:allStudents)selectedIds.add(st.optLong("id"));}else selectedIds.clear();count.setText("تعداد انتخاب: "+selectedIds.size());rebuild.run();});
+            filter.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count2){rebuild.run();}public void afterTextChanged(Editable e){}});
+            rebuild.run();
+            AlertDialog dlg=new AlertDialog.Builder(MainActivity.this).setTitle("ثبت گروهی بدهی شهریه — "+allStudents.size()+" دانش‌آموز").setView(box).setPositiveButton("ثبت بدهی برای انتخاب‌شده‌ها",null).setNegativeButton("انصراف",null).create();
+            dlg.setOnShowListener(x->dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+                try{long m=money(amount);String ds=date.getText().toString().trim();String d=desc.getText().toString().trim();if(m<=0){showFormError(error,"مبلغ را وارد کنید.");return;}if(d.isEmpty()){showFormError(error,"عنوان بدهی را وارد کنید.");return;}if(!ds.matches("\d{4}/\d{2}/\d{2}")){showFormError(error,"تاریخ معتبر نیست.");return;}if(selectedIds.isEmpty()){showFormError(error,"حداقل یک دانش‌آموز را انتخاب کنید.");return;}JSONArray idsJson=new JSONArray();for(Long id:selectedIds)idsJson.put(id);JSONObject z=new JSONObject();z.put("amount",m);z.put("description",d);z.put("date",jalaliToGregorianString(ds));z.put("school_id",schoolId);z.put("student_ids",idsJson);api.request("POST","/api/tuition/bulk-debt",z,new ApiClient.Callback(){public void ok(JSONObject o){dlg.dismiss();toast("بدهی برای "+o.optInt("added")+" دانش‌آموز ثبت شد");tuition();}public void fail(String msg){showFormError(error,msg);}});}catch(Exception e){showFormError(error,"اطلاعات بدهی معتبر نیست.");}}));dlg.show();
+        }public void fail(String m){toast(m);}});
     }
     void loadTuitionHistory(JSONObject student,LinearLayout history){history.removeAllViews();api.request("GET","/api/transactions?student_id="+student.optLong("id"),null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");history.addView(tv("سوابق شهریه",18));if(a==null||a.length()==0){history.addView(tv("هنوز تراکنشی ثبت نشده است.",15));return;}for(int i=0;i<a.length();i++){JSONObject t=a.optJSONObject(i);String k=t.optString("kind");if(!"شهریه".equals(k)&&!"شهریه_بدهی".equals(k))continue;String title="شهریه_بدهی".equals(k)?"بدهی":"پرداخت";LinearLayout row=new LinearLayout(MainActivity.this);row.setOrientation(LinearLayout.VERTICAL);row.setPadding(8,8,8,8);row.setBackground(bg(Color.WHITE,20));row.addView(tv(title+" | "+fmt(t.optLong("debit")+t.optLong("credit"))+" ریال | "+jalaliFromGregorian(t.optString("date")),16));row.addView(tv("توضیحات: "+t.optString("comment","").replaceFirst("^\\[expense_category_id=\\d+\\]\\s*",""),14));addAttachmentPreview(row,t);LinearLayout actions=new LinearLayout(MainActivity.this);Button edit=btn("✏ ویرایش"),del=btn("🗑 حذف");actions.addView(edit,new LinearLayout.LayoutParams(0,62,1));actions.addView(del,new LinearLayout.LayoutParams(0,62,1));row.addView(actions);history.addView(row);gapView(history);edit.setOnClickListener(v->studentForEdit(t));del.setOnClickListener(v->deleteTransaction(t,history,student));}}public void fail(String m){toast(m);}});}
     String jalaliFromGregorian(String iso){try{String[] p=iso.substring(0,10).split("-");int[] j=gregorianToJalali(Integer.parseInt(p[0]),Integer.parseInt(p[1]),Integer.parseInt(p[2]));return String.format(Locale.US,"%04d/%02d/%02d",j[0],j[1],j[2]);}catch(Exception e){return iso==null?"":iso;}}
@@ -576,6 +626,22 @@ public class MainActivity extends Activity {
 
     void loadMessages(LinearLayout box){api.request("GET","/api/senior-messages",null,new ApiClient.Callback(){public void ok(JSONObject o){box.removeAllViews();JSONArray a=o.optJSONArray("data");if(a==null||a.length()==0){box.addView(tv("پیامی از مدیر ارشد ثبت نشده است.",15));return;}for(int i=0;i<a.length();i++){JSONObject m=a.optJSONObject(i);box.addView(tv("📢 "+m.optString("message")+"\n"+jalaliFromGregorian(m.optString("created_at")),15));if(i<a.length()-1)gapView(box);}}public void fail(String m){box.addView(tv("پیام‌ها در دسترس نیستند.",14));}});}
     void messagesAdmin(){base("پیام به مدیران");EditText msg=field("متن پیام مدیر ارشد برای همه مدیران");content.addView(msg);gap();Button send=btn("📢 ارسال پیام");content.addView(send);gap();LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);final Runnable[] loadRef=new Runnable[1]; loadRef[0]=()->api.request("GET","/api/senior-messages",null,new ApiClient.Callback(){public void ok(JSONObject o){list.removeAllViews();JSONArray a=o.optJSONArray("data");for(int i=0;i<(a==null?0:a.length());i++){JSONObject m=a.optJSONObject(i);LinearLayout row=new LinearLayout(MainActivity.this);row.setOrientation(LinearLayout.VERTICAL);row.setBackground(bg(Color.WHITE,20));row.addView(tv(m.optString("message"),16));row.addView(tv("تاریخ: "+jalaliFromGregorian(m.optString("created_at")),13));Button del=btn("🗑 غیرفعال کردن پیام");row.addView(del);list.addView(row);gapView(list);del.setOnClickListener(v->api.request("DELETE","/api/senior-messages/"+m.optLong("id"),null,new ApiClient.Callback(){public void ok(JSONObject x){loadRef[0].run();}public void fail(String z){toast(z);}}));}}public void fail(String m){toast(m);}});send.setOnClickListener(v->{String text=msg.getText().toString().trim();if(text.isEmpty()){toast("متن پیام را وارد کنید");return;}JSONObject z=new JSONObject();try{z.put("message",text);}catch(Exception ignored){}api.request("POST","/api/senior-messages",z,new ApiClient.Callback(){public void ok(JSONObject o){msg.setText("");toast("پیام برای مدیران ارسال شد");loadRef[0].run();}public void fail(String m){toast(m);}});});loadRef[0].run();back();}
+
+    void activityLog(){
+        base("گزارش فعالیت مدیر");
+        LinearLayout tools=new LinearLayout(this);tools.setOrientation(LinearLayout.HORIZONTAL);
+        Button mine=btn("فعالیت من");tools.addView(mine,new LinearLayout.LayoutParams(0,70,1));
+        Button all=btn("همه مدیران");if(isSeniorUser())tools.addView(all,new LinearLayout.LayoutParams(0,70,1));
+        content.addView(tools);gap();
+        LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);
+        Runnable loadMine=()->loadActivityLogs(list,false);mine.setOnClickListener(v->loadMine.run());
+        if(isSeniorUser())all.setOnClickListener(v->loadActivityLogs(list,true));
+        loadMine.run();back();
+    }
+    void loadActivityLogs(LinearLayout list,boolean all){
+        String path=all?"/api/activity-logs?all=1":"/api/activity-logs";
+        api.request("GET",path,null,new ApiClient.Callback(){public void ok(JSONObject o){list.removeAllViews();JSONArray ar=o.optJSONArray("data");if(ar==null||ar.length()==0){list.addView(tv("هنوز فعالیتی ثبت نشده است.",16));return;}for(int i=0;i<ar.length();i++){JSONObject x=ar.optJSONObject(i);if(x==null)continue;LinearLayout row=new LinearLayout(MainActivity.this);row.setOrientation(LinearLayout.VERTICAL);row.setPadding(10,10,10,10);row.setBackground(bg(Color.WHITE,20));row.addView(tv("🕒 "+x.optString("date"),14));String who=x.optString("user_name","");if(all&&!who.isEmpty())row.addView(tv("مدیر: "+who+" | مدرسه: "+x.optString("school_id",""),14));row.addView(tv(x.optString("description",x.optString("action","")),16));if(!x.optString("entity_type","").isEmpty())row.addView(tv("بخش: "+x.optString("entity_type")+" | شناسه: "+x.optString("entity_id",""),13));list.addView(row);gapView(list);}}public void fail(String m){toast(m);}});
+    }
 
     void settings(){base("تنظیمات");content.addView(tv("ارتباط با سرویس: Google Apps Script\nپایگاه داده: Google Sheets / Google Drive",16));gap();content.addView(tv("تم رنگی",18));String[] names={"سبز فیروزه‌ای","آبی","بنفش","نارنجی","سبز","سبز تیره"};Spinner themeSpinner=new Spinner(this);themeSpinner.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,names));themeSpinner.setSelection(themeIndex);content.addView(themeSpinner,new LinearLayout.LayoutParams(-1,(int)fs(68)));themeSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,View v,int pos,long id){if(pos!=themeIndex){themeIndex=pos;prefs.edit().putInt("theme_index",themeIndex).apply();settings();}}});gap();content.addView(tv("اندازه نوشته‌ها",18));LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER);Button minus=btn("➖\nA");Button plus=btn("➕\nA");minus.setTextSize(fs(21));plus.setTextSize(fs(21));int wh=(int)fs(105);row.addView(minus,new LinearLayout.LayoutParams(wh,wh));Space sp=new Space(this);row.addView(sp,new LinearLayout.LayoutParams(18,1));row.addView(plus,new LinearLayout.LayoutParams(wh,wh));content.addView(row);gap();content.addView(tv("اندازه فعلی: "+Math.round(fontScale*100)+"٪",15));minus.setOnClickListener(v->{fontScale=Math.max(.85f,fontScale-.05f);prefs.edit().putFloat("font_scale",fontScale).apply();settings();});plus.setOnClickListener(v->{fontScale=Math.min(1.25f,fontScale+.05f);prefs.edit().putFloat("font_scale",fontScale).apply();settings();});Button out=btn("خروج از حساب");content.addView(out);gap();out.setOnClickListener(v->{api.request("POST","/api/logout",null,new ApiClient.Callback(){public void ok(JSONObject o){api.clearToken();showLogin();}public void fail(String m){api.clearToken();showLogin();}});});back();}
 
