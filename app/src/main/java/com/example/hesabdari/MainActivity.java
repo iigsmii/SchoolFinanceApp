@@ -225,35 +225,150 @@ public class MainActivity extends Activity {
     }
 
     void loadBulkStudentsAndShow(long schoolId){
+        if(schoolId<=0){toast("مدرسه مشخص نشده است");return;}
         String path="/api/students?school_id="+schoolId;
         api.request("GET",path,null,new ApiClient.Callback(){public void ok(JSONObject o){
-            JSONArray ar=o.optJSONArray("data"); if(ar==null||ar.length()==0){toast("دانش‌آموزی برای این مدرسه پیدا نشد");return;}
-            final ArrayList<JSONObject> allStudents=new ArrayList<>();for(int i=0;i<ar.length();i++){JSONObject x=ar.optJSONObject(i);if(x!=null)allStudents.add(x);}
-            final HashSet<Long> selectedIds=new HashSet<>();for(JSONObject x:allStudents)selectedIds.add(x.optLong("id"));
-            LinearLayout box=new LinearLayout(MainActivity.this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(10,4,10,4);
-            TextView error=tv("",14);error.setTextColor(Color.rgb(190,30,30));error.setVisibility(View.GONE);box.addView(error);
-            EditText amount=amountField();box.addView(amount);gapView(box);
-            EditText desc=field("عنوان بدهی (مثلاً اردو یا شهریه مهر) *");box.addView(desc);gapView(box);
-            TextView date=dateButton(todayJalali());box.addView(tv("تاریخ ثبت *",14));box.addView(date);gapView(box);
-            LinearLayout tools=new LinearLayout(MainActivity.this);tools.setOrientation(LinearLayout.HORIZONTAL);
-            CheckBox selectAll=new CheckBox(MainActivity.this);selectAll.setText("انتخاب همه");selectAll.setChecked(true);selectAll.setTextSize(fs(15));tools.addView(selectAll,new LinearLayout.LayoutParams(0,70,1));
-            TextView count=tv("تعداد انتخاب: "+selectedIds.size(),15);tools.addView(count,new LinearLayout.LayoutParams(0,70,1));box.addView(tools);
-            EditText filter=edit("جست‌وجوی دانش‌آموز برای انتخاب");box.addView(filter);gapView(box);
-            LinearLayout list=new LinearLayout(MainActivity.this);list.setOrientation(LinearLayout.VERTICAL);
-            ScrollView scroll=new ScrollView(MainActivity.this);scroll.addView(list,new ScrollView.LayoutParams(-1,-2));box.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-            final HashMap<Long,CheckBox> visibleChecks=new HashMap<>();
-            final Runnable[] rebuild=new Runnable[1]; rebuild[0]=()->{
-                list.removeAllViews();visibleChecks.clear();String q=filter.getText().toString().trim().toLowerCase(Locale.ROOT);
-                for(JSONObject st:allStudents){String name=st.optString("name");String nid=st.optString("national_id");String grade=st.optString("grade");String hay=(name+" "+nid+" "+grade).toLowerCase(Locale.ROOT);if(!q.isEmpty()&&!hay.contains(q))continue;
-                    CheckBox cb=new CheckBox(MainActivity.this);cb.setText(name+" | "+grade+" | "+(nid.isEmpty()?"بدون کد ملی":nid));cb.setTextSize(fs(15));cb.setPadding(4,8,4,8);long id=st.optLong("id");cb.setChecked(selectedIds.contains(id));cb.setOnCheckedChangeListener((v,checked)->{if(checked)selectedIds.add(id);else selectedIds.remove(id);count.setText("تعداد انتخاب: "+selectedIds.size());if(selectedIds.size()!=allStudents.size())selectAll.setOnCheckedChangeListener(null);selectAll.setChecked(selectedIds.size()==allStudents.size());selectAll.setOnCheckedChangeListener((vv,cc)->{if(cc){for(JSONObject z:allStudents)selectedIds.add(z.optLong("id"));}else selectedIds.clear();count.setText("تعداد انتخاب: "+selectedIds.size());rebuild[0].run();});});visibleChecks.put(id,cb);list.addView(cb);gapView(list);
+            try{
+                JSONArray ar=o.optJSONArray("data");
+                if(ar==null||ar.length()==0){toast("دانش‌آموزی برای این مدرسه پیدا نشد");return;}
+
+                final ArrayList<JSONObject> allStudents=new ArrayList<>();
+                for(int i=0;i<ar.length();i++){
+                    JSONObject x=ar.optJSONObject(i);
+                    if(x!=null && x.optLong("id",0)>0) allStudents.add(x);
                 }
-            };
-            selectAll.setOnCheckedChangeListener((v,checked)->{if(checked){for(JSONObject st:allStudents)selectedIds.add(st.optLong("id"));}else selectedIds.clear();count.setText("تعداد انتخاب: "+selectedIds.size());rebuild[0].run();});
-            filter.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count2){rebuild[0].run();}public void afterTextChanged(Editable e){}});
-            rebuild[0].run();
-            AlertDialog dlg=new AlertDialog.Builder(MainActivity.this).setTitle("ثبت گروهی بدهی شهریه — "+allStudents.size()+" دانش‌آموز").setView(box).setPositiveButton("ثبت بدهی برای انتخاب‌شده‌ها",null).setNegativeButton("انصراف",null).create();
-            dlg.setOnShowListener(x->dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
-                try{long m=money(amount);String ds=date.getText().toString().trim();String d=desc.getText().toString().trim();if(m<=0){showFormError(error,"مبلغ را وارد کنید.");return;}if(d.isEmpty()){showFormError(error,"عنوان بدهی را وارد کنید.");return;}if(!ds.matches("\\d{4}/\\d{2}/\\d{2}")){showFormError(error,"تاریخ معتبر نیست.");return;}if(selectedIds.isEmpty()){showFormError(error,"حداقل یک دانش‌آموز را انتخاب کنید.");return;}JSONArray idsJson=new JSONArray();for(Long id:selectedIds)idsJson.put(id);JSONObject z=new JSONObject();z.put("amount",m);z.put("description",d);z.put("date",jalaliToGregorianString(ds));z.put("school_id",schoolId);z.put("student_ids",idsJson);api.request("POST","/api/tuition/bulk-debt",z,new ApiClient.Callback(){public void ok(JSONObject o){dlg.dismiss();toast("بدهی برای "+o.optInt("added")+" دانش‌آموز ثبت شد");tuition();}public void fail(String msg){showFormError(error,msg);}});}catch(Exception e){showFormError(error,"اطلاعات بدهی معتبر نیست.");}}));dlg.show();
+                if(allStudents.isEmpty()){toast("دانش‌آموز معتبر برای این مدرسه پیدا نشد");return;}
+
+                final HashSet<Long> selectedIds=new HashSet<>();
+                final ArrayList<CheckBox> checks=new ArrayList<>();
+                for(JSONObject x:allStudents) selectedIds.add(x.optLong("id"));
+
+                LinearLayout box=new LinearLayout(MainActivity.this);
+                box.setOrientation(LinearLayout.VERTICAL);
+                box.setPadding(10,4,10,4);
+
+                TextView error=tv("",14);
+                error.setTextColor(Color.rgb(190,30,30));
+                error.setVisibility(View.GONE);
+                box.addView(error);
+
+                EditText amount=amountField();
+                box.addView(amount);gapView(box);
+                EditText desc=field("عنوان بدهی (مثلاً اردو یا شهریه مهر) *");
+                box.addView(desc);gapView(box);
+                TextView date=dateButton(todayJalali());
+                box.addView(tv("تاریخ ثبت *",14));box.addView(date);gapView(box);
+
+                LinearLayout tools=new LinearLayout(MainActivity.this);
+                tools.setOrientation(LinearLayout.HORIZONTAL);
+                final CheckBox selectAll=new CheckBox(MainActivity.this);
+                selectAll.setText("انتخاب همه");
+                selectAll.setChecked(true);
+                selectAll.setTextSize(fs(15));
+                tools.addView(selectAll,new LinearLayout.LayoutParams(0,70,1));
+                final TextView count=tv("تعداد انتخاب: "+selectedIds.size(),15);
+                tools.addView(count,new LinearLayout.LayoutParams(0,70,1));
+                box.addView(tools);
+
+                EditText filter=field("جست‌وجوی دانش‌آموز برای انتخاب");
+                box.addView(filter);gapView(box);
+
+                LinearLayout list=new LinearLayout(MainActivity.this);
+                list.setOrientation(LinearLayout.VERTICAL);
+                ScrollView scroll=new ScrollView(MainActivity.this);
+                scroll.setFillViewport(true);
+                scroll.addView(list,new ScrollView.LayoutParams(-1,-2));
+                box.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+
+                final boolean[] changing={false};
+
+                for(JSONObject st:allStudents){
+                    final long id=st.optLong("id");
+                    String name=st.optString("name","").trim();
+                    String nid=st.optString("national_id","").trim();
+                    String grade=st.optString("grade","").trim();
+                    final CheckBox cb=new CheckBox(MainActivity.this);
+                    cb.setText(name+" | "+grade+" | "+(nid.isEmpty()?"بدون کد ملی":nid));
+                    cb.setTextSize(fs(15));
+                    cb.setPadding(4,8,4,8);
+                    cb.setChecked(true);
+                    cb.setTag((name+" "+grade+" "+nid).toLowerCase(Locale.ROOT));
+                    cb.setOnCheckedChangeListener((button,checked)->{
+                        if(changing[0])return;
+                        if(checked)selectedIds.add(id);else selectedIds.remove(id);
+                        count.setText("تعداد انتخاب: "+selectedIds.size());
+                        boolean all=selectedIds.size()==allStudents.size();
+                        changing[0]=true;
+                        selectAll.setChecked(all);
+                        changing[0]=false;
+                    });
+                    checks.add(cb);
+                    list.addView(cb);
+                    gapView(list);
+                }
+
+                selectAll.setOnCheckedChangeListener((button,checked)->{
+                    if(changing[0])return;
+                    changing[0]=true;
+                    if(checked){
+                        selectedIds.clear();
+                        for(JSONObject st:allStudents)selectedIds.add(st.optLong("id"));
+                    }else{
+                        selectedIds.clear();
+                    }
+                    for(CheckBox cb:checks)cb.setChecked(checked);
+                    count.setText("تعداد انتخاب: "+selectedIds.size());
+                    changing[0]=false;
+                });
+
+                filter.addTextChangedListener(new TextWatcher(){
+                    public void beforeTextChanged(CharSequence s,int st,int c,int a){}
+                    public void onTextChanged(CharSequence s,int st,int before,int count2){
+                        String q=s==null?"":s.toString().trim().toLowerCase(Locale.ROOT);
+                        for(CheckBox cb:checks){
+                            String hay=String.valueOf(cb.getTag());
+                            cb.setVisibility(q.isEmpty()||hay.contains(q)?View.VISIBLE:View.GONE);
+                        }
+                    }
+                    public void afterTextChanged(Editable e){}
+                });
+
+                AlertDialog dlg=new AlertDialog.Builder(MainActivity.this)
+                    .setTitle("ثبت گروهی بدهی شهریه — "+allStudents.size()+" دانش‌آموز")
+                    .setView(box)
+                    .setPositiveButton("ثبت بدهی برای انتخاب‌شده‌ها",null)
+                    .setNegativeButton("انصراف",null)
+                    .create();
+
+                dlg.setOnShowListener(x->dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+                    try{
+                        long m=money(amount);
+                        String ds=date.getText().toString().trim();
+                        String d=desc.getText().toString().trim();
+                        if(m<=0){showFormError(error,"مبلغ را وارد کنید.");return;}
+                        if(d.isEmpty()){showFormError(error,"عنوان بدهی را وارد کنید.");return;}
+                        if(!ds.matches("\\d{4}/\\d{2}/\\d{2}")){showFormError(error,"تاریخ معتبر نیست.");return;}
+                        if(selectedIds.isEmpty()){showFormError(error,"حداقل یک دانش‌آموز را انتخاب کنید.");return;}
+                        JSONArray idsJson=new JSONArray();
+                        for(Long id:selectedIds)idsJson.put(id);
+                        JSONObject z=new JSONObject();
+                        z.put("amount",m);
+                        z.put("description",d);
+                        z.put("date",jalaliToGregorianString(ds));
+                        z.put("school_id",schoolId);
+                        z.put("student_ids",idsJson);
+                        api.request("POST","/api/tuition/bulk-debt",z,new ApiClient.Callback(){
+                            public void ok(JSONObject o){
+                                dlg.dismiss();
+                                toast("بدهی برای "+o.optInt("added")+" دانش‌آموز ثبت شد");
+                                tuition();
+                            }
+                            public void fail(String msg){showFormError(error,msg);}
+                        });
+                    }catch(Exception e){showFormError(error,"اطلاعات بدهی معتبر نیست.");}
+                }));
+                dlg.show();
+            }catch(Exception e){toast("باز کردن ثبت گروهی بدهی انجام نشد");}
         }public void fail(String m){toast(m);}});
     }
     void loadTuitionHistory(JSONObject student,LinearLayout history){history.removeAllViews();api.request("GET","/api/transactions?student_id="+student.optLong("id"),null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");history.addView(tv("سوابق شهریه",18));if(a==null||a.length()==0){history.addView(tv("هنوز تراکنشی ثبت نشده است.",15));return;}for(int i=0;i<a.length();i++){JSONObject t=a.optJSONObject(i);String k=t.optString("kind");if(!"شهریه".equals(k)&&!"شهریه_بدهی".equals(k))continue;String title="شهریه_بدهی".equals(k)?"بدهی":"پرداخت";LinearLayout row=new LinearLayout(MainActivity.this);row.setOrientation(LinearLayout.VERTICAL);row.setPadding(8,8,8,8);row.setBackground(bg(Color.WHITE,20));row.addView(tv(title+" | "+fmt(t.optLong("debit")+t.optLong("credit"))+" ریال | "+jalaliFromGregorian(t.optString("date")),16));row.addView(tv("توضیحات: "+t.optString("comment","").replaceFirst("^\\[expense_category_id=\\d+\\]\\s*",""),14));addAttachmentPreview(row,t);LinearLayout actions=new LinearLayout(MainActivity.this);Button edit=btn("✏ ویرایش"),del=btn("🗑 حذف");actions.addView(edit,new LinearLayout.LayoutParams(0,62,1));actions.addView(del,new LinearLayout.LayoutParams(0,62,1));row.addView(actions);history.addView(row);gapView(history);edit.setOnClickListener(v->studentForEdit(t));del.setOnClickListener(v->deleteTransaction(t,history,student));}}public void fail(String m){toast(m);}});}
