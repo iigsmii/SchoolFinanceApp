@@ -259,19 +259,67 @@ public class MainActivity extends Activity {
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             new ApiClient.Callback(){
                 public void ok(JSONObject o){
-                    String msg="ورود Excel: "+o.optInt("added")+" نفر اضافه شد؛ "+
-                        o.optInt("skipped")+" تکراری؛ "+o.optInt("invalid")+" نامعتبر";
-                    JSONArray d=o.optJSONArray("details");
-                    if(d!=null && d.length()>0) msg+="\n"+d.optString(0);
+                    int added=o.optInt("added"), skipped=o.optInt("skipped"), invalid=o.optInt("invalid");
+                    String msg="ورود Excel: "+added+" نفر اضافه شد؛ "+skipped+" تکراری؛ "+invalid+" نیازمند اصلاح";
                     toast(msg);
                     pendingImportSchoolId=0;
-                    students();
+                    JSONArray bad=o.optJSONArray("invalid_students");
+                    if(bad!=null && bad.length()>0){
+                        showInvalidImportedStudents(bad);
+                    } else {
+                        students();
+                    }
                 }
                 public void fail(String m){
                     toast(m.contains("Unknown action")?
                         "نسخه Web App گوگل قدیمی است؛ کد Apps Script جدید را دوباره Deploy کنید.":m);
                 }
             });
+    }
+
+    void showInvalidImportedStudents(JSONArray bad){
+        LinearLayout box=new LinearLayout(MainActivity.this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(10,4,10,4);
+        TextView intro=tv("این دانش‌آموزان وارد شده‌اند اما باید اصلاح شوند. روی «ویرایش» بزنید.",15);
+        box.addView(intro);
+        ScrollView sv=new ScrollView(MainActivity.this);
+        LinearLayout list=new LinearLayout(MainActivity.this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        sv.addView(list);
+        box.addView(sv,new LinearLayout.LayoutParams(-1,(int)fs(360)));
+        for(int i=0;i<bad.length();i++){
+            JSONObject x=bad.optJSONObject(i);
+            if(x==null)continue;
+            LinearLayout row=new LinearLayout(MainActivity.this);
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.setPadding(10,10,10,10);
+            row.setBackground(bg(Color.WHITE,18));
+            String nid=x.optString("national_id","");
+            row.addView(tv("⚠️ ردیف Excel: "+x.optInt("row")+" | "+x.optString("name"),16));
+            row.addView(tv("پایه: "+x.optString("grade")+" | کد ملی: "+(nid.isEmpty()?"خالی":nid),14));
+            row.addView(tv("علت: "+x.optString("reason"),14));
+            Button edit=btn("✏️ ویرایش همین دانش‌آموز");
+            row.addView(edit);
+            edit.setOnClickListener(v->{
+                long id=x.optLong("student_id");
+                api.request("GET","/api/students/"+id,null,new ApiClient.Callback(){
+                    public void ok(JSONObject o){
+                        JSONObject st=o.optJSONObject("data");
+                        if(st!=null){ studentEdit(st); } else toast("اطلاعات دانش‌آموز پیدا نشد");
+                    }
+                    public void fail(String m){toast(m);}
+                });
+            });
+            list.addView(row);
+            gapView(list);
+        }
+        AlertDialog dlg=new AlertDialog.Builder(MainActivity.this)
+            .setTitle("۲ دانش‌آموز نیازمند اصلاح")
+            .setView(box)
+            .setPositiveButton("بستن و نمایش فهرست",(d,w)->students())
+            .create();
+        dlg.show();
     }
 
     void bank(){base("تطبیق بانک");content.addView(tv("تمام تراکنش‌های ثبت‌شده توسط مدیران در این بخش نمایش داده می‌شود. تیک سبز یعنی با بانک تطبیق شده و ضربدر قرمز یعنی مغایرت/عدم تطبیق.",16));gap();Button upload=btn("📄\nانتخاب فایل بانک");Button rec=btn("🔄\nتطبیق تراکنش‌ها");content.addView(upload);gap();content.addView(rec);gap();LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);upload.setOnClickListener(v->{Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("*/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,88);});rec.setOnClickListener(v->api.request("POST","/api/bank/reconcile",new JSONObject(),new ApiClient.Callback(){public void ok(JSONObject o){toast("تطبیق انجام شد: "+o.optInt("matched")+" مورد؛ "+o.optInt("unmatched")+" مورد بدون تطبیق");bankReview(list);}public void fail(String m){toast(m);}}));bankReview(list);back();}

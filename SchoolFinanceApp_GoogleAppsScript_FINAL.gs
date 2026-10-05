@@ -499,6 +499,7 @@ function studentsImport_(b) {
     const gradeCounts={};
     const gradeSamples=[];
     const reasons=[];
+    const invalidStudents=[];
     const existing=rows_('Students').map(x=>x.obj);
     const seen={};
 
@@ -552,7 +553,16 @@ function studentsImport_(b) {
 
       if(rowErrors.length) {
         invalid++;
-        reasons.push('ردیف '+rowNo+' — '+name+' — '+rowErrors.join('، ')+' — دانش‌آموز ساخته شد و باید اصلاح شود');
+        const reasonText=rowErrors.join('، ');
+        reasons.push('ردیف '+rowNo+' — '+name+' — '+reasonText+' — دانش‌آموز ساخته شد و باید اصلاح شود');
+        invalidStudents.push({
+          student_id:id,
+          row:rowNo,
+          name:name,
+          grade:storedGrade,
+          national_id:nid,
+          reason:reasonText
+        });
       }
     });
 
@@ -564,7 +574,8 @@ function studentsImport_(b) {
       total:imported.length,
       message:'ورود Excel انجام شد. موارد نامعتبر نیز ساخته شدند تا بعداً قابل اصلاح باشند.',
       details:reasons.slice(0,20),
-      diagnostics:{parsed:imported.length,valid_nid:validNid,invalid_nid:invalidNid,valid_grade:validGrade,invalid_grade:invalidGrade,missing_name:missingName,grade_counts:gradeCounts,grade_samples:gradeSamples,backend_version:'2.9-grade-detection-diagnostic-fix'}
+      invalid_students:invalidStudents,
+      diagnostics:{parsed:imported.length,valid_nid:validNid,invalid_nid:invalidNid,valid_grade:validGrade,invalid_grade:invalidGrade,missing_name:missingName,grade_counts:gradeCounts,grade_samples:gradeSamples,backend_version:'2.10-invalid-student-details'}
     };
   } finally {
     lock.releaseLock();
