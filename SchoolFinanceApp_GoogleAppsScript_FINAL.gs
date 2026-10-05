@@ -238,7 +238,7 @@ function setup() {
   const settings = sheet_('Settings');
   const settingKeys={};
   rows_('Settings').forEach(x=>settingKeys[String(x.obj.key||'').trim()]=true);
-  [['schoolfinance_version','2.5-global-nid-xlsx-fix'],['bank_account_code','0-1-11'],['currency','IRR']].forEach(x=>{
+  [['schoolfinance_version','2.6-global-nid-grade-xlsx-fix'],['bank_account_code','0-1-11'],['currency','IRR']].forEach(x=>{
     if(!settingKeys[x[0]]) settings.appendRow([x[0],x[1],now_()]);
   });
 
@@ -271,7 +271,7 @@ function doGet(e) {
     if(action==='parsian_school_map') return json_(parsianSchoolMap_(b));
     if(action==='parsian_student_accounts') return json_(parsianStudentAccounts_(b));
     if(action==='summary') return json_(summary_(b));
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.5-global-nid-xlsx-fix',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.6-global-nid-grade-xlsx-fix',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
@@ -455,7 +455,10 @@ function students_(b) {
 }
 
 function studentAdd_(b) {
-  const u=auth_(b);
+  const lock=LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const u=auth_(b);
   ensureCoreData_();
   const schoolId=(u.role==='senior' || u.role==='admin') ? b.school_id : u.school_id;
   if(!schoolId) throw new Error('مدرسه مشخص نشده است.');
@@ -466,60 +469,87 @@ function studentAdd_(b) {
   const duplicate=rows_('Students').some(x=>digits_(x.obj.national_id||'')===nid);
   if(duplicate) throw new Error('این کد ملی قبلاً در سیستم برای یک دانش‌آموز ثبت شده است و در هیچ مدرسه دیگری نیز قابل ثبت نیست.');
   const id=nextId_('Students');
+  const grade=normalizeGrade_(b.grade||'');
+  const codes=studentAccountCodes_(id,grade);
   sheet_('Students').appendRow([
-    id,String(b.name||'').trim(),String(b.grade||''),phone,nid,String(schoolId),
-    String(b.kol_code||'67'),String(b.moeen_code||''),String(b.tafsili_code||''),
-    true,now_()
+    id,String(b.name||'').trim(),grade,phone,nid,String(schoolId),
+    codes.kol,codes.moeen,codes.tafsili,true,now_()
   ]);
   return {success:true,id:id};
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function studentsImport_(b) {
-  const u=auth_(b);
-  ensureCoreData_();
-  const schoolId=(u.role==='senior' || u.role==='admin') ? String(b.school_id||'') : String(u.school_id||'');
-  if(!schoolId) throw new Error('مدرسه برای ورود دانش‌آموزان مشخص نشده است.');
-  if(!b.base64) throw new Error('فایل Excel ارسال نشده است.');
+  const lock=LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const u=auth_(b);
+    ensureCoreData_();
+    const schoolId=(u.role==='senior' || u.role==='admin') ? String(b.school_id||'') : String(u.school_id||'');
+    if(!schoolId) throw new Error('مدرسه برای ورود دانش‌آموزان مشخص نشده است.');
+    if(!b.base64) throw new Error('فایل Excel ارسال نشده است.');
 
-  const selectedGrade=normalizeGrade_(b.grade||'');
-  const rows=readStudentXlsx_(b.base64);
-  if(!rows.length) throw new Error('هیچ دانش‌آموز قابل خواندن از فایل Excel پیدا نشد. ردیف عنوان باید شامل «نام»، «نام خانوادگی» و «کد ملی» باشد.');
+    const imported=readStudentXlsx_(b.base64);
+    if(!imported.length) throw new Error('هیچ دانش‌آموز قابل خواندن از فایل Excel پیدا نشد.');
 
-  let added=0, skipped=0, invalid=0;
-  const reasons=[];
-  const existing=rows_('Students').map(x=>x.obj); // کد ملی در کل مجموعه مدارس باید یکتا باشد
+    let added=0, skipped=0, invalid=0;
+    const reasons=[];
+    const existing=rows_('Students').map(x=>x.obj);
+    const seen={};
 
-  rows.forEach(r=>{
-    const first=String(r.first_name||'').trim();
-    const last=String(r.last_name||'').trim();
-    const name=String(r.name||[first,last].filter(Boolean).join(' ')).replace(/\s+/g,' ').trim();
-    const nid=digits_(r.national_id||'');
-    const grade=selectedGrade;
+    imported.forEach(r=>{
+      const first=String(r.first_name||'').trim();
+      const last=String(r.last_name||'').trim();
+      const name=String(r.name||[first,last].filter(Boolean).join(' ')).replace(/\s+/g,' ').trim();
+      const nid=digits_(r.national_id||'');
+      const grade=normalizeGrade_(r.grade||'');
 
-    if(!name){ invalid++; reasons.push('نام خالی'); return; }
-    if(!/^\d{10}$/.test(nid)){ invalid++; reasons.push('کد ملی نامعتبر برای '+name); return; }
-    if(!grade){ invalid++; reasons.push('پایه نامشخص برای '+name); return; }
+      if(!name){ invalid++; reasons.push('نام خالی'); return; }
+      if(!/^\d{10}$/.test(nid)){ invalid++; reasons.push('کد ملی نامعتبر برای '+name); return; }
+      if(!grade){ invalid++; reasons.push('پایه/کلاس نامعتبر یا خالی برای '+name); return; }
 
-    const duplicate=existing.some(x=>digits_(x.national_id||'')===nid);
-    if(duplicate){skipped++;return;}
+      // National ID is globally unique across every school, including
+      // duplicates occurring twice inside the same Excel file.
+      if(seen[nid] || existing.some(x=>digits_(x.national_id||'')===nid)){
+        skipped++;
+        reasons.push('کد ملی تکراری برای '+name);
+        return;
+      }
 
-    const id=nextId_('Students');
-    sheet_('Students').appendRow([
-      id,name,grade,digits_(r.phone||''),nid,schoolId,
-      '67','','',true,now_()
-    ]);
-    existing.push({name:name,national_id:nid,school_id:schoolId});
-    added++;
-  });
+      const id=nextId_('Students');
+      const codes=studentAccountCodes_(id,grade);
+      sheet_('Students').appendRow([
+        id,name,grade,digits_(r.phone||''),nid,schoolId,
+        codes.kol,codes.moeen,codes.tafsili,true,now_()
+      ]);
+      seen[nid]=true;
+      existing.push({name:name,national_id:nid,school_id:schoolId});
+      added++;
+    });
 
+    return {
+      success:true,
+      added:added,
+      skipped:skipped,
+      invalid:invalid,
+      total:imported.length,
+      message:'ورود Excel انجام شد.',
+      details:reasons.slice(0,10)
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function studentAccountCodes_(studentId,grade){
+  const g=normalizeGrade_(grade);
+  const moeenMap={'مهد':'0','اول':'1','دوم':'2','سوم':'3','چهارم':'4','پنجم':'5','ششم':'6'};
   return {
-    success:true,
-    added:added,
-    skipped:skipped,
-    invalid:invalid,
-    total:rows.length,
-    message:'ورود Excel انجام شد.',
-    details:reasons.slice(0,10)
+    kol:'67',
+    moeen:moeenMap[g]||'',
+    tafsili:String(studentId)
   };
 }
 
@@ -542,7 +572,8 @@ function readStudentXlsx_(base64) {
   if(!bytes || bytes.length<4 || bytes[0]!==80 || bytes[1]!==75) throw new Error('فایل انتخاب‌شده XLSX معتبر نیست یا فایل کامل ارسال نشده است.');
   // XLSX یک ZIP واقعی است؛ نوع Blob را صریحاً ZIP می‌کنیم تا Utilities.unzip
   // به MIME انتخاب‌شده توسط Android وابسته نباشد.
-  const blob=Utilities.newBlob(bytes,'application/zip','students.xlsx').setContentType('application/zip');
+  const blob=Utilities.newBlob(bytes,'application/zip','students.xlsx');
+  blob.setContentType('application/zip');
   let files;
   try { files=Utilities.unzip(blob); } catch(e) { throw new Error('خواندن فایل Excel انجام نشد. فایل باید XLSX معتبر باشد.'); }
   const by={}; files.forEach(f=>by[f.getName()]=f);
@@ -627,26 +658,32 @@ function importBankXlsx_(base64,schoolId){
 function importBankCsv_(base64,schoolId){ return {added:0,skipped:0}; }
 
 function studentUpdate_(b) {
-  const u=auth_(b);
-  const hit=findRow_('Students',b.id);
-  if(!hit) throw new Error('دانش‌آموز یافت نشد.');
-  const old=hit.obj;
-  if(u.role!=='senior' && String(old.school_id)!==String(u.school_id)) throw new Error('دسترسی مجاز نیست.');
-  const targetSchool=(u.role==='senior' || u.role==='admin') ? String(b.school_id!==undefined?b.school_id:old.school_id) : String(u.school_id);
-  const targetNid=digits_(b.national_id!==undefined?b.national_id:old.national_id);
-  if(!/^\d{10}$/.test(targetNid)) throw new Error('کد ملی باید دقیقاً ۱۰ رقم انگلیسی باشد.');
-  const duplicate=rows_('Students').some(x=>String(x.obj.id)!==String(old.id) && digits_(x.obj.national_id||'')===targetNid);
-  if(duplicate) throw new Error('این کد ملی قبلاً در سیستم برای یک دانش‌آموز ثبت شده است و در هیچ مدرسه دیگری نیز قابل ثبت نیست.');
-  const phone=digits_(b.phone || old.phone);
-  if(!/^\d{10}$/.test(targetNid)) throw new Error('کد ملی باید دقیقاً ۱۰ رقم باشد.');
-  if(phone && !/^0\d{10}$/.test(phone)) throw new Error('شماره تلفن نامعتبر است.');
-  updateRow_('Students',hit.row,[
-    old.id,b.name!==undefined?b.name:old.name,b.grade!==undefined?b.grade:old.grade,
-    phone,targetNid,targetSchool,b.kol_code!==undefined?b.kol_code:old.kol_code,
-    b.moeen_code!==undefined?b.moeen_code:old.moeen_code,
-    b.tafsili_code!==undefined?b.tafsili_code:old.tafsili_code,old.active,old.created_at
-  ]);
-  return {success:true};
+  const lock=LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const u=auth_(b);
+    const hit=findRow_('Students',b.id);
+    if(!hit) throw new Error('دانش‌آموز یافت نشد.');
+    const old=hit.obj;
+    if(u.role!=='senior' && String(old.school_id)!==String(u.school_id)) throw new Error('دسترسی مجاز نیست.');
+    const targetSchool=(u.role==='senior' || u.role==='admin') ? String(b.school_id!==undefined?b.school_id:old.school_id) : String(u.school_id);
+    const targetNid=digits_(b.national_id!==undefined?b.national_id:old.national_id);
+    if(!/^\d{10}$/.test(targetNid)) throw new Error('کد ملی باید دقیقاً ۱۰ رقم انگلیسی باشد.');
+    const duplicate=rows_('Students').some(x=>String(x.obj.id)!==String(old.id) && digits_(x.obj.national_id||'')===targetNid);
+    if(duplicate) throw new Error('این کد ملی قبلاً در سیستم برای یک دانش‌آموز ثبت شده است و در هیچ مدرسه دیگری نیز قابل ثبت نیست.');
+    const phone=digits_(b.phone!==undefined?b.phone:old.phone);
+    if(phone && !/^0\d{10}$/.test(phone)) throw new Error('شماره تلفن نامعتبر است.');
+    const grade=normalizeGrade_(b.grade!==undefined?b.grade:old.grade);
+    const codes=studentAccountCodes_(old.id,grade);
+    updateRow_('Students',hit.row,[
+      old.id,b.name!==undefined?b.name:old.name,grade,
+      phone,targetNid,targetSchool,codes.kol,codes.moeen,codes.tafsili,
+      old.active,old.created_at
+    ]);
+    return {success:true};
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function studentDelete_(b) {

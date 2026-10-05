@@ -30,7 +30,7 @@ import java.text.SimpleDateFormat;
 import java.util.Calendar;
 
 public class MainActivity extends Activity {
-    ApiClient api; LinearLayout root, content; JSONObject me; Uri pendingImage, pendingBank, cameraUri; long pendingImportSchoolId=0; String pendingImportGrade="";
+    ApiClient api; LinearLayout root, content; JSONObject me; Uri pendingImage, pendingBank, cameraUri; long pendingImportSchoolId=0;
     final String[] grades={"مهد","اول","دوم","سوم","چهارم","پنجم","ششم"};
     final int navy=Color.rgb(35,55,95), teal=Color.rgb(20,130,125), gold=Color.rgb(220,155,45), ink=Color.rgb(45,55,70);
     android.content.SharedPreferences prefs;
@@ -151,18 +151,47 @@ public class MainActivity extends Activity {
 
     void pickStudentExcel(){
         if(isSeniorUser()){
-            api.request("GET","/api/schools",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");if(a==null||a.length()==0){toast("مدرسه‌ای برای ورود دانش‌آموزان وجود ندارد");return;}String[] names=new String[a.length()];for(int i=0;i<a.length();i++){JSONObject x=a.optJSONObject(i);names[i]=x.optString("name")+" | "+x.optString("code");}new AlertDialog.Builder(MainActivity.this).setTitle("ابتدا مدرسه را انتخاب کنید").setItems(names,(d,w)->chooseExcelGradeAndFile(a.optJSONObject(w).optLong("id"))).show();}public void fail(String m){toast(m);}});
-        } else chooseExcelGradeAndFile(me.optLong("school_id"));
+            api.request("GET","/api/schools",null,new ApiClient.Callback(){
+                public void ok(JSONObject o){
+                    JSONArray a=o.optJSONArray("data");
+                    if(a==null||a.length()==0){toast("مدرسه‌ای برای ورود دانش‌آموزان وجود ندارد");return;}
+                    String[] names=new String[a.length()];
+                    for(int i=0;i<a.length();i++){
+                        JSONObject x=a.optJSONObject(i);
+                        names[i]=x.optString("name")+" | "+x.optString("code");
+                    }
+                    new AlertDialog.Builder(MainActivity.this)
+                        .setTitle("ابتدا مدرسه را انتخاب کنید")
+                        .setItems(names,(d,w)->chooseExcelFile(a.optJSONObject(w).optLong("id")))
+                        .show();
+                }
+                public void fail(String m){toast(m);}
+            });
+        } else {
+            chooseExcelFile(me.optLong("school_id"));
+        }
     }
-    void chooseExcelGradeAndFile(long schoolId){
-        Spinner grade=new Spinner(this);grade.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,grades));
-        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(18,8,18,8);box.addView(tv("انتخاب پایه برای همه دانش‌آموزان این فایل الزامی است",15));box.addView(grade);
-        new AlertDialog.Builder(this).setTitle("انتخاب پایه دانش‌آموزان").setView(box).setPositiveButton("انتخاب فایل Excel",(d,w)->{
-            String selected=grade.getSelectedItem().toString();
-            Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("*/*");i.addCategory(Intent.CATEGORY_OPENABLE);i.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.ms-excel","application/zip","*/*"});
-            pendingImportSchoolId=schoolId;pendingImportGrade=selected;startActivityForResult(i,89);
-        }).setNegativeButton("انصراف",null).show();
+
+    void chooseExcelFile(long schoolId){
+        if(schoolId<=0){toast("مدرسه برای ورود دانش‌آموزان مشخص نشده است");return;}
+        new AlertDialog.Builder(this)
+            .setTitle("ورود دانش‌آموزان از Excel")
+            .setMessage("پایه و کلاس هر دانش‌آموز از ستون «کلاس» یا «پایه» خود فایل Excel خوانده می‌شود. نیازی به انتخاب پایه نیست.")
+            .setPositiveButton("انتخاب فایل Excel",(d,w)->{
+                Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                i.setType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+                i.addCategory(Intent.CATEGORY_OPENABLE);
+                i.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/vnd.ms-excel"
+                });
+                pendingImportSchoolId=schoolId;
+                startActivityForResult(i,89);
+            })
+            .setNegativeButton("انصراف",null)
+            .show();
     }
+
     void tuition(){
         base("شهریه و درآمد");
         EditText search=edit("جست‌وجوی نام، کد یا کد ملی");
@@ -218,19 +247,33 @@ public class MainActivity extends Activity {
         }catch(Exception e){toast("باز کردن دوربین انجام نشد");}
     }
     @Override public void onRequestPermissionsResult(int r,String[] p,int[] g){super.onRequestPermissionsResult(r,p,g);if(r==901&&g.length>0&&g[0]==android.content.pm.PackageManager.PERMISSION_GRANTED)takePhoto();else if(r==901)toast("برای عکس گرفتن باید اجازه دوربین را بدهید");}
-    @Override protected void onActivityResult(int r,int c,Intent d){super.onActivityResult(r,c,d);if(c!=RESULT_OK)return;if(r==77&&d!=null){pendingImage=d.getData();toast("تصویر انتخاب شد؛ هنگام ثبت ذخیره می‌شود");}else if(r==90){pendingImage=cameraUri;cameraUri=null;toast("عکس دوربین آماده ثبت است");}else if(r==88&&d!=null){pendingBank=d.getData();uploadBank();}else if(r==89&&d!=null){uploadStudentExcel(d.getData(),pendingImportSchoolId,pendingImportGrade);}}
+    @Override protected void onActivityResult(int r,int c,Intent d){super.onActivityResult(r,c,d);if(c!=RESULT_OK)return;if(r==77&&d!=null){pendingImage=d.getData();toast("تصویر انتخاب شد؛ هنگام ثبت ذخیره می‌شود");}else if(r==90){pendingImage=cameraUri;cameraUri=null;toast("عکس دوربین آماده ثبت است");}else if(r==88&&d!=null){pendingBank=d.getData();uploadBank();}else if(r==89&&d!=null){uploadStudentExcel(d.getData(),pendingImportSchoolId);}}
     void uploadBank(){JSONObject f=new JSONObject();try{f.put("school_id",me.optLong("school_id"));}catch(Exception ignored){}api.uploadFile(pendingBank,"file","/api/bank/upload",f,"bank-file","application/octet-stream",new ApiClient.Callback(){public void ok(JSONObject o){toast("فایل بانک وارد شد: "+o.optInt("count")+" تراکنش");pendingBank=null;}public void fail(String m){toast(m);}});}
     boolean isSeniorUser(){String r=me.optString("role","");return "admin".equalsIgnoreCase(r)||"senior".equalsIgnoreCase(r)||"manager_admin".equalsIgnoreCase(r);}
 
-    void uploadStudentExcel(Uri uri,long schoolId,String selectedGrade){
+    void uploadStudentExcel(Uri uri,long schoolId){
         if(schoolId<=0){toast("مدرسه برای ورود دانش‌آموزان مشخص نشده است");return;}
-        if(selectedGrade==null||selectedGrade.trim().isEmpty()){toast("انتخاب پایه الزامی است");return;}
-        JSONObject f=new JSONObject();try{f.put("school_id",schoolId);f.put("grade",selectedGrade);}catch(Exception ignored){}
-        api.uploadFile(uri,"file","/api/students/import",f,"students.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",new ApiClient.Callback(){
-            public void ok(JSONObject o){toast("ورود Excel: "+o.optInt("added")+" نفر اضافه شد؛ "+o.optInt("skipped")+" تکراری؛ "+o.optInt("invalid")+" نامعتبر");pendingImportSchoolId=0;pendingImportGrade="";students();}
-            public void fail(String m){toast(m.contains("Unknown action")?"نسخه Web App گوگل قدیمی است؛ کد Apps Script جدید را دوباره Deploy کنید.":m);}
-        });
+        JSONObject f=new JSONObject();
+        try{f.put("school_id",schoolId);}catch(Exception ignored){}
+        api.uploadFile(uri,"file","/api/students/import",f,"students.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            new ApiClient.Callback(){
+                public void ok(JSONObject o){
+                    String msg="ورود Excel: "+o.optInt("added")+" نفر اضافه شد؛ "+
+                        o.optInt("skipped")+" تکراری؛ "+o.optInt("invalid")+" نامعتبر";
+                    JSONArray d=o.optJSONArray("details");
+                    if(d!=null && d.length()>0) msg+="\n"+d.optString(0);
+                    toast(msg);
+                    pendingImportSchoolId=0;
+                    students();
+                }
+                public void fail(String m){
+                    toast(m.contains("Unknown action")?
+                        "نسخه Web App گوگل قدیمی است؛ کد Apps Script جدید را دوباره Deploy کنید.":m);
+                }
+            });
     }
+
     void bank(){base("تطبیق بانک");content.addView(tv("تمام تراکنش‌های ثبت‌شده توسط مدیران در این بخش نمایش داده می‌شود. تیک سبز یعنی با بانک تطبیق شده و ضربدر قرمز یعنی مغایرت/عدم تطبیق.",16));gap();Button upload=btn("📄\nانتخاب فایل بانک");Button rec=btn("🔄\nتطبیق تراکنش‌ها");content.addView(upload);gap();content.addView(rec);gap();LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);upload.setOnClickListener(v->{Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("*/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,88);});rec.setOnClickListener(v->api.request("POST","/api/bank/reconcile",new JSONObject(),new ApiClient.Callback(){public void ok(JSONObject o){toast("تطبیق انجام شد: "+o.optInt("matched")+" مورد؛ "+o.optInt("unmatched")+" مورد بدون تطبیق");bankReview(list);}public void fail(String m){toast(m);}}));bankReview(list);back();}
     void addAttachmentPreview(LinearLayout row,JSONObject t){String url=t.optString("attachment_url","");if(url.isEmpty())return;ImageView im=new ImageView(this);im.setAdjustViewBounds(true);im.setScaleType(ImageView.ScaleType.CENTER_INSIDE);im.setPadding(8,8,8,8);row.addView(tv("📷 تصویر پیوست تراکنش",14));row.addView(im,new LinearLayout.LayoutParams(-1,(int)fs(180)));new Thread(()->{try{java.net.HttpURLConnection c=(java.net.HttpURLConnection)new java.net.URL(url).openConnection();c.setConnectTimeout(12000);c.setReadTimeout(20000);c.setRequestMethod("GET");java.io.InputStream in=c.getInputStream();final android.graphics.Bitmap bm=android.graphics.BitmapFactory.decodeStream(in);in.close();c.disconnect();if(bm!=null)runOnUiThread(()->im.setImageBitmap(bm));}catch(Exception ignored){}}).start();}
     void reviewTransaction(JSONObject t,boolean approve,LinearLayout list){EditText note=field(approve?"توضیح تأیید (اختیاری)":"دلیل رد تراکنش");new AlertDialog.Builder(this).setTitle(approve?"تأیید تراکنش":"رد تراکنش").setView(note).setPositiveButton(approve?"تأیید":"رد",(d,w)->{JSONObject z=new JSONObject();try{z.put("status",approve?"approved":"rejected");z.put("note",note.getText().toString().trim());}catch(Exception ignored){}api.request("POST","/api/transactions/"+t.optLong("id")+"/review",z,new ApiClient.Callback(){public void ok(JSONObject o){toast("وضعیت تراکنش ثبت شد");bankReview(list);}public void fail(String m){toast(m);}});}).setNegativeButton("انصراف",null).show();}
