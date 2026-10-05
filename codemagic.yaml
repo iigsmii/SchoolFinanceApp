@@ -1,0 +1,37 @@
+workflows:
+  android-release:
+    name: School Finance Android Release
+    max_build_duration: 60
+
+    environment:
+      java: 11
+
+      android_signing:
+        - school_finance_keystore
+
+    scripts:
+      - name: Check Gradle
+        script: |
+          gradle --version
+
+      - name: Generate Gradle Wrapper
+        script: |
+          gradle wrapper --gradle-version 7.0.2
+
+      - name: Build signed Android Release APK
+        script: |
+          chmod +x ./gradlew
+          ./gradlew clean assembleRelease \
+            -PversionCode=$BUILD_NUMBER \
+            -PversionName=2.0.$BUILD_NUMBER
+
+      - name: Verify APK signature
+        script: |
+          set -e
+          APK=$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' ! -name '*-unsigned.apk' | head -n 1)
+          test -n "$APK"
+          BUILD_TOOLS=$(find "$ANDROID_SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          "$BUILD_TOOLS/apksigner" verify --verbose "$APK"
+
+    artifacts:
+      - app/build/outputs/apk/release/*.apk
