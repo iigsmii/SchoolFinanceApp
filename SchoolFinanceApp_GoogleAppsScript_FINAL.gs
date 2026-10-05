@@ -238,7 +238,7 @@ function setup() {
   const settings = sheet_('Settings');
   const settingKeys={};
   rows_('Settings').forEach(x=>settingKeys[String(x.obj.key||'').trim()]=true);
-  [['schoolfinance_version','2.6-global-nid-grade-xlsx-fix'],['bank_account_code','0-1-11'],['currency','IRR']].forEach(x=>{
+  [['schoolfinance_version','2.9-grade-detection-diagnostic-fix'],['bank_account_code','0-1-11'],['currency','IRR']].forEach(x=>{
     if(!settingKeys[x[0]]) settings.appendRow([x[0],x[1],now_()]);
   });
 
@@ -271,7 +271,7 @@ function doGet(e) {
     if(action==='parsian_school_map') return json_(parsianSchoolMap_(b));
     if(action==='parsian_student_accounts') return json_(parsianStudentAccounts_(b));
     if(action==='summary') return json_(summary_(b));
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.6-global-nid-grade-xlsx-fix',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.9-grade-detection-diagnostic-fix',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
@@ -345,7 +345,7 @@ function doPost(e) {
       case 'parsian_allocate': return json_(parsianAllocate_(body));
       case 'summary': return json_(summary_(body));
       case 'health': return json_({success:true});
-      default: return json_({success:false,error:'Unknown action',action:action,backend_version:'2026-10-05-global-nid-xlsx-fix'});
+      default: return json_({success:false,error:'Unknown action',action:action,backend_version:'2026-10-05-v2.9-grade-detection-diagnostic-fix'});
     }
   } catch(err) {
     return json_({success:false,error:'Server error',message:String(err.message || err)});
@@ -495,6 +495,9 @@ function studentsImport_(b) {
     if(!imported.length) throw new Error('هیچ دانش‌آموز قابل خواندن از فایل Excel پیدا نشد.');
 
     let added=0, skipped=0, invalid=0;
+    let validNid=0, invalidNid=0, validGrade=0, invalidGrade=0, missingName=0;
+    const gradeCounts={};
+    const gradeSamples=[];
     const reasons=[];
     const existing=rows_('Students').map(x=>x.obj);
     const seen={};
@@ -507,6 +510,10 @@ function studentsImport_(b) {
       const nid=digits_(r.national_id||'');
       const grade=normalizeGrade_(r.grade||'');
       const rowErrors=[];
+      if(name){} else { missingName++; }
+      const rawGrade=String(r.grade||'').trim();
+      if(rawGrade && gradeSamples.length<12) gradeSamples.push({row:rowNo,raw:rawGrade,normalized:grade});
+      if(grade) { validGrade++; gradeCounts[grade]=(gradeCounts[grade]||0)+1; } else { invalidGrade++; }
 
       if(!name) { rowErrors.push('نام خالی'); }
       if(!grade) { rowErrors.push('پایه/کلاس نامعتبر یا خالی'); }
@@ -514,11 +521,14 @@ function studentsImport_(b) {
       // National ID is checked globally only when it is a complete 10-digit ID.
       // Invalid IDs are STILL imported so the manager can open/edit the student later.
       if(!/^\d{10}$/.test(nid)) {
+        invalidNid++;
         rowErrors.push('کد ملی نامعتبر ('+(nid ? nid.length+' رقمی' : 'خالی')+')');
       } else if(seen[nid] || existing.some(x=>digits_(x.national_id||'')===nid)) {
         skipped++;
         reasons.push('ردیف '+rowNo+' — '+name+' — کد ملی تکراری');
         return;
+      } else {
+        validNid++;
       }
 
       if(!name) {
@@ -553,7 +563,8 @@ function studentsImport_(b) {
       invalid:invalid,
       total:imported.length,
       message:'ورود Excel انجام شد. موارد نامعتبر نیز ساخته شدند تا بعداً قابل اصلاح باشند.',
-      details:reasons.slice(0,20)
+      details:reasons.slice(0,20),
+      diagnostics:{parsed:imported.length,valid_nid:validNid,invalid_nid:invalidNid,valid_grade:validGrade,invalid_grade:invalidGrade,missing_name:missingName,grade_counts:gradeCounts,grade_samples:gradeSamples,backend_version:'2.9-grade-detection-diagnostic-fix'}
     };
   } finally {
     lock.releaseLock();
@@ -571,14 +582,31 @@ function studentAccountCodes_(studentId,grade){
 }
 
 function normalizeGrade_(v){
-  const x0=String(v||'').replace(/[۰-۹]/g,c=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(c))).replace(/[٠-٩]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c)));
-  const x=x0.replace(/[\u200c\u200f\u202a-\u202e]/g,'').replace(/\s+/g,'').trim();
+  let x=String(v===undefined||v===null?'':v);
+  x=x.replace(/[۰-۹]/g,c=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(c)))
+       .replace(/[٠-٩]/g,c=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(c)))
+       .replace(/[يى]/g,'ی').replace(/ك/g,'ک').replace(/[ۀة]/g,'ه')
+       .replace(/[ـ]/g,'')
+       .replace(/[\u200c\u200d\u200f\u202a-\u202e]/g,'')
+       .replace(/[()\[\]{}،,.:؛;\-_\/\\]/g,' ')
+       .replace(/\s+/g,' ').trim();
+  const compact=x.replace(/\s/g,'');
   const map={
-    'مهد':'مهد','پیشدبستانی':'مهد','پیشدبستان':'مهد',
+    'مهد':'مهد','مهدکودک':'مهد','مهدکودکی':'مهد',
+    'پیشدبستانی':'مهد','پیشدبستان':'مهد','پیشدبستانی۱':'مهد','پیشدبستانی۲':'مهد',
     'اول':'اول','دوم':'دوم','سوم':'سوم','چهارم':'چهارم','پنجم':'پنجم','ششم':'ششم',
-    '1':'اول','2':'دوم','3':'سوم','4':'چهارم','5':'پنجم','6':'ششم'
+    'پایه1':'اول','پایه2':'دوم','پایه3':'سوم','پایه4':'چهارم','پایه5':'پنجم','پایه6':'ششم',
+    'کلاس1':'اول','کلاس2':'دوم','کلاس3':'سوم','کلاس4':'چهارم','کلاس5':'پنجم','کلاس6':'ششم',
+    '1':'اول','2':'دوم','3':'سوم','4':'چهارم','5':'پنجم','6':'ششم',
+    'اولابتدایی':'اول','دومابتدایی':'دوم','سومابتدایی':'سوم','چهارمابتدایی':'چهارم','پنجمابتدایی':'پنجم','ششمابتدایی':'ششم'
   };
-  return map[x]||'';
+  if(map[compact]) return map[compact];
+  if(/^(مهد|پیشدبستان)/.test(compact)) return 'مهد';
+  const words={'اول':'اول','دوم':'دوم','سوم':'سوم','چهارم':'چهارم','پنجم':'پنجم','ششم':'ششم'};
+  for(const k in words) if(compact.indexOf(k)>=0) return words[k];
+  const m=compact.match(/(?:پایه|کلاس)?([1-6])(?:ابتدایی)?$/);
+  if(m) return map[m[1]]||'';
+  return '';
 }
 
 function readStudentXlsx_(base64) {

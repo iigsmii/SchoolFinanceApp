@@ -1,3 +1,5 @@
+نسخه Backend: 2.9.1-new-webapp-url
+
 # SchoolFinanceApp — نسخه نهایی Google
 
 معماری نهایی: Android → Google Apps Script → Google Sheets + Google Drive
