@@ -6,6 +6,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.OpenableColumns;
 import android.database.Cursor;
+import android.app.Activity;
+import android.app.ProgressDialog;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.*;
@@ -19,15 +21,19 @@ public class ApiClient {
     public interface Callback { void ok(JSONObject data); void fail(String message); }
     private static final String BASE = "https://script.google.com/macros/s/AKfycbzsCUERpyKBOZg4z4AMua3RvWKgguw73-1ZtkzgjrJdfA4yOX2d69WqlXy1FS7NPHnxqA/exec";
     private final Context context;
+    private final Context uiContext;
+    private volatile ProgressDialog busy;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService pool = Executors.newFixedThreadPool(6);
     private volatile String token;
-    public ApiClient(Context c){ context=c.getApplicationContext(); }
+    public ApiClient(Context c){ context=c.getApplicationContext(); uiContext=c; }
     public void setToken(String t){token=t;}
     public String getToken(){return token;}
     public void clearToken(){token=null;}
 
     public void request(String method,String path,JSONObject body,Callback cb){
+        final boolean write=!"GET".equalsIgnoreCase(method);
+        if(write) showBusy();
         pool.execute(()->{try{
             String p=path; JSONObject b=body==null?new JSONObject():new JSONObject(body.toString());
             String action=actionFor(method,p,b);
@@ -35,9 +41,9 @@ public class ApiClient {
             if(token!=null && token.length()>0)b.put("token",token);
             JSONObject o=method.equalsIgnoreCase("GET") ? getJson(b) : postJson(b);
             JSONObject result=adaptResponse(p,o);
-            if(result.optBoolean("success",false)) main.post(()->cb.ok(result));
-            else main.post(()->cb.fail(result.optString("message",result.optString("error","خطا در ارتباط با سرویس گوگل"))));
-        }catch(Exception e){main.post(()->cb.fail("ارتباط با سرویس گوگل برقرار نشد"));}});
+            if(result.optBoolean("success",false)) main.post(()->{hideBusy();cb.ok(result);});
+            else main.post(()->{hideBusy();cb.fail(result.optString("message",result.optString("error","خطا در ارتباط با سرویس گوگل")));});
+        }catch(Exception e){main.post(()->{hideBusy();cb.fail("ارتباط با سرویس گوگل برقرار نشد");});}});
     }
 
     private String actionFor(String method,String path,JSONObject b){
@@ -53,6 +59,7 @@ public class ApiClient {
         if(p.equals("/api/tuition/debt")||p.equals("/api/tuition/payment")){put(b,"type",p.endsWith("/debt")?"debt":"payment");return "tuition_add";}
         if(p.equals("/api/tuition/bulk-debt")) return "tuition_bulk_debt";
         if(p.equals("/api/expenses"))return method.equals("GET")?"expenses": "expense_add";
+        if(p.matches("/api/expenses/\\d+")){put(b,"id",Long.parseLong(tail(p)));return method.equals("DELETE")?"expense_delete":"expense_update";}
         if(p.startsWith("/api/expense-categories")){String id=tail(p);if(id.length()>0)put(b,"id",id);return method.equals("GET")?"categories":method.equals("DELETE")?"category_delete":id.length()==0?"category_add":"category_update";}
         if(p.startsWith("/api/transactions?student_id=")){put(b,"student_id",Long.parseLong(p.substring(p.indexOf('=')+1)));return "transactions";}
         if(p.startsWith("/api/transactions?kind=")){put(b,"kind_query",Uri.decode(p.substring(p.indexOf('=')+1)));return "transactions";}
@@ -60,6 +67,7 @@ public class ApiClient {
         if(p.matches("/api/transactions/\\d+/review")){put(b,"id",Long.parseLong(p.split("/")[3]));return "transaction_review";}
         if(p.matches("/api/transactions/\\d+")){put(b,"id",Long.parseLong(tail(p)));return "transaction_delete";}
         if(p.equals("/api/bank/review"))return "bank_review";
+        if(p.equals("/api/bank-accounts"))return "bank_accounts";
         if(p.equals("/api/bank/reconcile"))return "bank_reconcile";
         if(p.equals("/api/bank/upload"))return "bank_upload";
         if(p.equals("/api/students/import"))return "students_import";
@@ -75,6 +83,8 @@ public class ApiClient {
         if(p.startsWith("/api/parsian/student-accounts")){int q=p.indexOf("?q=");if(q>=0)put(b,"q",Uri.decode(p.substring(q+3)));return "parsian_student_accounts";}
         if(p.equals("/api/parsian/student-account/allocate"))return "parsian_allocate";
         if(p.equals("/api/attachments"))return "attachment";
+        if(p.startsWith("/api/attachments/view?")){int q=p.indexOf("?file_id=");if(q>=0)put(b,"file_id",Uri.decode(p.substring(q+9)));return "attachment_view";}
+        if(p.equals("/api/summary"))return "summary";
         if(p.equals("/api/activity-logs")) return "activity_logs";
         if(p.startsWith("/api/activity-logs?")){int q=p.indexOf("?");String qs=p.substring(q+1);for(String part:qs.split("&")){int eq=part.indexOf('=');if(eq>0)put(b,Uri.decode(part.substring(0,eq)),Uri.decode(part.substring(eq+1)));}return "activity_logs";}
         if(p.equals("/api/login"))return "login";
@@ -92,7 +102,9 @@ public class ApiClient {
         if(!o.optBoolean("success",false))return o;
         if(path.equals("/api/students")||path.startsWith("/api/students?q="))return o;
         if(path.matches("/api/students/\\d+")){
-            JSONArray a=o.optJSONArray("data"); if(a!=null){long id=Long.parseLong(tail(path));for(int i=0;i<a.length();i++)if(a.optJSONObject(i).optLong("id")!=id)a.remove(i--);}
+            JSONArray a=o.optJSONArray("data"); long id=Long.parseLong(tail(path)); JSONObject one=null;
+            if(a!=null) for(int i=0;i<a.length();i++){JSONObject z=a.optJSONObject(i);if(z!=null&&z.optLong("id")==id){one=z;break;}}
+            JSONObject r=new JSONObject();r.put("success",true);if(one!=null)r.put("data",one);return r;
         }
         if(path.matches("/api/students/\\d+/balance")){
             long balance=0; JSONArray a=o.optJSONArray("data"); if(a!=null) for(int i=0;i<a.length();i++){JSONObject x=a.optJSONObject(i); if(x==null)continue; long amount=x.optLong("amount"); if("debt".equals(x.optString("type"))) balance+=amount; else if("payment".equals(x.optString("type"))) balance-=amount;} JSONObject r=new JSONObject(); r.put("success",true); r.put("balance",Math.max(0,balance)); return r;
@@ -105,6 +117,9 @@ public class ApiClient {
     }
 
     private static void put(JSONObject b,String k,Object v){try{b.put(k,v);}catch(Exception ignored){}}
+
+    private void showBusy(){main.post(()->{try{if(!(uiContext instanceof Activity))return;if(((Activity)uiContext).isFinishing())return;if(busy!=null&&busy.isShowing())return;busy=ProgressDialog.show(uiContext,"لطفاً منتظر بمانید","اطلاعات در حال ثبت است...",true,false);}catch(Exception ignored){}});}
+    private void hideBusy(){main.post(()->{try{if(busy!=null&&busy.isShowing())busy.dismiss();}catch(Exception ignored){}});}
 
     private JSONObject getJson(JSONObject b)throws Exception{
         StringBuilder q=new StringBuilder();
@@ -138,9 +153,10 @@ public class ApiClient {
 
     public void upload(Uri uri,String field,String path,JSONObject fields,Callback cb){uploadFile(uri,field,path,fields,"file","image/jpeg",cb);}
     public void uploadFile(Uri uri,String field,String path,JSONObject fields,String fileName,String mime,Callback cb){
+        showBusy();
         pool.execute(()->{try{
-            byte[] data=readUri(uri);JSONObject b=fields==null?new JSONObject():new JSONObject(fields.toString());b.put("base64",android.util.Base64.encodeToString(data,android.util.Base64.NO_WRAP));b.put("file_name",fileName);b.put("mime_type",mime);b.put("content_type",mime);b.put("source_type",fields==null?"general":fields.optString("entity_type",fields.optString("source_type","general")));b.put("source_id",fields==null?"":fields.optString("entity_id",fields.optString("source_id","")));String a=uploadAction(path);b.put("action",a);b.put("endpoint",a);b.put("api_version","2026-10-05-global-nid-grade-xlsx-fix");if(token!=null)b.put("token",token);JSONObject o=postJson(b);if(o.optBoolean("success",false))main.post(()->cb.ok(o));else main.post(()->cb.fail(o.optString("message",o.optString("error","آپلود انجام نشد"))));
-        }catch(Exception e){main.post(()->cb.fail("آپلود فایل انجام نشد"));}});
+            byte[] data=readUri(uri);JSONObject b=fields==null?new JSONObject():new JSONObject(fields.toString());b.put("base64",android.util.Base64.encodeToString(data,android.util.Base64.NO_WRAP));b.put("file_name",fileName);b.put("mime_type",mime);b.put("content_type",mime);b.put("source_type",fields==null?"general":fields.optString("entity_type",fields.optString("source_type","general")));b.put("source_id",fields==null?"":fields.optString("entity_id",fields.optString("source_id","")));String a=uploadAction(path);b.put("action",a);b.put("endpoint",a);b.put("api_version","2026-10-05-v2.12-expense-bank-statement-nid-fix");if(token!=null)b.put("token",token);JSONObject o=postJson(b);if(o.optBoolean("success",false))main.post(()->{hideBusy();cb.ok(o);});else main.post(()->{hideBusy();cb.fail(o.optString("message",o.optString("error","آپلود انجام نشد")));});
+        }catch(Exception e){main.post(()->{hideBusy();cb.fail("آپلود فایل انجام نشد");});}});
     }
 
     private String uploadAction(String path){
