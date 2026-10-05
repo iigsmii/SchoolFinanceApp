@@ -27,8 +27,8 @@ const HEADERS = {
   Schools: ['id','name','code','active','created_at'],
   Students: ['id','name','grade','phone','national_id','school_id','kol_code','moeen_code','tafsili_code','active','created_at'],
   Tuition: ['id','date','student_id','school_id','type','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved'],
-  Expenses: ['id','date','school_id','category','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','payment_source'],
-  Transactions: ['id','date','school_id','kind','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','source_id','payment_source'],
+  Expenses: ['id','date','school_id','category','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved'],
+  Transactions: ['id','date','school_id','kind','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','source_id'],
   Bank: ['id','date','school_id','amount','description','tracking_code','bank_account','created_at','matched_transaction_id','matched','approved'],
   ExpenseCategories: ['id','name','active','created_at'],
   Messages: ['id','message','created_by','created_at','active'],
@@ -189,10 +189,6 @@ function setup() {
     if (!sh) sh = ss.insertSheet(name);
     const h = HEADERS[name];
     if (sh.getLastRow() === 0) sh.getRange(1,1,1,h.length).setValues([h]);
-    else {
-      const current=sh.getRange(1,1,1,Math.max(1,sh.getLastColumn())).getValues()[0].map(String);
-      h.forEach((nameHeader,idx)=>{ if(current.indexOf(nameHeader)<0) sh.getRange(1,sh.getLastColumn()+1).setValue(nameHeader); });
-    }
     sh.setFrozenRows(1);
   });
 
@@ -243,7 +239,7 @@ function setup() {
   const settings = sheet_('Settings');
   const settingKeys={};
   rows_('Settings').forEach(x=>settingKeys[String(x.obj.key||'').trim()]=true);
-  [['schoolfinance_version','2.12-expense-statement-update'],['android_version','2.12'],['android_apk_url',''],['bank_account_code','0-1-11'],['currency','IRR']].forEach(x=>{
+  [['schoolfinance_version','2.11-bulk-debt-audit-log'],['bank_account_code','0-1-11'],['currency','IRR']].forEach(x=>{
     if(!settingKeys[x[0]]) settings.appendRow([x[0],x[1],now_()]);
   });
 
@@ -270,36 +266,29 @@ function doGet(e) {
     if(action==='schools') return json_(schools_(b));
     if(action==='managers') return json_(managers_(b));
     if(action==='expenses') return json_(expenses_(b));
-    if(action==='bank') return json_(bank_(b));
     if(action==='tuition') return json_(tuition_(b));
     if(action==='messages') return json_(messages_(b));
     if(action==='bank_review') return json_(bankReview_(b));
     if(action==='parsian_school_map') return json_(parsianSchoolMap_(b));
     if(action==='parsian_student_accounts') return json_(parsianStudentAccounts_(b));
     if(action==='summary') return json_(summary_(b));
-    if(action==='my_claim') return json_(myClaim_(b));
-    if(action==='app_version') return json_(appVersion_(b));
     if(action==='activity_logs'){ ensureStructure_(); return json_(activityLogs_(b)); }
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.12-expense-statement-update',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.11-bulk-debt-audit-log',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
 function ensureStructure_() {
   const cache=CacheService.getScriptCache();
   const ss = SpreadsheetApp.openById(CFG.SPREADSHEET_ID);
-  if(cache.get('structure_ready_v24')==='1' && ss.getSheetByName('ActivityLogs')) return;
+  if(cache.get('structure_ready_v23')==='1' && ss.getSheetByName('ActivityLogs')) return;
   CFG.SHEETS.forEach(name => {
     let sh = ss.getSheetByName(name);
     if (!sh) sh = ss.insertSheet(name);
     const h = HEADERS[name];
     if (sh.getLastRow() === 0) sh.getRange(1,1,1,h.length).setValues([h]);
-    else {
-      const current=sh.getRange(1,1,1,Math.max(1,sh.getLastColumn())).getValues()[0].map(String);
-      h.forEach((nameHeader,idx)=>{ if(current.indexOf(nameHeader)<0) sh.getRange(1,sh.getLastColumn()+1).setValue(nameHeader); });
-    }
     sh.setFrozenRows(1);
   });
-  cache.put('structure_ready_v24','1',300);
+  cache.put('structure_ready_v23','1',300);
 }
 
 function doPost(e) {
@@ -359,10 +348,8 @@ function doPost(e) {
       case 'parsian_allocate': result=parsianAllocate_(body); break;
       case 'activity_logs': result=activityLogs_(body); break;
       case 'summary': result=summary_(body); break;
-      case 'my_claim': result=myClaim_(body); break;
-      case 'app_version': result=appVersion_(body); break;
       case 'health': result={success:true}; break;
-      default: result={success:false,error:'Unknown action',action:action,backend_version:'2026-10-05-v2.12-expense-statement-update'};
+      default: result={success:false,error:'Unknown action',action:action,backend_version:'2026-10-05-v2.11-bulk-debt-audit-log'};
     }
     // Audit successful write/actions without storing passwords, base64 files, or raw request bodies.
     if(result && result.success && action!=='activity_logs' && action!=='summary' && action!=='students' && action!=='tuition' && action!=='expenses' && action!=='transactions' && action!=='bank_review' && action!=='schools' && action!=='managers' && action!=='categories' && action!=='messages' && action!=='parsian_school_map' && action!=='parsian_student_accounts') {
@@ -420,7 +407,7 @@ function auth_(b, roles) {
 /* ---------- CORE SEED SAFETY ---------- */
 function ensureCoreData_() {
   const cache=CacheService.getScriptCache();
-  if(cache.get('core_ready_v24')==='1') return;
+  if(cache.get('core_ready_v23')==='1') return;
   // Keep the backend self-healing: every API call makes sure the canonical
   // schools, managers and expense categories exist, without deleting data.
   const schools = sheet_('Schools');
@@ -446,9 +433,7 @@ function ensureCoreData_() {
     if(!hit) managers.appendRow([nextId_('Managers'),String(m.name||''),u,String(m.password_hash||''),m.school_id==null?'':String(m.school_id),'manager',true,now_()]);
     else if(u==='آرزو طالب پور' && String(hit.obj.school_id||'')!=='10') updateRow_('Managers',hit.row,[hit.obj.id,hit.obj.name,hit.obj.username,hit.obj.password,'10',hit.obj.role||'manager',hit.obj.active,hit.obj.created_at]);
   });
-  dedupeStudents_();
-  migrateStudentParsianCodes_();
-  cache.put('core_ready_v24','1',300);
+  cache.put('core_ready_v23','1',300);
 }
 
 /* ---------- SCHOOLS ---------- */
@@ -475,10 +460,8 @@ function students_(b) {
   if(b.id) data=data.filter(x=>String(x.id)===String(b.id));
   if(b.q) {
     const q=String(b.q).toLowerCase();
-    data=data.filter(x=>String(x.name).toLowerCase().indexOf(q)>=0 || String(x.national_id).indexOf(q)>=0 || String(x.phone||'').indexOf(q)>=0);
+    data=data.filter(x=>String(x.name).toLowerCase().indexOf(q)>=0 || String(x.national_id).indexOf(q)>=0);
   }
-  data=data.map(x=>{ const badNid=!/^\d{10}$/.test(digits_(x.national_id||'')); const badGrade=!normalizeGrade_(x.grade||''); const badPhone=String(x.phone||'').trim()!=='' && !/^0\d{10}$/.test(digits_(x.phone||'')); x.needs_fix=badNid||badGrade||badPhone; return x; });
-  if(String(b.needs_fix||'').toLowerCase()==='1' || String(b.needs_fix||'').toLowerCase()==='true') data=data.filter(x=>x.needs_fix);
   return {success:true,data:data};
 }
 
@@ -498,7 +481,7 @@ function studentAdd_(b) {
   if(duplicate) throw new Error('این کد ملی قبلاً در سیستم برای یک دانش‌آموز ثبت شده است و در هیچ مدرسه دیگری نیز قابل ثبت نیست.');
   const id=nextId_('Students');
   const grade=normalizeGrade_(b.grade||'');
-  const codes=studentAccountCodes_(id,grade,schoolId,nid);
+  const codes=studentAccountCodes_(id,grade);
   sheet_('Students').appendRow([
     id,String(b.name||'').trim(),grade,phone,nid,String(schoolId),
     codes.kol,codes.moeen,codes.tafsili,true,now_()
@@ -549,17 +532,16 @@ function studentsImport_(b) {
 
       // National ID is checked globally only when it is a complete 10-digit ID.
       // Invalid IDs are STILL imported so the manager can open/edit the student later.
-      const invalidKey=(name+'|'+nid+'|'+digits_(r.phone||'')+'|'+grade+'|'+schoolId).toLowerCase();
       if(!/^\d{10}$/.test(nid)) {
         invalidNid++;
         rowErrors.push('کد ملی نامعتبر ('+(nid ? nid.length+' رقمی' : 'خالی')+')');
-        if(seen['bad:'+invalidKey] || existing.some(x=>(String(x.name||'').trim()+'|'+digits_(x.national_id||'')+'|'+digits_(x.phone||'')+'|'+normalizeGrade_(x.grade||'')+'|'+String(x.school_id||'')).toLowerCase()===invalidKey)){
-          skipped++; reasons.push('ردیف '+rowNo+' — '+name+' — رکورد نامعتبر تکراری'); return;
-        }
-        seen['bad:'+invalidKey]=true;
       } else if(seen[nid] || existing.some(x=>digits_(x.national_id||'')===nid)) {
-        skipped++; reasons.push('ردیف '+rowNo+' — '+name+' — کد ملی تکراری'); return;
-      } else { validNid++; }
+        skipped++;
+        reasons.push('ردیف '+rowNo+' — '+name+' — کد ملی تکراری');
+        return;
+      } else {
+        validNid++;
+      }
 
       if(!name) {
         invalid++;
@@ -571,7 +553,7 @@ function studentsImport_(b) {
       // The result reports the exact problem so the manager can edit it afterwards.
       const storedGrade=grade || String(r.grade||'').trim() || 'نیازمند اصلاح';
       const id=nextId_('Students');
-      const codes=studentAccountCodes_(id,storedGrade,schoolId,nid);
+      const codes=studentAccountCodes_(id,storedGrade);
       sheet_('Students').appendRow([
         id,name,storedGrade,digits_(r.phone||''),nid,schoolId,
         codes.kol,codes.moeen,codes.tafsili,true,now_()
@@ -611,27 +593,16 @@ function studentsImport_(b) {
   }
 }
 
-function schoolMoeen_(schoolId){
-  const map={'3':'1','4':'2','1':'3','2':'4','9':'9','5':'10','6':'11','7':'12','10':'13','8':'14'};
-  return map[String(schoolId||'')]||'';
-}
-function studentAccountCodes_(studentId,grade,schoolId,nationalId){
-  return {kol:'67',moeen:schoolMoeen_(schoolId),tafsili:String(nationalId||'').trim()};
-}
-function dedupeStudents_(){
-  const seen={}; let deactivated=0;
-  rows_('Students').forEach(x=>{ const r=x.obj; if(String(r.active)==='false') return; const nid=digits_(r.national_id||''); const key=/^\d{10}$/.test(nid)?'nid:'+nid:'bad:'+(String(r.name||'').trim()+'|'+nid+'|'+digits_(r.phone||'')+'|'+normalizeGrade_(r.grade||'')+'|'+String(r.school_id||'')).toLowerCase(); if(seen[key]){ sheet_('Students').getRange(x.row,10).setValue(false); deactivated++; } else seen[key]=r.id; });
-  return deactivated;
+function studentAccountCodes_(studentId,grade){
+  const g=normalizeGrade_(grade);
+  const moeenMap={'مهد':'0','اول':'1','دوم':'2','سوم':'3','چهارم':'4','پنجم':'5','ششم':'6'};
+  return {
+    kol:'67',
+    moeen:moeenMap[g]||'',
+    tafsili:String(studentId)
+  };
 }
 
-function migrateStudentParsianCodes_(){
-  const sh=sheet_('Students'); const all=rows_('Students');
-  all.forEach(x=>{ const r=x.obj; const nid=String(r.national_id||'').trim(); const c=studentAccountCodes_(r.id,r.grade,r.school_id,nid);
-    if(String(r.kol_code||'')!==c.kol || String(r.moeen_code||'')!==c.moeen || String(r.tafsili_code||'')!==c.tafsili){
-      updateRow_('Students',x.row,[r.id,r.name,r.grade,r.phone,r.national_id,r.school_id,c.kol,c.moeen,c.tafsili,r.active,r.created_at]);
-    }
-  });
-}
 function normalizeGrade_(v){
   let x=String(v===undefined||v===null?'':v);
   x=x.replace(/[۰-۹]/g,c=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(c)))
@@ -772,7 +743,7 @@ function studentUpdate_(b) {
     const phone=digits_(b.phone!==undefined?b.phone:old.phone);
     if(phone && !/^0\d{10}$/.test(phone)) throw new Error('شماره تلفن نامعتبر است.');
     const grade=normalizeGrade_(b.grade!==undefined?b.grade:old.grade);
-    const codes=studentAccountCodes_(old.id,grade,targetSchool,targetNid);
+    const codes=studentAccountCodes_(old.id,grade);
     updateRow_('Students',hit.row,[
       old.id,b.name!==undefined?b.name:old.name,grade,
       phone,targetNid,targetSchool,codes.kol,codes.moeen,codes.tafsili,
@@ -915,11 +886,11 @@ function expenseAdd_(b) {
   const image=saveAttachmentIfAny_(b,'expense',id,u.id);
   sheet_('Expenses').appendRow([
     id,date_(b.date),String(schoolId),category,amount,String(b.description||''),
-    String(b.tracking_code||''),image.url||'',u.id,now_(),false,false,String(b.payment_source||'bank')
+    String(b.tracking_code||''),image.url||'',u.id,now_(),false,false
   ]);
   sheet_('Transactions').appendRow([
     nextId_('Transactions'),date_(b.date),String(schoolId),'expense',amount,String(b.description||''),
-    String(b.tracking_code||''),image.url||'',u.id,now_(),false,false,id,String(b.payment_source||'bank')
+    String(b.tracking_code||''),image.url||'',u.id,now_(),false,false,id
   ]);
   return {success:true,id:id,image_url:image.url||''};
 }
@@ -934,12 +905,13 @@ function expenseUpdate_(b) {
   if(!tracking.trim()) throw new Error('شماره پیگیری الزامی است.');
   let newCategory=b.category!==undefined?String(b.category):String(r.category||'');
   if(!newCategory && b.category_id){ const cat=findRow_('ExpenseCategories',b.category_id); if(cat) newCategory=String(cat.obj.name||''); }
-  const newDate=b.date!==undefined?date_(b.date):r.date;
-  const newAmount=b.amount!==undefined?amount_(b.amount):Number(r.amount);
-  const newDescription=b.description!==undefined?b.description:r.description;
-  const newSource=b.payment_source!==undefined?String(b.payment_source):String(r.payment_source||'bank');
-  updateRow_('Expenses',hit.row,[r.id,newDate,r.school_id,newCategory,newAmount,newDescription,tracking,r.image_url,r.created_by,r.created_at,r.reconciled,r.approved,newSource]);
-  rows_('Transactions').forEach(x=>{ if(String(x.obj.source_id)===String(r.id) && String(x.obj.kind)==='expense'){ const t=x.obj; updateRow_('Transactions',x.row,[t.id,newDate,t.school_id,t.kind,newAmount,newDescription,tracking,r.image_url,t.created_by,t.created_at,t.reconciled,t.approved,t.source_id,newSource]); }});
+  updateRow_('Expenses',hit.row,[
+    r.id,b.date!==undefined?date_(b.date):r.date,r.school_id,
+    newCategory,
+    b.amount!==undefined?amount_(b.amount):Number(r.amount),
+    b.description!==undefined?b.description:r.description,tracking,r.image_url,
+    r.created_by,r.created_at,r.reconciled,r.approved
+  ]);
   return {success:true};
 }
 
@@ -965,7 +937,7 @@ function transactions_(b) {
   data=data.map(t=>{
     const out=Object.assign({},t); out.school_name=schoolName_(t.school_id); out.attachment_url=t.image_url||'';
     if(String(t.kind)==='payment'||String(t.kind)==='debt') { const q=tuition.find(x=>String(x.id)===String(t.source_id)); if(q){out.student_id=q.student_id; const st=students.find(x=>String(x.id)===String(q.student_id)); if(st){out.student_name=st.name;out.student_grade=st.grade;}} }
-    if(String(t.kind)==='expense') { const e=expenses.find(x=>String(x.id)===String(t.source_id)); if(e){out.expense_category_name=e.category; out.payment_source=e.payment_source||t.payment_source||'bank';} } else out.payment_source=t.payment_source||'';
+    if(String(t.kind)==='expense') { const e=expenses.find(x=>String(x.id)===String(t.source_id)); if(e){out.expense_category_name=e.category;} }
     return out;
   });
   return {success:true,data:data};
@@ -1328,16 +1300,6 @@ function activityLogs_(b){
   return {success:true,data:data.slice(0,500)};
 }
 
-function appVersion_(b){ auth_(b); const settings={}; rows_('Settings').forEach(x=>settings[String(x.obj.key||'')]=String(x.obj.value||'')); return {success:true,version:settings['android_version']||'2.12',apk_url:settings['android_apk_url']||'',backend_version:'2.12-expense-statement-update'}; }
-
-function myClaim_(b){
-  const u=auth_(b);
-  let data=rows_('Expenses').map(x=>x.obj).filter(x=>String(x.payment_source||'')==='own');
-  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>String(x.school_id)===String(u.school_id));
-  const total=data.reduce((n,x)=>n+(Number(x.amount)||0),0);
-  return {success:true,total:total,data:data.map(x=>({id:x.id,date:x.date,school_id:x.school_id,school_name:schoolName_(x.school_id),category:x.category,amount:x.amount,description:x.description,tracking_code:x.tracking_code,image_url:x.image_url}))};
-}
-
 /* ---------- SUMMARY ---------- */
 
 function summary_(b) {
@@ -1401,8 +1363,8 @@ function softDeleteBySource_(name,id) {
   if(hit) {
     // Keep data but mark approval false and reconciled false.
     const r=hit.obj;
-    if(name==='Tuition') updateRow_(name,hit.row,[r.id,r.date,r.student_id,r.school_id,r.type,r.amount,r.description,r.tracking_code,r.image_url,r.created_by,r.created_at,false,false,r.payment_source||'bank']);
-    if(name==='Expenses') updateRow_(name,hit.row,[r.id,r.date,r.school_id,r.category,r.amount,r.description,r.tracking_code,r.image_url,r.created_by,r.created_at,false,false,r.payment_source||'bank']);
+    if(name==='Tuition') updateRow_(name,hit.row,[r.id,r.date,r.student_id,r.school_id,r.type,r.amount,r.description,r.tracking_code,r.image_url,r.created_by,r.created_at,false,false]);
+    if(name==='Expenses') updateRow_(name,hit.row,[r.id,r.date,r.school_id,r.category,r.amount,r.description,r.tracking_code,r.image_url,r.created_by,r.created_at,false,false]);
   }
 }
 
@@ -1410,7 +1372,7 @@ function softDeleteTransaction_(sourceId) {
   rows_('Transactions').forEach(x=>{
     if(String(x.obj.source_id)===String(sourceId)) {
       const r=x.obj;
-      updateRow_('Transactions',x.row,[r.id,r.date,r.school_id,r.kind,r.amount,r.description,r.tracking_code,r.image_url,r.created_by,r.created_at,false,false,r.source_id,r.payment_source||'bank']);
+      updateRow_('Transactions',x.row,[r.id,r.date,r.school_id,r.kind,r.amount,r.description,r.tracking_code,r.image_url,r.created_by,r.created_at,false,false,r.source_id]);
     }
   });
 }
