@@ -116,7 +116,7 @@ const ATTACHED_MANAGERS = [
     "name": "آرزو طالب پور",
     "username": "آرزو طالب پور",
     "password_hash": "4f12aab72444972af28afc9e3ce610ecbb032fa6ca6cd141206e7d9ec3a8ca7e",
-    "school_id": 10,
+    "school_id": null,
     "source_center": "مهد تبیان 2"
   },
   {
@@ -238,7 +238,7 @@ function setup() {
   const settings = sheet_('Settings');
   const settingKeys={};
   rows_('Settings').forEach(x=>settingKeys[String(x.obj.key||'').trim()]=true);
-  [['schoolfinance_version','2.1-google-repair'],['bank_account_code','0-1-11'],['currency','IRR']].forEach(x=>{
+  [['schoolfinance_version','2.5-global-nid-xlsx-fix'],['bank_account_code','0-1-11'],['currency','IRR']].forEach(x=>{
     if(!settingKeys[x[0]]) settings.appendRow([x[0],x[1],now_()]);
   });
 
@@ -271,7 +271,7 @@ function doGet(e) {
     if(action==='parsian_school_map') return json_(parsianSchoolMap_(b));
     if(action==='parsian_student_accounts') return json_(parsianStudentAccounts_(b));
     if(action==='summary') return json_(summary_(b));
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.4-google-read-fix',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.5-global-nid-xlsx-fix',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
@@ -345,7 +345,7 @@ function doPost(e) {
       case 'parsian_allocate': return json_(parsianAllocate_(body));
       case 'summary': return json_(summary_(body));
       case 'health': return json_({success:true});
-      default: return json_({success:false,error:'Unknown action',action:action,backend_version:'2026-10-02-students-v2'});
+      default: return json_({success:false,error:'Unknown action',action:action,backend_version:'2026-10-05-global-nid-xlsx-fix'});
     }
   } catch(err) {
     return json_({success:false,error:'Server error',message:String(err.message || err)});
@@ -463,8 +463,8 @@ function studentAdd_(b) {
   if(!/^\d{10}$/.test(nid)) throw new Error('کد ملی باید دقیقاً ۱۰ رقم انگلیسی باشد.');
   const phone=digits_(b.phone);
   if(phone && !/^0\d{10}$/.test(phone)) throw new Error('شماره تلفن باید ۱۱ رقم و با ۰ شروع شود.');
-  const duplicate=rows_('Students').some(x=>String(x.obj.school_id)===String(schoolId) && String(x.obj.national_id||'')===nid && String(x.obj.active)!=='false');
-  if(duplicate) throw new Error('این کد ملی قبلاً برای یک دانش‌آموز فعال در همین مدرسه ثبت شده است.');
+  const duplicate=rows_('Students').some(x=>digits_(x.obj.national_id||'')===nid);
+  if(duplicate) throw new Error('این کد ملی قبلاً در سیستم برای یک دانش‌آموز ثبت شده است و در هیچ مدرسه دیگری نیز قابل ثبت نیست.');
   const id=nextId_('Students');
   sheet_('Students').appendRow([
     id,String(b.name||'').trim(),String(b.grade||''),phone,nid,String(schoolId),
@@ -487,7 +487,7 @@ function studentsImport_(b) {
 
   let added=0, skipped=0, invalid=0;
   const reasons=[];
-  const existing=rows_('Students').map(x=>x.obj).filter(x=>String(x.school_id)===schoolId);
+  const existing=rows_('Students').map(x=>x.obj); // کد ملی در کل مجموعه مدارس باید یکتا باشد
 
   rows.forEach(r=>{
     const first=String(r.first_name||'').trim();
@@ -500,7 +500,7 @@ function studentsImport_(b) {
     if(!/^\d{10}$/.test(nid)){ invalid++; reasons.push('کد ملی نامعتبر برای '+name); return; }
     if(!grade){ invalid++; reasons.push('پایه نامشخص برای '+name); return; }
 
-    const duplicate=existing.some(x=>String(x.national_id||'')===nid);
+    const duplicate=existing.some(x=>digits_(x.national_id||'')===nid);
     if(duplicate){skipped++;return;}
 
     const id=nextId_('Students');
@@ -534,9 +534,18 @@ function normalizeGrade_(v){
 }
 
 function readStudentXlsx_(base64) {
-  let clean=String(base64); if(clean.indexOf(',')>=0) clean=clean.substring(clean.indexOf(',')+1);
-  const blob=Utilities.newBlob(Utilities.base64Decode(clean),'application/zip','students.xlsx');
-  const files=Utilities.unzip(blob); const by={}; files.forEach(f=>by[f.getName()]=f);
+  let clean=String(base64||'').trim();
+  if(clean.indexOf(',')>=0) clean=clean.substring(clean.indexOf(',')+1);
+  clean=clean.replace(/\s/g,'');
+  let bytes;
+  try { bytes=Utilities.base64Decode(clean); } catch(e) { throw new Error('محتوای فایل Excel معتبر نیست.'); }
+  if(!bytes || bytes.length<4 || bytes[0]!==80 || bytes[1]!==75) throw new Error('فایل انتخاب‌شده XLSX معتبر نیست یا فایل کامل ارسال نشده است.');
+  // XLSX یک ZIP واقعی است؛ نوع Blob را صریحاً ZIP می‌کنیم تا Utilities.unzip
+  // به MIME انتخاب‌شده توسط Android وابسته نباشد.
+  const blob=Utilities.newBlob(bytes,'application/zip','students.xlsx').setContentType('application/zip');
+  let files;
+  try { files=Utilities.unzip(blob); } catch(e) { throw new Error('خواندن فایل Excel انجام نشد. فایل باید XLSX معتبر باشد.'); }
+  const by={}; files.forEach(f=>by[f.getName()]=f);
   const shared=[];
   if(by['xl/sharedStrings.xml']) {
     const root=XmlService.parse(by['xl/sharedStrings.xml'].getDataAsString()).getRootElement();
@@ -626,8 +635,8 @@ function studentUpdate_(b) {
   const targetSchool=(u.role==='senior' || u.role==='admin') ? String(b.school_id!==undefined?b.school_id:old.school_id) : String(u.school_id);
   const targetNid=digits_(b.national_id!==undefined?b.national_id:old.national_id);
   if(!/^\d{10}$/.test(targetNid)) throw new Error('کد ملی باید دقیقاً ۱۰ رقم انگلیسی باشد.');
-  const duplicate=rows_('Students').some(x=>String(x.obj.id)!==String(old.id) && String(x.obj.school_id)===targetSchool && String(x.obj.national_id||'')===targetNid && String(x.obj.active)!=='false');
-  if(duplicate) throw new Error('این کد ملی قبلاً برای یک دانش‌آموز فعال در همین مدرسه ثبت شده است.');
+  const duplicate=rows_('Students').some(x=>String(x.obj.id)!==String(old.id) && digits_(x.obj.national_id||'')===targetNid);
+  if(duplicate) throw new Error('این کد ملی قبلاً در سیستم برای یک دانش‌آموز ثبت شده است و در هیچ مدرسه دیگری نیز قابل ثبت نیست.');
   const phone=digits_(b.phone || old.phone);
   if(!/^\d{10}$/.test(targetNid)) throw new Error('کد ملی باید دقیقاً ۱۰ رقم باشد.');
   if(phone && !/^0\d{10}$/.test(phone)) throw new Error('شماره تلفن نامعتبر است.');
