@@ -70,6 +70,9 @@ public class ApiClient {
         if(p.equals("/api/bank"))return "bank";
         if(p.equals("/api/my-claim"))return "my_claim";
         if(p.equals("/api/app-version"))return "app_version";
+        if(p.equals("/api/cheques"))return "cheques";
+        if(p.equals("/api/cheque/alerts"))return "cheque_alerts";
+        if(p.matches("/api/cheques/\\d+/review")){put(b,"id",Long.parseLong(p.split("/")[3]));return "cheque_review";}
         if(p.startsWith("/api/expense-categories")){String id=tail(p);if(id.length()>0)put(b,"id",id);return method.equals("GET")?"categories":method.equals("DELETE")?"category_delete":id.length()==0?"category_add":"category_update";}
         if(p.startsWith("/api/transactions?student_id=")){put(b,"student_id",Long.parseLong(p.substring(p.indexOf('=')+1)));return "transactions";}
         if(p.startsWith("/api/transactions?kind=")){put(b,"kind_query",Uri.decode(p.substring(p.indexOf('=')+1)));return "transactions";}

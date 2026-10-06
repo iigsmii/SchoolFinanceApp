@@ -18,7 +18,7 @@ const CFG = {
   SESSION_HOURS: 8,
   SHEETS: [
     'Managers','Schools','Students','Tuition','Expenses','Transactions',
-    'Bank','ExpenseCategories','Messages','Attachments','ParsianAccounts','Settings','ActivityLogs'
+    'Bank','ExpenseCategories','Messages','Attachments','ParsianAccounts','Settings','ActivityLogs','Cheques'
   ]
 };
 
@@ -31,11 +31,12 @@ const HEADERS = {
   Transactions: ['id','date','school_id','kind','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','source_id','payment_source'],
   Bank: ['id','date','school_id','amount','description','tracking_code','bank_account','created_at','matched_transaction_id','matched','approved'],
   ExpenseCategories: ['id','name','active','created_at'],
-  Messages: ['id','message','created_by','created_at','active'],
+  Messages: ['id','message','created_by','created_at','active','target_school_id','target_role'],
   Attachments: ['id','source_type','source_id','file_name','mime_type','drive_file_id','url','created_by','created_at'],
   ParsianAccounts: ['id','account_name','account_code','school_id','category','active'],
   Settings: ['key','value','updated_at'],
-  ActivityLogs: ['id','date','user_id','username','user_name','role','school_id','action','entity_type','entity_id','description','details']
+  ActivityLogs: ['id','date','user_id','username','user_name','role','school_id','action','entity_type','entity_id','description','details'],
+  Cheques: ['id','date','student_id','school_id','amount','sayad_id','due_date','description','created_by','created_at','payment_method','received_confirmed','in_favor_confirmed','status','approved_at','approved_by','bank_reconciled','bank_status','bank_date']
 };
 
 const DEFAULT_CATEGORIES = [
@@ -243,7 +244,7 @@ function setup() {
   const settings = sheet_('Settings');
   const settingKeys={};
   rows_('Settings').forEach(x=>settingKeys[String(x.obj.key||'').trim()]=true);
-  [['schoolfinance_version','2.13-update-stable'],['android_version','2.13'],['android_apk_url',''],['bank_account_code','0-1-11'],['currency','IRR']].forEach(x=>{
+  [['schoolfinance_version','2.14-cheque-workflow'],['android_version','2.14'],['android_apk_url',''],['bank_account_code','0-1-11'],['currency','IRR']].forEach(x=>{
     if(!settingKeys[x[0]]) { settings.appendRow([x[0],x[1],now_()]); }
     else if(x[0]==='schoolfinance_version' || x[0]==='android_version') {
       const rr=rows_('Settings').find(y=>String(y.obj.key||'')===x[0]);
@@ -277,6 +278,8 @@ function doGet(e) {
     if(action==='bank') return json_(bank_(b));
     if(action==='tuition') return json_(tuition_(b));
     if(action==='messages') return json_(messages_(b));
+    if(action==='cheques') return json_(cheques_(b));
+    if(action==='cheque_alerts') return json_(chequeAlerts_(b));
     if(action==='bank_review') return json_(bankReview_(b));
     if(action==='parsian_school_map') return json_(parsianSchoolMap_(b));
     if(action==='parsian_student_accounts') return json_(parsianStudentAccounts_(b));
@@ -284,14 +287,14 @@ function doGet(e) {
     if(action==='my_claim') return json_(myClaim_(b));
     if(action==='app_version') return json_(appVersion_(b));
     if(action==='activity_logs'){ ensureStructure_(); return json_(activityLogs_(b)); }
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.13-update-stable',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.14-cheque-workflow',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
 function ensureStructure_() {
   const cache=CacheService.getScriptCache();
   const ss = SpreadsheetApp.openById(CFG.SPREADSHEET_ID);
-  if(cache.get('structure_ready_v24')==='1' && ss.getSheetByName('ActivityLogs')) return;
+  if(cache.get('structure_ready_v24')==='1' && ss.getSheetByName('ActivityLogs') && ss.getSheetByName('Cheques')) return;
   CFG.SHEETS.forEach(name => {
     let sh = ss.getSheetByName(name);
     if (!sh) sh = ss.insertSheet(name);
@@ -349,6 +352,8 @@ function doPost(e) {
       case 'category_update': result=categoryUpdate_(body); break;
       case 'category_delete': result=categoryDelete_(body); break;
       case 'messages': result=messages_(body); break;
+      case 'cheques': result=cheques_(body); break;
+      case 'cheque_review': result=chequeReview_(body); break;
       case 'message_add': result=messageAdd_(body); break;
       case 'message_delete': result=messageDelete_(body); break;
       case 'managers': result=managers_(body); break;
@@ -815,23 +820,28 @@ function tuitionAdd_(b) {
   const type=String(b.type||'payment');
   const amount=amount_(b.amount);
   if(amount<=0) throw new Error('مبلغ نامعتبر است.');
-  if(type==='payment' && !String(b.tracking_code||'').trim()) throw new Error('شماره پیگیری الزامی است.');
+  const paymentMethod=String(b.payment_method||'').trim();
+  if(type==='payment' && !paymentMethod) throw new Error('نوع پرداخت را انتخاب کنید.');
+
+  // Cheques are kept in a separate workflow and do NOT reduce student debt until senior approval.
+  if(type==='payment' && paymentMethod==='چک') {
+    const sayad=digits_(b.sayad_id);
+    if(!/^\d{16}$/.test(sayad)) throw new Error('شناسه صیاد چک باید دقیقاً ۱۶ رقمی باشد.');
+    const due=String(b.due_date||'').trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(due)) throw new Error('تاریخ سررسید چک الزامی است.');
+    if(String(b.in_favor_school)!=='true') throw new Error('برای ثبت چک باید گزینه «ثبت چک در وجه مدرسه القرآن» انتخاب شود.');
+    const id=nextId_('Cheques');
+    sheet_('Cheques').appendRow([id,date_(b.date),String(b.student_id),String(schoolId),amount,sayad,due,String(b.description||''),u.id,now_(),'چک',false,false,'pending','', '',false,'','']);
+    return {success:true,cheque:true,id:id,pending:true,message:'چک برای تأیید کاربر ارشد ثبت شد.'};
+  }
+
+  if(type==='payment' && !String(b.tracking_code||'').trim() && paymentMethod!=='پول نقد') throw new Error('شماره پیگیری برای این روش پرداخت الزامی است.');
   const image=saveAttachmentIfAny_(b,'tuition',Utilities.getUuid(),u.id);
   const id=nextId_('Tuition');
-  sheet_('Tuition').appendRow([
-    id,date_(b.date),String(b.student_id),String(schoolId),type,amount,
-    String(b.description||''),String(b.tracking_code||''),image.url||'',
-    u.id,now_(),false,false
-  ]);
-  // Every tuition record also becomes a transaction.
-  sheet_('Transactions').appendRow([
-    nextId_('Transactions'),date_(b.date),String(schoolId),type,amount,
-    String(b.description||''),String(b.tracking_code||''),image.url||'',
-    u.id,now_(),false,false,id
-  ]);
-  return {success:true,id:id,image_url:image.url||''};
+  sheet_('Tuition').appendRow([id,date_(b.date),String(b.student_id),String(schoolId),type,amount,String(b.description||''),String(b.tracking_code||''),image.url||'',u.id,now_(),false,false,paymentMethod]);
+  sheet_('Transactions').appendRow([nextId_('Transactions'),date_(b.date),String(schoolId),type,amount,String(b.description||''),String(b.tracking_code||''),image.url||'',u.id,now_(),false,false,id,paymentMethod]);
+  return {success:true,id:id,image_url:image.url||'',payment_method:paymentMethod};
 }
-
 
 function tuitionBulkDebt_(b) {
   const lock=LockService.getScriptLock();
@@ -968,7 +978,7 @@ function transactions_(b) {
   const students=rows_('Students').map(x=>x.obj); const tuition=rows_('Tuition').map(x=>x.obj); const expenses=rows_('Expenses').map(x=>x.obj);
   data=data.map(t=>{
     const out=Object.assign({},t); out.school_name=schoolName_(t.school_id); out.attachment_url=t.image_url||'';
-    if(String(t.kind)==='payment'||String(t.kind)==='debt') { const q=tuition.find(x=>String(x.id)===String(t.source_id)); if(q){out.student_id=q.student_id; const st=students.find(x=>String(x.id)===String(q.student_id)); if(st){out.student_name=st.name;out.student_grade=st.grade;}} }
+    if(String(t.kind)==='payment'||String(t.kind)==='debt') { const q=tuition.find(x=>String(x.id)===String(t.source_id)); if(q){out.student_id=q.student_id; out.payment_method=q.payment_method||t.payment_source||''; const st=students.find(x=>String(x.id)===String(q.student_id)); if(st){out.student_name=st.name;out.student_grade=st.grade;}} }
     if(String(t.kind)==='expense') { const e=expenses.find(x=>String(x.id)===String(t.source_id)); if(e){out.expense_category_name=e.category; out.payment_source=e.payment_source||t.payment_source||'bank';} } else out.payment_source=t.payment_source||'';
     return out;
   });
@@ -1002,7 +1012,7 @@ function bankReview_(b) {
   const banks=rows_('Bank').map(x=>x.obj);
   const tx=rows_('Transactions').map(x=>x.obj);
   const schools={}; rows_('Schools').forEach(x=>schools[String(x.obj.id)]=x.obj.name);
-  const data=tx.map(t=>{
+  const data=tx.filter(t=>String(t.kind)!=='debt').map(t=>{
     const candidates=banks.filter(x=>Number(x.amount)===Number(t.amount) && String(x.school_id)===String(t.school_id));
     const hit=candidates.length?candidates[0]:null;
     const o=Object.assign({},t);
@@ -1047,10 +1057,23 @@ function bankReconcile_(b){
   const txRows=rows_('Transactions'); let matched=0,unmatched=0;
   txRows.forEach(x=>{
     const t=x.obj;
-    const hit=banks.find(z=>Number(z.amount)===Number(t.amount) && String(z.school_id)===String(t.school_id));
+    // Student debts are accounting obligations, not bank deposits and must never be reconciled with Bank.
+    if(String(t.kind)==='debt') return;
+    const hit=banks.find(z=>String(z.tracking_code||'') && String(z.tracking_code||'')===String(t.tracking_code||'') && String(z.school_id)===String(t.school_id)) ||
+              banks.find(z=>Number(z.amount)===Number(t.amount) && String(z.school_id)===String(t.school_id));
     const ok=!!hit;
-    if(ok){ matched++; updateRow_('Transactions',x.row,[t.id,t.date,t.school_id,t.kind,t.amount,t.description,t.tracking_code,t.image_url,t.created_by,t.created_at,true,t.approved,t.source_id]); }
-    else { unmatched++; updateRow_('Transactions',x.row,[t.id,t.date,t.school_id,t.kind,t.amount,t.description,t.tracking_code,t.image_url,t.created_by,t.created_at,false,t.approved,t.source_id]); }
+    if(ok){ matched++; updateRow_('Transactions',x.row,[t.id,t.date,t.school_id,t.kind,t.amount,t.description,t.tracking_code,t.image_url,t.created_by,t.created_at,true,t.approved,t.source_id,t.payment_source||'']); }
+    else { unmatched++; updateRow_('Transactions',x.row,[t.id,t.date,t.school_id,t.kind,t.amount,t.description,t.tracking_code,t.image_url,t.created_by,t.created_at,false,t.approved,t.source_id,t.payment_source||'']); }
+  });
+  // Resolve approved cheques from bank rows. A bank description containing return/bounce terms marks the cheque as unpaid.
+  const chequeRows=rows_('Cheques');
+  chequeRows.forEach(x=>{
+    const c=x.obj; if(String(c.status)!=='approved' || String(c.bank_reconciled)==='true') return;
+    const hit=banks.find(z=>String(z.tracking_code||'')===String(c.sayad_id||'') && String(z.school_id)===String(c.school_id)) || banks.find(z=>Number(z.amount)===Number(c.amount) && String(z.school_id)===String(c.school_id) && String(z.date||'')>=String(c.due_date||''));
+    if(!hit) return;
+    const desc=String(hit.description||''); const bounced=/(برگشت|برگشتی|بلامحل|پاس نشده|پاس نشد|عدم پرداخت|عودت)/i.test(desc);
+    updateRow_('Cheques',x.row,[c.id,c.date,c.student_id,c.school_id,c.amount,c.sayad_id,c.due_date,c.description,c.created_by,c.created_at,c.payment_method,c.received_confirmed,c.in_favor_confirmed,bounced?'bounced':'paid',c.approved_at,c.approved_by,true,bounced?'bounced':'paid',hit.date]);
+    if(bounced) addSystemMessage_('⚠️ چک صیادی '+c.sayad_id+' دانش‌آموز با سررسید '+c.due_date+' پاس نشده/برگشت خورده است. مدیر مدرسه و کاربر ارشد باید پیگیری کنند.',c.school_id);
   });
   return {success:true,matched:matched,unmatched:unmatched};
 }
@@ -1100,9 +1123,10 @@ function categoryDelete_(b) {
 /* ---------- MESSAGES ---------- */
 
 function messages_(b) {
-  auth_(b);
+  const u=auth_(b);
   ensureCoreData_();
-  return {success:true,data:rows_('Messages').map(x=>x.obj).filter(x=>String(x.active)!=='false').reverse()};
+  const data=rows_('Messages').map(x=>x.obj).filter(x=>String(x.active)!=='false').filter(x=>{ const school=String(x.target_school_id||'').trim(); const role=String(x.target_role||'').trim(); const roleOk=!role || role.split(',').indexOf(String(u.role))>=0; const schoolOk=!school || String(u.school_id)===school || u.role==='senior' || u.role==='admin'; return roleOk&&schoolOk; }).reverse();
+  return {success:true,data:data};
 }
 
 function messageAdd_(b) {
@@ -1110,7 +1134,7 @@ function messageAdd_(b) {
   const msg=String(b.message||'').trim();
   if(!msg) throw new Error('پیام خالی است.');
   const id=Utilities.getUuid();
-  sheet_('Messages').appendRow([id,msg,u.id,now_(),true]);
+  sheet_('Messages').appendRow([id,msg,u.id,now_(),true,'','']);
   return {success:true,id:id};
 }
 
@@ -1121,6 +1145,55 @@ function messageDelete_(b) {
   sheet_('Messages').getRange(hit.row,5).setValue(false);
   return {success:true};
 }
+
+
+/* ---------- CHEQUES ---------- */
+function cheques_(b){
+  const u=auth_(b,['senior','admin']);
+  const schools={}; rows_('Schools').forEach(x=>schools[String(x.obj.id)]=x.obj.name);
+  const students={}; rows_('Students').forEach(x=>students[String(x.obj.id)]=x.obj);
+  let data=rows_('Cheques').map(x=>Object.assign({},x.obj));
+  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  data=data.filter(x=>String(x.status||'pending')==='pending').map(x=>{x.school_name=schools[String(x.school_id)]||'';x.student_name=students[String(x.student_id)]?.name||'';x.student_grade=students[String(x.student_id)]?.grade||'';return x;});
+  return {success:true,data:data};
+}
+function chequeAlerts_(b){
+  const u=auth_(b);
+  const today=todayIso_();
+  const students={}; rows_('Students').forEach(x=>students[String(x.obj.id)]=x.obj);
+  let data=rows_('Cheques').map(x=>x.obj).filter(x=>['approved','bounced'].indexOf(String(x.status))>=0);
+  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  const alerts=[];
+  data.forEach(c=>{
+    const name=students[String(c.student_id)]?.name||'دانش‌آموز';
+    if(String(c.status)==='bounced') alerts.push({level:'danger',message:'⚠️ چک '+c.sayad_id+' دانش‌آموز '+name+' پاس نشده/برگشت خورده است.'});
+    else if(String(c.bank_reconciled)!=='true' && String(c.due_date) && String(c.due_date)<=today) alerts.push({level:'warning',message:'⏰ سررسید چک '+c.sayad_id+' دانش‌آموز '+name+' فرا رسیده است و هنوز با بانک تطبیق نشده.'});
+    else if(String(c.bank_reconciled)!=='true' && daysBetween_(today,String(c.due_date))<=3 && daysBetween_(today,String(c.due_date))>=0) alerts.push({level:'info',message:'⏰ سررسید چک '+c.sayad_id+' دانش‌آموز '+name+' نزدیک است.'});
+  });
+  return {success:true,data:alerts};
+}
+function chequeReview_(b){
+  const u=auth_(b,['senior','admin']);
+  const hit=findRow_('Cheques',b.id); if(!hit) throw new Error('چک یافت نشد.');
+  const c=hit.obj; const action=String(b.action||'');
+  let received=String(c.received_confirmed)==='true'; let favor=String(c.in_favor_confirmed)==='true';
+  if(action==='receive') received=true;
+  else if(action==='favor') favor=true;
+  else if(action==='reject'){ updateRow_('Cheques',hit.row,[c.id,c.date,c.student_id,c.school_id,c.amount,c.sayad_id,c.due_date,c.description,c.created_by,c.created_at,c.payment_method,received,favor,'rejected',c.approved_at,u.id,c.bank_reconciled,c.bank_status,c.bank_date]); return {success:true,status:'rejected'}; }
+  let status=(received&&favor)?'approved':'pending';
+  updateRow_('Cheques',hit.row,[c.id,c.date,c.student_id,c.school_id,c.amount,c.sayad_id,c.due_date,c.description,c.created_by,c.created_at,c.payment_method,received,favor,status,status==='approved'?now_():c.approved_at,status==='approved'?u.id:c.approved_by,c.bank_reconciled,c.bank_status,c.bank_date]);
+  if(status==='approved'){
+    // Only now does the cheque become a student payment and reduce debt.
+    const tid=nextId_('Tuition');
+    sheet_('Tuition').appendRow([tid,c.date,c.student_id,c.school_id,'payment',c.amount,'پرداخت با چک صیادی - '+c.sayad_id,c.sayad_id,'',c.created_by,c.created_at,false,true,'چک']);
+    sheet_('Transactions').appendRow([nextId_('Transactions'),c.date,c.school_id,'payment',c.amount,'پرداخت با چک صیادی - '+c.sayad_id,c.sayad_id,'',c.created_by,c.created_at,false,true,tid,'چک']);
+    addSystemMessage_('✅ چک صیادی '+c.sayad_id+' برای دانش‌آموز تأیید شد و به عنوان پرداخت ثبت گردید.',c.school_id);
+  }
+  return {success:true,status:status,received_confirmed:received,in_favor_confirmed:favor};
+}
+function addSystemMessage_(msg,schoolId){ const id='SYS-'+Utilities.getUuid(); sheet_('Messages').appendRow([id,msg,'system',now_(),true,String(schoolId||''),'manager,senior,admin']); }
+function todayIso_(){ return Utilities.formatDate(new Date(),Session.getScriptTimeZone()||'Asia/Tehran','yyyy-MM-dd'); }
+function daysBetween_(a,b){ try{return Math.round((new Date(b+'T00:00:00').getTime()-new Date(a+'T00:00:00').getTime())/86400000);}catch(e){return 99999;} }
 
 /* ---------- MANAGERS ---------- */
 
@@ -1332,7 +1405,7 @@ function activityLogs_(b){
   return {success:true,data:data.slice(0,500)};
 }
 
-function appVersion_(b){ auth_(b); const settings={}; rows_('Settings').forEach(x=>settings[String(x.obj.key||'')]=String(x.obj.value||'')); return {success:true,version:settings['android_version']||'2.13',apk_url:settings['android_apk_url']||'',backend_version:'2.13-update-stable'}; }
+function appVersion_(b){ auth_(b); const settings={}; rows_('Settings').forEach(x=>settings[String(x.obj.key||'')]=String(x.obj.value||'')); return {success:true,version:settings['android_version']||'2.14',apk_url:settings['android_apk_url']||'',backend_version:'2.14-cheque-workflow'}; }
 
 function myClaim_(b){
   const u=auth_(b);
