@@ -23,7 +23,7 @@ workflows:
           chmod +x ./gradlew
           ./gradlew clean assembleRelease \
             -PversionCode=$BUILD_NUMBER \
-            -PversionName=2.0.$BUILD_NUMBER
+            -PversionName=2.13.$BUILD_NUMBER
 
       - name: Verify APK signature
         script: |
