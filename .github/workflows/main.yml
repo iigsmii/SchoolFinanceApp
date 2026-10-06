@@ -14,7 +14,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Java
+      # Java 17 فقط برای Android SDK
+      - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -23,8 +24,20 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      # پروژه فعلی ما قدیمی است و برای Gradle بهتر است با Java 11 ساخته شود
+      - name: Setup Java 11 for Gradle
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '11'
+
       - name: Make gradlew executable
         run: chmod +x gradlew
+
+      - name: Check Java and Gradle
+        run: |
+          java -version
+          ./gradlew --version
 
       - name: Build Release APK
         run: ./gradlew clean assembleRelease
