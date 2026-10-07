@@ -29,31 +29,61 @@ jobs:
         shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          set -e
+
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "KEYSTORE_BASE64 secret is missing."
+            echo "ERROR: KEYSTORE_BASE64 secret is missing."
+            exit 1
+          fi
+
+          if [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "ERROR: Signing secrets are incomplete."
             exit 1
           fi
 
           echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/school_finance_release.jks"
 
           if [ ! -s "$RUNNER_TEMP/school_finance_release.jks" ]; then
-            echo "Keystore file was not created."
+            echo "ERROR: Keystore file is empty or was not created."
             exit 1
           fi
+
+          printf '%s\n'             "storeFile=$RUNNER_TEMP/school_finance_release.jks"             "storePassword=$KEYSTORE_PASSWORD"             "keyAlias=$KEY_ALIAS"             "keyPassword=$KEY_PASSWORD"             > keystore.properties
+
+          echo "Keystore prepared successfully."
 
       - name: Build signed Release APK
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          if [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
-            echo "One or more signing secrets are missing."
+          gradle clean assembleRelease             -PversionCodeOverride=${{ github.run_number }}             -PversionNameOverride=2.14.${{ github.run_number }}
+
+      - name: Verify APK signature
+        shell: bash
+        run: |
+          set -e
+
+          APK=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK was not generated."
             exit 1
           fi
 
-          gradle clean assembleRelease             -Pandroid.injected.signing.store.file="$RUNNER_TEMP/school_finance_release.jks"             -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD"             -Pandroid.injected.signing.key.alias="$KEY_ALIAS"             -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+          echo "APK: $APK"
+
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+
+          if [ -z "$APKSIGNER" ]; then
+            echo "ERROR: apksigner not found."
+            exit 1
+          fi
+
+          "$APKSIGNER" verify --verbose "$APK"
+
+          echo "APK signature verification PASSED."
 
       - name: Upload signed APK
         uses: actions/upload-artifact@v4
