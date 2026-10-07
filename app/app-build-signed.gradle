@@ -1,0 +1,52 @@
+apply plugin: 'com.android.application'
+
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { stream ->
+        keystoreProperties.load(stream)
+    }
+}
+
+android {
+    namespace 'com.example.hesabdari'
+    compileSdkVersion 33
+
+    defaultConfig {
+        applicationId 'com.example.hesabdari'
+        minSdkVersion 23
+        targetSdkVersion 33
+        versionCode project.hasProperty('versionCodeOverride') ? project.property('versionCodeOverride').toInteger() : 2
+        versionName project.hasProperty('versionNameOverride') ? project.property('versionNameOverride').toString() : '2.14.1'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.9.0'
+}
