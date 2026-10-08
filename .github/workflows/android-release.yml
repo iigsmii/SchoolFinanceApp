@@ -1,5 +1,4 @@
-```yaml
-name: Android Release APK
+name: Android Release APK (signed)
 
 on:
   workflow_dispatch:
@@ -7,29 +6,36 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Java 11
-        uses: actions/setup-java@v5
+      - name: Set up Java 11
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '11'
 
-      - name: Setup Gradle
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and build tools
+        run: sdkmanager "platforms;android-33" "build-tools;33.0.2"
+
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '7.0.2'
 
-      # -----------------------------------------
-      # آماده‌سازی Keystore
-      # -----------------------------------------
-      - name: Prepare signing keystore
+      - name: Validate signing secrets and prepare keystore
         shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -38,176 +44,74 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Required GitHub Actions secret $name is missing."
+              exit 1
+            fi
+          done
 
-          test -n "$KEYSTORE_BASE64" || {
-            echo "ERROR: KEYSTORE_BASE64 is missing"
-            exit 1
-          }
+          KEYSTORE_PATH="$RUNNER_TEMP/school-finance-release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH"
+          keytool -list -keystore "$KEYSTORE_PATH" \
+            -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
 
-          test -n "$KEYSTORE_PASSWORD" || {
-            echo "ERROR: KEYSTORE_PASSWORD is missing"
-            exit 1
-          }
+          echo "ANDROID_KEYSTORE_FILE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+          echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+          echo "Release keystore validated."
 
-          test -n "$KEY_ALIAS" || {
-            echo "ERROR: KEY_ALIAS is missing"
-            exit 1
-          }
+      - name: Build release APK
+        run: gradle --no-daemon clean assembleRelease
 
-          test -n "$KEY_PASSWORD" || {
-            echo "ERROR: KEY_PASSWORD is missing"
-            exit 1
-          }
-
-          echo "$KEYSTORE_BASE64" | base64 --decode \
-            > "$RUNNER_TEMP/school_finance_release.jks"
-
-          test -s "$RUNNER_TEMP/school_finance_release.jks"
-
-          keytool -list \
-            -keystore "$RUNNER_TEMP/school_finance_release.jks" \
-            -storepass "$KEYSTORE_PASSWORD" \
-            -alias "$KEY_ALIAS" \
-            >/dev/null
-
-          echo "Keystore and alias verified successfully."
-
-      # -----------------------------------------
-      # ساخت APK خام
-      # -----------------------------------------
-      - name: Build unsigned APK
+      - name: Align, sign, and verify APK
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/33.0.2"
+          test -x "$BUILD_TOOLS/zipalign"
+          test -x "$BUILD_TOOLS/apksigner"
 
-          gradle clean assembleRelease
+          UNSIGNED_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          if [[ ! -s "$UNSIGNED_APK" ]]; then
+            # Defensive fallback for plugin variants that use a different filename.
+            UNSIGNED_APK="app/build/outputs/apk/release/app-release.apk"
+          fi
+          if [[ ! -s "$UNSIGNED_APK" ]]; then
+            echo "::error::Release APK was not produced."
+            find app/build/outputs/apk -maxdepth 4 -type f -print || true
+            exit 1
+          fi
 
-          APK=$(find app/build/outputs/apk/release \
-            -type f \
-            -name "*unsigned.apk" \
-            | head -n 1)
+          ALIGNED_APK="$RUNNER_TEMP/app-release-aligned.apk"
+          SIGNED_APK="$RUNNER_TEMP/app-release-signed.apk"
 
-          test -n "$APK"
+          "$BUILD_TOOLS/zipalign" -f -p 4 "$UNSIGNED_APK" "$ALIGNED_APK"
 
-          echo "Unsigned APK created:"
-          echo "$APK"
-
-      # -----------------------------------------
-      # Zipalign
-      # -----------------------------------------
-      - name: Zipalign APK
-        shell: bash
-        run: |
-          set -e
-
-          UNSIGNED=$(find app/build/outputs/apk/release \
-            -type f \
-            -name "*unsigned.apk" \
-            | head -n 1)
-
-          test -n "$UNSIGNED"
-
-          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" \
-            -mindepth 1 \
-            -maxdepth 1 \
-            -type d \
-            | sort -V \
-            | tail -n 1)
-
-          ZIPALIGN="$BUILD_TOOLS/zipalign"
-
-          test -x "$ZIPALIGN"
-
-          "$ZIPALIGN" -f -p 4 \
-            "$UNSIGNED" \
-            "$RUNNER_TEMP/app-aligned.apk"
-
-          "$ZIPALIGN" -c -P 4 -v 4 \
-            "$RUNNER_TEMP/app-aligned.apk"
-
-          echo "Zipalign verification PASSED."
-
-      # -----------------------------------------
-      # امضای APK
-      # -----------------------------------------
-      - name: Sign APK with release keystore
-        shell: bash
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set -e
-
-          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" \
-            -mindepth 1 \
-            -maxdepth 1 \
-            -type d \
-            | sort -V \
-            | tail -n 1)
-
-          APKSIGNER="$BUILD_TOOLS/apksigner"
-
-          test -x "$APKSIGNER"
-
-          "$APKSIGNER" sign \
-            --ks "$RUNNER_TEMP/school_finance_release.jks" \
-            --ks-pass "pass:$KEYSTORE_PASSWORD" \
-            --ks-key-alias "$KEY_ALIAS" \
-            --key-pass "pass:$KEY_PASSWORD" \
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$ANDROID_KEYSTORE_FILE" \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --key-pass env:ANDROID_KEY_PASSWORD \
             --v1-signing-enabled true \
             --v2-signing-enabled true \
-            --out app/build/outputs/apk/release/app-release.apk \
-            "$RUNNER_TEMP/app-aligned.apk"
+            --out "$SIGNED_APK" \
+            "$ALIGNED_APK"
 
-          echo "APK signing completed."
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED_APK"
+          "$BUILD_TOOLS/zipalign" -c -v 4 "$SIGNED_APK"
+          test -s "$SIGNED_APK"
 
-      # -----------------------------------------
-      # بررسی امضا
-      # -----------------------------------------
-      - name: Verify signed APK
-        shell: bash
-        run: |
-          set -e
+          mkdir -p app/build/outputs/apk/release-signed
+          cp "$SIGNED_APK" app/build/outputs/apk/release-signed/SchoolFinanceApp-release-signed.apk
+          echo "Verified signed APK ready for upload."
 
-          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" \
-            -mindepth 1 \
-            -maxdepth 1 \
-            -type d \
-            | sort -V \
-            | tail -n 1)
-
-          APKSIGNER="$BUILD_TOOLS/apksigner"
-
-          APK="app/build/outputs/apk/release/app-release.apk"
-
-          test -f "$APK"
-
-          "$APKSIGNER" verify \
-            --verbose \
-            --print-certs \
-            "$APK"
-
-          echo "======================================"
-          echo "APK SIGNATURE VERIFICATION PASSED"
-          echo "======================================"
-
-      # -----------------------------------------
-      # حذف APK بدون امضا
-      # -----------------------------------------
-      - name: Remove unsigned APK
-        shell: bash
-        run: |
-          rm -f app/build/outputs/apk/release/*-unsigned.apk
-          rm -f app/build/outputs/apk/release/app-release-unaligned.apk
-
-      # -----------------------------------------
-      # خروجی نهایی
-      # -----------------------------------------
-      - name: Upload signed APK
+      - name: Upload verified signed APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: SchoolFinanceApp-release-signed
-          path: app/build/outputs/apk/release/app-release.apk
+          path: app/build/outputs/apk/release-signed/SchoolFinanceApp-release-signed.apk
           if-no-files-found: error
-```
+          retention-days: 30
