@@ -1,10 +1,7 @@
 name: Workflow Test
-
 on: push
-
 jobs:
 test:
 runs-on: ubuntu-latest
 steps:
-- name: Confirm workflow
-run: echo "Workflow YAML is valid"
+- run: echo hello
