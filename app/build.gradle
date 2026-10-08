@@ -1,17 +1,5 @@
 apply plugin: 'com.android.application'
 
-def releaseStoreFile = System.getenv('ANDROID_KEYSTORE_FILE')
-def releaseStorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD')
-def releaseKeyAlias = System.getenv('ANDROID_KEY_ALIAS')
-def releaseKeyPassword = System.getenv('ANDROID_KEY_PASSWORD')
-
-def hasReleaseSigning = [
-    releaseStoreFile,
-    releaseStorePassword,
-    releaseKeyAlias,
-    releaseKeyPassword
-].every { it != null && !it.trim().isEmpty() }
-
 android {
     namespace 'com.example.hesabdari'
     compileSdkVersion 33
@@ -29,25 +17,12 @@ android {
         targetCompatibility JavaVersion.VERSION_11
     }
 
-    signingConfigs {
-        release {
-            if (hasReleaseSigning) {
-                storeFile file(releaseStoreFile)
-                storePassword releaseStorePassword
-                keyAlias releaseKeyAlias
-                keyPassword releaseKeyPassword
-                v1SigningEnabled true
-                v2SigningEnabled true
-            }
-        }
-    }
-
     buildTypes {
         release {
             minifyEnabled false
-            if (hasReleaseSigning) {
-                signingConfig signingConfigs.release
-            }
+            // Release APK is signed explicitly by the GitHub Actions workflow.
+            // This prevents Gradle from silently producing a release artifact
+            // that is mistakenly treated as the final signed APK.
         }
     }
 }
@@ -55,6 +30,3 @@ android {
 dependencies {
     implementation 'androidx.core:core:1.9.0'
 }
-
-// Local builds may be unsigned when no release keystore is configured.
-// The GitHub Actions release workflow checks for signing secrets before building.
