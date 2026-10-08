@@ -1,9 +1,10 @@
 name: Workflow Test
-
-"on": push
-
+"on":
+push:
+branches: [main]
 jobs:
 test:
 runs-on: ubuntu-latest
 steps:
-- run: echo hello
+- name: Hello
+run: echo "hello"
