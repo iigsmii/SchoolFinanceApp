@@ -29,18 +29,31 @@ jobs:
           set -euo pipefail
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+
           if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found at $SDKMANAGER"
+            SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -name sdkmanager -type f -executable 2>/dev/null | sort -V | tail -n 1)"
+          fi
+
+          if [[ -z "${SDKMANAGER:-}" || ! -x "$SDKMANAGER" ]]; then
+            echo "::error::Could not locate executable sdkmanager."
             find "$SDK_ROOT/cmdline-tools" -name sdkmanager -type f -print || true
             exit 1
           fi
+
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
-set +o pipefail
-yes | "$SDKMANAGER" --licenses
-set -o pipefail
 
-"$SDKMANAGER" "platforms;android-33" "build-tools;33.0.2"
+          # Capture sdkmanager's exit status without failing on yes's broken pipe.
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses
+          LICENSE_STATUS=${PIPESTATUS[1]}
+          set -o pipefail
+          if [[ "$LICENSE_STATUS" -ne 0 ]]; then
+            echo "::error::Android SDK license acceptance failed."
+            exit "$LICENSE_STATUS"
+          fi
+
+          "$SDKMANAGER" "platforms;android-33" "build-tools;33.0.2"
 
       - name: Set up Java 11 for Gradle
         uses: actions/setup-java@v4
@@ -68,10 +81,12 @@ set -o pipefail
               exit 1
             fi
           done
+
           KEYSTORE_PATH="$RUNNER_TEMP/school-finance-release.jks"
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
           test -s "$KEYSTORE_PATH"
           keytool -list -keystore "$KEYSTORE_PATH" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+
           echo "ANDROID_KEYSTORE_FILE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
           echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
           echo "ANDROID_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
@@ -87,6 +102,7 @@ set -o pipefail
           BUILD_TOOLS="$ANDROID_HOME/build-tools/33.0.2"
           test -x "$BUILD_TOOLS/zipalign"
           test -x "$BUILD_TOOLS/apksigner"
+
           UNSIGNED_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
           if [[ ! -s "$UNSIGNED_APK" ]]; then
             UNSIGNED_APK="app/build/outputs/apk/release/app-release.apk"
@@ -96,18 +112,12 @@ set -o pipefail
             find app/build/outputs/apk -maxdepth 4 -type f -print || true
             exit 1
           fi
+
           ALIGNED_APK="$RUNNER_TEMP/app-release-aligned.apk"
           SIGNED_APK="$RUNNER_TEMP/app-release-signed.apk"
           "$BUILD_TOOLS/zipalign" -f -p 4 "$UNSIGNED_APK" "$ALIGNED_APK"
-          "$BUILD_TOOLS/apksigner" sign \
-            --ks "$ANDROID_KEYSTORE_FILE" \
-            --ks-key-alias "$ANDROID_KEY_ALIAS" \
-            --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
-            --key-pass env:ANDROID_KEY_PASSWORD \
-            --v1-signing-enabled true \
-            --v2-signing-enabled true \
-            --out "$SIGNED_APK" \
-            "$ALIGNED_APK"
+          "$BUILD_TOOLS/apksigner" sign             --ks "$ANDROID_KEYSTORE_FILE"             --ks-key-alias "$ANDROID_KEY_ALIAS"             --ks-pass env:ANDROID_KEYSTORE_PASSWORD             --key-pass env:ANDROID_KEY_PASSWORD             --v1-signing-enabled true             --v2-signing-enabled true             --out "$SIGNED_APK"             "$ALIGNED_APK"
+
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED_APK"
           "$BUILD_TOOLS/zipalign" -c -v 4 "$SIGNED_APK"
           test -s "$SIGNED_APK"
