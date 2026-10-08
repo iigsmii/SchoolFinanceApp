@@ -36,8 +36,11 @@ jobs:
           fi
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses
-          "$SDKMANAGER" "platforms;android-33" "build-tools;33.0.2"
+set +o pipefail
+yes | "$SDKMANAGER" --licenses
+set -o pipefail
+
+"$SDKMANAGER" "platforms;android-33" "build-tools;33.0.2"
 
       - name: Set up Java 11 for Gradle
         uses: actions/setup-java@v4
