@@ -1267,8 +1267,23 @@ function attachment_(b) {
   const u=auth_(b);
   if(!b.base64) throw new Error('فایل ارسال نشده است.');
   const id=Utilities.getUuid();
-  const saved=saveAttachment_(b.base64,b.file_name||('file_'+id+'.jpg'),b.mime_type||'image/jpeg',id,u.id,b.source_type||'general',b.source_id||'');
-  return {success:true,url:saved.url,file_id:saved.file_id};
+  const sourceType=String(b.entity_type||b.source_type||'general');
+  const sourceId=String(b.entity_id||b.source_id||'');
+  const saved=saveAttachment_(b.base64,b.file_name||('file_'+id+'.jpg'),b.mime_type||'image/jpeg',id,u.id,sourceType,sourceId);
+  // Link the uploaded image to its financial record; without this, uploads succeed
+  // but transaction history has no attachment_url to display.
+  if(sourceId && sourceType==='tuition') {
+    const hit=findRow_('Tuition',sourceId);
+    if(hit) { const r=hit.obj; updateRow_('Tuition',hit.row,[r.id,r.date,r.student_id,r.school_id,r.type,r.amount,r.description,r.tracking_code,saved.url,r.created_by,r.created_at,r.reconciled,r.approved]); }
+    const tx=rows_('Transactions').find(x=>String(x.obj.source_id)===sourceId && (String(x.obj.kind)==='payment'||String(x.obj.kind)==='debt'));
+    if(tx) { const r=tx.obj; updateRow_('Transactions',tx.row,[r.id,r.date,r.school_id,r.kind,r.amount,r.description,r.tracking_code,saved.url,r.created_by,r.created_at,r.reconciled,r.approved,r.source_id,r.payment_source]); }
+  } else if(sourceId && sourceType==='expense') {
+    const hit=findRow_('Expenses',sourceId);
+    if(hit) { const r=hit.obj; updateRow_('Expenses',hit.row,[r.id,r.date,r.school_id,r.category,r.amount,r.description,r.tracking_code,saved.url,r.created_by,r.created_at,r.reconciled,r.approved,r.payment_source]); }
+    const tx=rows_('Transactions').find(x=>String(x.obj.source_id)===sourceId && String(x.obj.kind)==='expense');
+    if(tx) { const r=tx.obj; updateRow_('Transactions',tx.row,[r.id,r.date,r.school_id,r.kind,r.amount,r.description,r.tracking_code,saved.url,r.created_by,r.created_at,r.reconciled,r.approved,r.source_id,r.payment_source]); }
+  }
+  return {success:true,url:saved.url,file_id:saved.file_id,entity_type:sourceType,entity_id:sourceId};
 }
 
 function saveAttachmentIfAny_(b,type,sourceId,userId) {
