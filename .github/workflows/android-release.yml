@@ -1,3 +1,4 @@
+```yaml
 name: Android Release APK (signed)
 
 on:
@@ -15,20 +16,44 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Java 17
+      # Java 17 is needed by the Android SDK command-line tools.
+      - name: Set up Java 17 for Android SDK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # Use the SDK tools already available on the GitHub runner.
+      # Do not use setup-android here, to avoid its legacy "tools" package error.
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -e
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
 
-      - name: Install Android platform and build tools
-        run: sdkmanager "platforms;android-33" "build-tools;33.0.2"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager was not found at $SDKMANAGER"
+            find "$SDK_ROOT/cmdline-tools" -name sdkmanager -type f -print || true
+            exit 1
+          fi
+
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+          yes | "$SDKMANAGER" --licenses
+          "$SDKMANAGER" "platforms;android-33" "build-tools;33.0.2"
+
+      # Gradle 7.0.2 and Android Gradle Plugin 7.0.4
+      # are intended to run with Java 11.
+      - name: Set up Java 11 for Gradle
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -44,6 +69,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -euo pipefail
+
           for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
             if [[ -z "${!name:-}" ]]; then
               echo "::error::Required GitHub Actions secret $name is missing."
@@ -52,15 +78,20 @@ jobs:
           done
 
           KEYSTORE_PATH="$RUNNER_TEMP/school-finance-release.jks"
+
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
           test -s "$KEYSTORE_PATH"
-          keytool -list -keystore "$KEYSTORE_PATH" \
-            -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+
+          keytool -list \
+            -keystore "$KEYSTORE_PATH" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" >/dev/null
 
           echo "ANDROID_KEYSTORE_FILE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
           echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
           echo "ANDROID_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
           echo "ANDROID_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+
           echo "Release keystore validated."
 
       - name: Build release APK
@@ -70,15 +101,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           BUILD_TOOLS="$ANDROID_HOME/build-tools/33.0.2"
           test -x "$BUILD_TOOLS/zipalign"
           test -x "$BUILD_TOOLS/apksigner"
 
           UNSIGNED_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+
           if [[ ! -s "$UNSIGNED_APK" ]]; then
-            # Defensive fallback for plugin variants that use a different filename.
             UNSIGNED_APK="app/build/outputs/apk/release/app-release.apk"
           fi
+
           if [[ ! -s "$UNSIGNED_APK" ]]; then
             echo "::error::Release APK was not produced."
             find app/build/outputs/apk -maxdepth 4 -type f -print || true
@@ -88,7 +121,8 @@ jobs:
           ALIGNED_APK="$RUNNER_TEMP/app-release-aligned.apk"
           SIGNED_APK="$RUNNER_TEMP/app-release-signed.apk"
 
-          "$BUILD_TOOLS/zipalign" -f -p 4 "$UNSIGNED_APK" "$ALIGNED_APK"
+          "$BUILD_TOOLS/zipalign" -f -p 4 \
+            "$UNSIGNED_APK" "$ALIGNED_APK"
 
           "$BUILD_TOOLS/apksigner" sign \
             --ks "$ANDROID_KEYSTORE_FILE" \
@@ -102,16 +136,21 @@ jobs:
 
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED_APK"
           "$BUILD_TOOLS/zipalign" -c -v 4 "$SIGNED_APK"
+
           test -s "$SIGNED_APK"
 
           mkdir -p app/build/outputs/apk/release-signed
-          cp "$SIGNED_APK" app/build/outputs/apk/release-signed/SchoolFinanceApp-release-signed.apk
-          echo "Verified signed APK ready for upload."
 
-      - name: Upload verified signed APK artifact
+          cp "$SIGNED_APK" \
+            app/build/outputs/apk/release-signed/SchoolFinanceApp-release-signed.apk
+
+          echo "Signed APK verified successfully."
+
+      - name: Upload verified signed APK
         uses: actions/upload-artifact@v4
         with:
           name: SchoolFinanceApp-release-signed
           path: app/build/outputs/apk/release-signed/SchoolFinanceApp-release-signed.apk
           if-no-files-found: error
           retention-days: 30
+```
