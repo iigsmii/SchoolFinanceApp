@@ -1267,23 +1267,21 @@ function attachment_(b) {
   const u=auth_(b);
   if(!b.base64) throw new Error('فایل ارسال نشده است.');
   const id=Utilities.getUuid();
-  const sourceType=String(b.entity_type||b.source_type||'general');
-  const sourceId=String(b.entity_id||b.source_id||'');
+  const sourceType=String(b.source_type||b.entity_type||'general').toLowerCase();
+  const sourceId=String(b.source_id||b.entity_id||'');
   const saved=saveAttachment_(b.base64,b.file_name||('file_'+id+'.jpg'),b.mime_type||'image/jpeg',id,u.id,sourceType,sourceId);
-  // Link the uploaded image to its financial record; without this, uploads succeed
-  // but transaction history has no attachment_url to display.
-  if(sourceId && sourceType==='tuition') {
-    const hit=findRow_('Tuition',sourceId);
-    if(hit) { const r=hit.obj; updateRow_('Tuition',hit.row,[r.id,r.date,r.student_id,r.school_id,r.type,r.amount,r.description,r.tracking_code,saved.url,r.created_by,r.created_at,r.reconciled,r.approved]); }
-    const tx=rows_('Transactions').find(x=>String(x.obj.source_id)===sourceId && (String(x.obj.kind)==='payment'||String(x.obj.kind)==='debt'));
-    if(tx) { const r=tx.obj; updateRow_('Transactions',tx.row,[r.id,r.date,r.school_id,r.kind,r.amount,r.description,r.tracking_code,saved.url,r.created_by,r.created_at,r.reconciled,r.approved,r.source_id,r.payment_source]); }
-  } else if(sourceId && sourceType==='expense') {
+  // Persist the Drive URL on the business record and its ledger transaction;
+  // merely creating a Drive file is not enough for managers to see the image later.
+  if(sourceId && (sourceType==='expense' || sourceType==='expenses')) {
     const hit=findRow_('Expenses',sourceId);
-    if(hit) { const r=hit.obj; updateRow_('Expenses',hit.row,[r.id,r.date,r.school_id,r.category,r.amount,r.description,r.tracking_code,saved.url,r.created_by,r.created_at,r.reconciled,r.approved,r.payment_source]); }
-    const tx=rows_('Transactions').find(x=>String(x.obj.source_id)===sourceId && String(x.obj.kind)==='expense');
-    if(tx) { const r=tx.obj; updateRow_('Transactions',tx.row,[r.id,r.date,r.school_id,r.kind,r.amount,r.description,r.tracking_code,saved.url,r.created_by,r.created_at,r.reconciled,r.approved,r.source_id,r.payment_source]); }
+    if(hit) updateRow_('Expenses',hit.row,[hit.obj.id,hit.obj.date,hit.obj.school_id,hit.obj.category,hit.obj.amount,hit.obj.description,hit.obj.tracking_code,saved.url,hit.obj.created_by,hit.obj.created_at,hit.obj.reconciled,hit.obj.approved,hit.obj.payment_source||'bank']);
+    rows_('Transactions').forEach(x=>{const t=x.obj;if(String(t.source_id)===sourceId&&String(t.kind)==='expense')updateRow_('Transactions',x.row,[t.id,t.date,t.school_id,t.kind,t.amount,t.description,t.tracking_code,saved.url,t.created_by,t.created_at,t.reconciled,t.approved,t.source_id,t.payment_source||'bank']);});
+  } else if(sourceId && (sourceType==='tuition' || sourceType==='payment' || sourceType==='debt')) {
+    const hit=findRow_('Tuition',sourceId);
+    if(hit) updateRow_('Tuition',hit.row,[hit.obj.id,hit.obj.date,hit.obj.student_id,hit.obj.school_id,hit.obj.type,hit.obj.amount,hit.obj.description,hit.obj.tracking_code,saved.url,hit.obj.created_by,hit.obj.created_at,hit.obj.reconciled,hit.obj.approved,hit.obj.payment_method||'']);
+    rows_('Transactions').forEach(x=>{const t=x.obj;if(String(t.source_id)===sourceId&&(String(t.kind)==='payment'||String(t.kind)==='debt'))updateRow_('Transactions',x.row,[t.id,t.date,t.school_id,t.kind,t.amount,t.description,t.tracking_code,saved.url,t.created_by,t.created_at,t.reconciled,t.approved,t.source_id,t.payment_source||'']);});
   }
-  return {success:true,url:saved.url,file_id:saved.file_id,entity_type:sourceType,entity_id:sourceId};
+  return {success:true,url:saved.url,file_id:saved.file_id};
 }
 
 function saveAttachmentIfAny_(b,type,sourceId,userId) {
