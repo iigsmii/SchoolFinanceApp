@@ -17,8 +17,8 @@ android {
         applicationId 'com.example.hesabdari'
         minSdkVersion 23
         targetSdkVersion 33
-        versionCode project.hasProperty('versionCodeOverride') ? project.property('versionCodeOverride').toInteger() : 2
-        versionName project.hasProperty('versionNameOverride') ? project.property('versionNameOverride').toString() : '2.14.1'
+        versionCode project.hasProperty('versionCodeOverride') ? project.property('versionCodeOverride').toInteger() : 3
+        versionName project.hasProperty('versionNameOverride') ? project.property('versionNameOverride').toString() : '2.14.2'
     }
 
     compileOptions {
