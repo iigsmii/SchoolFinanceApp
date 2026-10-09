@@ -315,7 +315,7 @@ function doPost(e) {
     ensureCoreData_();
     const body = parseBody_(e);
     let action = String(body.action || body.endpoint || '').replace(/^\/+/, '').toLowerCase();
-    const actionAliases = {'students/import':'students_import','api/students/import':'students_import','student_import':'students_import','api/student/import':'students_import','expense_categories':'categories','expense-categories':'categories','api/expense-categories':'categories','api/expense_categories':'categories'};
+    const actionAliases = {'students/import':'students_import','api/students/import':'students_import','student_import':'students_import','api/student/import':'students_import','expense_categories':'categories','expense-categories':'categories','api/expense-categories':'categories','api/expense_categories':'categories','api/finance-transaction':'finance_transaction'};
     action = actionAliases[action] || action;
     let result;
     switch(action) {
@@ -340,6 +340,7 @@ function doPost(e) {
       case 'expense_update': result=expenseUpdate_(body); break;
       case 'expense_delete': result=expenseDelete_(body); break;
       case 'transactions': result=transactions_(body); break;
+      case 'finance_transaction': result=financeTransactionAdd_(body); break;
       case 'transaction_delete': result=transactionDelete_(body); break;
       case 'bank': result=bank_(body); break;
       case 'bank_review': result=bankReview_(body); break;
@@ -968,6 +969,30 @@ function expenseDelete_(b) {
 }
 
 /* ---------- TRANSACTIONS ---------- */
+
+
+function financeTransactionAdd_(b) {
+  const u=auth_(b);
+  const kind=String(b.kind||'');
+  const allowed=['cash_receipt','cash_payment','cheque_receipt','cheque_payment'];
+  if(allowed.indexOf(kind)<0) throw new Error('نوع سند مالی معتبر نیست.');
+  const amount=Number(b.amount)||0;
+  if(amount<=0) throw new Error('مبلغ باید بیشتر از صفر باشد.');
+  const person=String(b.person||'').trim();
+  const description=String(b.description||'').trim();
+  if(!person) throw new Error('طرف حساب الزامی است.');
+  if(!description) throw new Error('شرح عملیات الزامی است.');
+  const cheque=kind.indexOf('cheque_')===0;
+  const sayad=String(b.tracking_code||'').replace(/\D/g,'');
+  if(cheque && !/^\d{16}$/.test(sayad)) throw new Error('شناسه صیادی باید ۱۶ رقم باشد.');
+  const date=date_(b.date);
+  const dueDate=cheque?date_(b.due_date):'';
+  const schoolId=u.role==='senior'?(Number(b.school_id)||Number(u.school_id)||0):Number(u.school_id)||0;
+  const detail=(kind==='cash_receipt'?'دریافت از: ':kind==='cash_payment'?'پرداخت به: ':kind==='cheque_receipt'?'دریافت چک از: ':'پرداخت چک به: ')+person+' | '+description+(cheque?' | بانک: '+String(b.bank_name||'')+' | سررسید: '+dueDate:'');
+  const id=nextId_('Transactions');
+  sheet_('Transactions').appendRow([id,date,String(schoolId),kind,amount,detail,String(b.tracking_code||''),'',u.id,now_(),false,false,'',cheque?'چک':'نقدی']);
+  return {success:true,id:id,kind:kind};
+}
 
 function transactions_(b) {
   const u=auth_(b);

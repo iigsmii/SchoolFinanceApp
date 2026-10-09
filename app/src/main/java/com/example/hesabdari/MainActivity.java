@@ -120,10 +120,10 @@ public class MainActivity extends Activity {
         base("داشبورد");
         LinearLayout welcome=new LinearLayout(this);welcome.setOrientation(LinearLayout.VERTICAL);welcome.setPadding(8,8,8,8);welcome.setBackground(bg(Color.WHITE,28));
         welcome.addView(tv("خوش آمدید، "+me.optString("name","مدیر"),20));welcome.addView(tv("مدرسه: "+me.optString("school_name","همه مدارس"),15));dashboardClock=tv("",18);dashboardClock.setTextColor(accent());welcome.addView(dashboardClock);content.addView(welcome);startClock();gap();
-        String[][] ms={{"👨‍🎓\nدانش‌آموزان","students"},{"💳\nشهریه و درآمد","tuition"},{"🧾\nهزینه‌ها","expenses"},{"🔄\nتراکنش‌ها","transactions"},{"📒\nریز گردش حساب","statement"},{"💰\nطلب من از مدرسه","claim"},{"📊\nگزارش مالی","report"},{"📝\nگزارش فعالیت","activity"},{"⚙️\nتنظیمات","settings"}};
-        if(isSeniorUser())ms=new String[][]{{"👨‍🎓\nدانش‌آموزان","students"},{"💳\nشهریه و درآمد","tuition"},{"🧾\nهزینه‌ها","expenses"},{"🏦\nتطبیق بانک","bank"},{"🧾\nچک صیادی","cheques"},{"👤\nمدیران","managers"},{"🏫\nمدارس","schools"},{"📒\nریز گردش حساب","statement"},{"💰\nطلب من از مدرسه","claim"},{"📊\nگزارش مالی","report"},{"📝\nگزارش فعالیت","activity"},{"📥\nخروجی پارسیان","export"},{"📢\nپیام به مدیران","messages"},{"⚙️\nتنظیمات","settings"}};
+        String[][] ms={{"👨‍🎓\nدانش‌آموزان","students"},{"💳\nدریافت و پرداخت","receipts"},{"🧾\nهزینه‌ها","expenses"},{"🔄\nتراکنش‌ها","transactions"},{"📒\nریز گردش حساب","statement"},{"💰\nطلب من از مدرسه","claim"},{"📊\nگزارش مالی","report"},{"📝\nگزارش فعالیت","activity"},{"⚙️\nتنظیمات","settings"}};
+        if(isSeniorUser())ms=new String[][]{{"👨‍🎓\nدانش‌آموزان","students"},{"💳\nدریافت و پرداخت","receipts"},{"🧾\nهزینه‌ها","expenses"},{"🏦\nتطبیق بانک","bank"},{"🧾\nچک صیادی","cheques"},{"👤\nمدیران","managers"},{"🏫\nمدارس","schools"},{"📒\nریز گردش حساب","statement"},{"💰\nطلب من از مدرسه","claim"},{"📊\nگزارش مالی","report"},{"📝\nگزارش فعالیت","activity"},{"📥\nخروجی پارسیان","export"},{"📢\nپیام به مدیران","messages"},{"⚙️\nتنظیمات","settings"}};
         GridLayout grid=new GridLayout(this);grid.setColumnCount(2);grid.setUseDefaultMargins(false);content.addView(grid);
-        for(String[] m:ms){Button b=cardBtn(m[0]);GridLayout.LayoutParams gp=new GridLayout.LayoutParams();gp.width=0;gp.height=(int)fs(145);gp.columnSpec=GridLayout.spec(GridLayout.UNDEFINED,1f);gp.setMargins(7,21,7,21);grid.addView(b,gp);b.setOnClickListener(v->{switch(m[1]){case"students":students();break;case"tuition":tuition();break;case"expenses":expenses();break;case"bank":bank();break;case"cheques":chequesScreen();break;case"managers":managers();break;case"schools":schools();break;case"report":report();break;case"transactions":transactionsScreen();break;case"export":exportParsian();break;case"messages":messagesAdmin();break;case"activity":activityLog();break;case"statement":accountStatement();break;case"claim":myClaim();break;case"update":checkForUpdate();break;default:settings();}});}
+        for(String[] m:ms){Button b=cardBtn(m[0]);GridLayout.LayoutParams gp=new GridLayout.LayoutParams();gp.width=0;gp.height=(int)fs(145);gp.columnSpec=GridLayout.spec(GridLayout.UNDEFINED,1f);gp.setMargins(7,21,7,21);grid.addView(b,gp);b.setOnClickListener(v->{switch(m[1]){case"students":students();break;case"tuition":tuition();break;case"receipts":receiptsPayments();break;case"expenses":expenses();break;case"bank":bank();break;case"cheques":chequesScreen();break;case"managers":managers();break;case"schools":schools();break;case"report":report();break;case"transactions":transactionsScreen();break;case"export":exportParsian();break;case"messages":messagesAdmin();break;case"activity":activityLog();break;case"statement":accountStatement();break;case"claim":myClaim();break;case"update":checkForUpdate();break;default:settings();}});}
         gap();content.addView(tv("پیام کاربر ارشد به مدیران",19));LinearLayout msgBox=new LinearLayout(this);msgBox.setOrientation(LinearLayout.VERTICAL);msgBox.setPadding(8,4,8,8);msgBox.setBackground(bg(Color.WHITE,24));content.addView(msgBox);loadMessages(msgBox);
         // Check the published version when the dashboard is opened. Android still requires user confirmation for APK installation.
         checkForUpdate();
@@ -207,6 +207,82 @@ public class MainActivity extends Activity {
             })
             .setNegativeButton("انصراف",null)
             .show();
+    }
+
+
+    void receiptsPayments(){
+        base("دریافت و پرداخت");
+        content.addView(tv("عملیات مالی",20));gap();
+        String[][] ops={{"⬇️ دریافت نقدی","cash_receipt"},{"⬆️ پرداخت نقدی","cash_payment"},{"🧾 دریافت چک","cheque_receipt"},{"📄 پرداخت چک","cheque_payment"}};
+        for(String[] op:ops){Button b=btn(op[0]);content.addView(b);gap();b.setOnClickListener(v->generalFinanceDialog(op[1]));}
+        Button history=btn("📚 سوابق دریافت و پرداخت");content.addView(history);gap();
+        history.setOnClickListener(v->generalFinanceHistory());
+        back();
+    }
+
+    void generalFinanceDialog(String operation){
+        boolean receipt=operation.endsWith("receipt");
+        boolean cheque=operation.startsWith("cheque");
+        String title=operation.equals("cash_receipt")?"دریافت نقدی":operation.equals("cash_payment")?"پرداخت نقدی":operation.equals("cheque_receipt")?"دریافت چک":"پرداخت چک";
+        LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(12,8,12,8);
+        TextView error=new TextView(this);error.setTextColor(Color.RED);error.setVisibility(View.GONE);l.addView(error);
+        EditText person=field(receipt?"دریافت از *":"پرداخت به *");
+        EditText amount=amountField();amount.setHint("مبلغ به ریال *");
+        TextView date=dateButton(todayJalali());
+        EditText purpose=field("بابت / شرح عملیات *");
+        EditText tracking=field(cheque?"شناسه صیادی ۱۶ رقمی *":"شماره پیگیری (اختیاری)");
+        EditText bank=field("نام بانک");
+        TextView due=dateButton(todayJalali());
+        l.addView(tv(receipt?"مشخصات دریافت":"مشخصات پرداخت",17));l.addView(person);l.addView(tv("تاریخ *",14));l.addView(date);l.addView(amount);l.addView(purpose);
+        if(cheque){l.addView(tracking);l.addView(bank);l.addView(tv("تاریخ سررسید چک *",14));l.addView(due);}
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(false);scroll.addView(l);
+        AlertDialog dlg=new AlertDialog.Builder(this).setTitle(title).setView(scroll).setPositiveButton("ثبت سند",null).setNegativeButton("انصراف",null).create();
+        dlg.setOnShowListener(v->dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(w->{
+            String p=person.getText().toString().trim(),a=purpose.getText().toString().trim(),ds=date.getText().toString().trim();
+            if(p.isEmpty()){showFormError(error,receipt?"نام دریافت‌کننده وجه را وارد کنید.":"نام پرداخت‌گیرنده را وارد کنید.");return;}
+            if(a.isEmpty()){showFormError(error,"شرح عملیات را وارد کنید.");return;}
+            if(!ds.matches("\\d{4}/\\d{2}/\\d{2}")){showFormError(error,"تاریخ معتبر وارد کنید.");return;}
+            long value;try{value=money(amount);}catch(Exception ex){value=0;}
+            if(value<=0){showFormError(error,"مبلغ باید بیشتر از صفر باشد.");return;}
+            String sayad=tracking.getText().toString().replaceAll("\\D","");
+            if(cheque && !sayad.matches("\\d{16}")){showFormError(error,"شناسه صیادی باید دقیقاً ۱۶ رقم باشد.");return;}
+            String dueDate=due.getText().toString().trim();
+            if(cheque && !dueDate.matches("\\d{4}/\\d{2}/\\d{2}")){showFormError(error,"تاریخ سررسید معتبر وارد کنید.");return;}
+            JSONObject body=new JSONObject();
+            try{
+                body.put("kind",operation);body.put("person",p);body.put("amount",value);
+                body.put("date",jalaliToGregorianString(ds));body.put("description",a);
+                body.put("tracking_code",cheque?sayad:tracking.getText().toString().trim());
+                body.put("bank_name",bank.getText().toString().trim());
+                if(cheque)body.put("due_date",jalaliToGregorianString(dueDate));
+            }catch(Exception ex){showFormError(error,"ساخت سند انجام نشد.");return;}
+            api.request("POST","/api/finance-transaction",body,new ApiClient.Callback(){
+                public void ok(JSONObject result){dlg.dismiss();toast("سند "+title+" ثبت شد");generalFinanceHistory();}
+                public void fail(String message){showFormError(error,message);}
+            });
+        }));
+        dlg.show();android.view.Window win=dlg.getWindow();if(win!=null)win.setLayout((int)(getResources().getDisplayMetrics().widthPixels*0.94),(int)(getResources().getDisplayMetrics().heightPixels*0.82));
+    }
+
+    void generalFinanceHistory(){
+        base("سوابق دریافت و پرداخت");
+        LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);
+        api.request("GET","/api/transactions",null,new ApiClient.Callback(){public void ok(JSONObject o){
+            JSONArray rows=o.optJSONArray("data");int count=0;
+            if(rows!=null)for(int i=rows.length()-1;i>=0;i--){JSONObject t=rows.optJSONObject(i);if(t==null)continue;String kind=t.optString("kind","");
+                if(!kind.startsWith("cash_")&&!kind.startsWith("cheque_"))continue;count++;
+                String title=kind.equals("cash_receipt")?"دریافت نقدی":kind.equals("cash_payment")?"پرداخت نقدی":kind.equals("cheque_receipt")?"دریافت چک":"پرداخت چک";
+                LinearLayout card=new LinearLayout(MainActivity.this);card.setOrientation(LinearLayout.VERTICAL);card.setPadding(12,12,12,12);card.setBackground(bg(Color.WHITE,20));
+                card.addView(tv(title+" | "+fmt(t.optLong("amount"))+" ریال",17));
+                card.addView(tv("تاریخ: "+jalaliFromGregorian(t.optString("date")),14));
+                card.addView(tv(t.optString("description",""),14));
+                card.addView(tv("طرف حساب: "+t.optString("person","—"),14));
+                if(kind.startsWith("cheque_"))card.addView(tv("شناسه صیادی: "+t.optString("tracking_code","—")+" | بانک: "+t.optString("bank_name","—")+" | سررسید: "+jalaliFromGregorian(t.optString("due_date","")),13));
+                list.addView(card);gapView(list);
+            }
+            if(count==0)list.addView(tv("هنوز سند دریافت یا پرداختی ثبت نشده است.",16));
+        }public void fail(String message){toast(message);}});
+        back();
     }
 
     void tuition(){
