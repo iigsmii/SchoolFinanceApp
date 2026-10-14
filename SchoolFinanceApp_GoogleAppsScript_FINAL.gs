@@ -279,6 +279,7 @@ function doGet(e) {
     if(action==='tuition') return json_(tuition_(b));
     if(action==='messages') return json_(messages_(b));
     if(action==='cheques') return json_(cheques_(b));
+    if(action==='cheque_list') return json_(chequeList_(b));
     if(action==='cheque_alerts') return json_(chequeAlerts_(b));
     if(action==='bank_review') return json_(bankReview_(b));
     if(action==='parsian_school_map') return json_(parsianSchoolMap_(b));
@@ -355,6 +356,7 @@ function doPost(e) {
       case 'category_delete': result=categoryDelete_(body); break;
       case 'messages': result=messages_(body); break;
       case 'cheques': result=cheques_(body); break;
+      case 'cheque_list': result=chequeList_(body); break;
       case 'cheque_review': result=chequeReview_(body); break;
       case 'message_add': result=messageAdd_(body); break;
       case 'message_delete': result=messageDelete_(body); break;
@@ -491,7 +493,8 @@ function students_(b) {
     const q=String(b.q).toLowerCase();
     data=data.filter(x=>String(x.name).toLowerCase().indexOf(q)>=0 || String(x.national_id).indexOf(q)>=0 || String(x.phone||'').indexOf(q)>=0);
   }
-  data=data.map(x=>{ const badNid=!/^\d{10}$/.test(digits_(x.national_id||'')); const badGrade=!normalizeGrade_(x.grade||''); const badPhone=String(x.phone||'').trim()!=='' && !/^0\d{10}$/.test(digits_(x.phone||'')); x.needs_fix=badNid||badGrade||badPhone; return x; });
+  const schoolNames={}; rows_('Schools').forEach(x=>schoolNames[String(x.obj.id)]=x.obj.name);
+   data=data.map(x=>{ x.school_name=schoolNames[String(x.school_id)]||''; const badNid=!/^\d{10}$/.test(digits_(x.national_id||'')); const badGrade=!normalizeGrade_(x.grade||''); const badPhone=String(x.phone||'').trim()!=='' && !/^0\d{10}$/.test(digits_(x.phone||'')); x.needs_fix=badNid||badGrade||badPhone; return x; });
   if(String(b.needs_fix||'').toLowerCase()==='1' || String(b.needs_fix||'').toLowerCase()==='true') data=data.filter(x=>x.needs_fix);
   return {success:true,data:data};
 }
@@ -536,7 +539,7 @@ function studentsImport_(b) {
     const imported=readStudentXlsx_(b.base64);
     if(!imported.length) throw new Error('هیچ دانش‌آموز قابل خواندن از فایل Excel پیدا نشد.');
 
-    let added=0, skipped=0, invalid=0;
+    let added=0, skipped=0, invalid=0, updatedPhones=0;
     let validNid=0, invalidNid=0, validGrade=0, invalidGrade=0, missingName=0;
     const gradeCounts={};
     const gradeSamples=[];
@@ -572,7 +575,22 @@ function studentsImport_(b) {
         }
         seen['bad:'+invalidKey]=true;
       } else if(seen[nid] || existing.some(x=>digits_(x.national_id||'')===nid)) {
-        skipped++; reasons.push('ردیف '+rowNo+' — '+name+' — کد ملی تکراری'); return;
+        // Repair missing mobile numbers on previously imported students when the same
+        // student is imported again with a valid phone number.
+        const importedPhone=normalizeImportedPhone_(r.phone||'');
+        if(importedPhone && /^0\d{10}$/.test(importedPhone)){
+          const match=existing.find(x=>digits_(x.national_id||'')===nid && !digits_(x.phone||''));
+          if(match){
+            const hit=findRow_('Students',match.id);
+            if(hit){
+              const m=hit.obj;
+              updateRow_('Students',hit.row,[m.id,m.name,m.grade,importedPhone,m.national_id,m.school_id,m.kol_code,m.moeen_code,m.tafsili_code,m.active,m.created_at]);
+              match.phone=importedPhone;
+              updatedPhones++;
+            }
+          }
+        }
+        skipped++; reasons.push('ردیف '+rowNo+' — '+name+' — کد ملی تکراری'+(importedPhone?' (شماره موبایل بررسی/اصلاح شد)':'')); return;
       } else { validNid++; }
 
       if(!name) {
@@ -613,6 +631,7 @@ function studentsImport_(b) {
       success:true,
       added:added,
       skipped:skipped,
+      updated_phones:updatedPhones,
       invalid:invalid,
       total:imported.length,
       message:'ورود Excel انجام شد. موارد نامعتبر نیز ساخته شدند تا بعداً قابل اصلاح باشند.',
@@ -724,7 +743,9 @@ function readStudentXlsx_(base64) {
   const nameCol=map['نام'];
   const lastCol=map['نامخانوادگی'];
   const nidCol=map['کدملی'];
-  const phoneCol=map['شمارهدی']||map['شمارهتلفن']||map['موبایل']||map['شمارهتماس'];
+  const phoneCol=map['شمارهدی']||map['شمارهتلفن']||map['موبایل']||map['شمارهتماس']||
+     map['شمارهموبایل']||map['تلفنهمراه']||map['موبایلولی']||map['شمارههمراه']||map['تلفن']||map['شمارهتماسهمراه']||map['شمارههمراهولی']||
+     Object.keys(map).filter(h=>h.indexOf('موبایل')>=0||h.indexOf('تلفنهمراه')>=0||h.indexOf('شمارههمراه')>=0).map(h=>map[h])[0];
   const gradeCol=map['کلاس']||map['پایه']||map['پایهدبستان']||map['پایهتحصیلی'];
   const birthCol=map['تاریختولد'];
   if(!nameCol || !lastCol) throw new Error('ستون‌های «نام» و «نام خانوادگی» پیدا نشدند.');
@@ -742,7 +763,7 @@ function readStudentXlsx_(base64) {
       last_name:last,
       name:name,
       national_id:digits_(r[nidCol]||''),
-      phone:phoneCol?digits_(r[phoneCol]||''):'',
+      phone:phoneCol?normalizeImportedPhone_(r[phoneCol]):'',
       grade:gradeCol?String(r[gradeCol]||'').trim():'',
       birth_date:birthCol?String(r[birthCol]||'').trim():'',
       row_number:i+1
@@ -751,6 +772,12 @@ function readStudentXlsx_(base64) {
   return out;
 }
 
+function normalizeImportedPhone_(value){
+  let p=digits_(value||'');
+  // Excel may store a leading-zero mobile as a 10-digit numeric value.
+  if(/^9\d{9}$/.test(p)) p='0'+p;
+  return p;
+}
 function importBankXlsx_(base64,schoolId){
   let clean=String(base64); if(clean.indexOf(',')>=0) clean=clean.substring(clean.indexOf(',')+1);
   const blob=Utilities.newBlob(Utilities.base64Decode(clean),'application/zip','bank.xlsx');
@@ -1248,6 +1275,17 @@ function cheques_(b){
   data=data.filter(x=>String(x.status||'pending')==='pending').map(x=>{x.school_name=schools[String(x.school_id)]||'';x.student_name=students[String(x.student_id)]?.name||'';x.student_grade=students[String(x.student_id)]?.grade||'';return x;});
   return {success:true,data:data};
 }
+function chequeList_(b){
+  const u=auth_(b);
+  const schools={}; rows_('Schools').forEach(x=>schools[String(x.obj.id)]=x.obj.name);
+  const students={}; rows_('Students').forEach(x=>students[String(x.obj.id)]=x.obj);
+  let data=rows_('Cheques').map(x=>Object.assign({},x.obj))
+    .filter(x=>['approved','bounced'].indexOf(String(x.status))>=0);
+  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  data=data.map(x=>{const s=students[String(x.student_id)]||{};x.school_name=schools[String(x.school_id)]||'';x.student_name=s.name||'';x.student_grade=s.grade||'';return x;})
+    .sort((a,b)=>String(a.due_date||'').localeCompare(String(b.due_date||'')));
+  return {success:true,data:data};
+}
 function chequeAlerts_(b){
   const u=auth_(b);
   const today=todayIso_();
@@ -1387,6 +1425,8 @@ function saveAttachment_(base64,fileName,mimeType,id,userId,sourceType,sourceId)
   const blob=Utilities.newBlob(bytes,mimeType,fileName);
   const folder=getDriveFolder_();
   const file=folder.createFile(blob);
+  try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW); }
+  catch(shareError) { console.warn('Could not enable link-view sharing: '+shareError); }
   const url=file.getUrl();
   sheet_('Attachments').appendRow([id,sourceType,sourceId,fileName,mimeType,file.getId(),url,userId,now_()]);
   return {url:url,file_id:file.getId()};

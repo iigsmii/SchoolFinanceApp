@@ -75,6 +75,7 @@ public class ApiClient {
         if(p.equals("/api/bank"))return "bank";
         if(p.equals("/api/my-claim"))return "my_claim";
         if(p.equals("/api/app-version"))return "app_version";
+        if(p.equals("/api/cheques/list"))return "cheque_list";
         if(p.equals("/api/cheques"))return "cheques";
         if(p.equals("/api/cheque/alerts"))return "cheque_alerts";
         if(p.matches("/api/cheques/\\d+/review")){put(b,"id",Long.parseLong(p.split("/")[3]));return "cheque_review";}
