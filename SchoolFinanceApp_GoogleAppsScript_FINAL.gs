@@ -26,7 +26,7 @@ const HEADERS = {
   Managers: ['id','name','username','password','school_id','role','active','created_at'],
   Schools: ['id','name','code','active','created_at'],
   Students: ['id','name','grade','phone','national_id','school_id','kol_code','moeen_code','tafsili_code','active','created_at'],
-  Tuition: ['id','date','student_id','school_id','type','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved'],
+  Tuition: ['id','date','student_id','school_id','type','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','payment_source'],
   Expenses: ['id','date','school_id','category','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','payment_source'],
   Transactions: ['id','date','school_id','kind','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','source_id','payment_source'],
   Bank: ['id','date','school_id','amount','description','tracking_code','bank_account','created_at','matched_transaction_id','matched','approved'],
@@ -244,7 +244,7 @@ function setup() {
   const settings = sheet_('Settings');
   const settingKeys={};
   rows_('Settings').forEach(x=>settingKeys[String(x.obj.key||'').trim()]=true);
-  [['schoolfinance_version','2.14-cheque-workflow'],['android_version','2.14'],['android_apk_url',''],['bank_account_code','0-1-11'],['currency','IRR']].forEach(x=>{
+  [['schoolfinance_version','2.14.3-cheque-review-fix'],['android_version','2.14'],['android_apk_url',''],['bank_account_code','0-1-11'],['currency','IRR']].forEach(x=>{
     if(!settingKeys[x[0]]) { settings.appendRow([x[0],x[1],now_()]); }
     else if(x[0]==='schoolfinance_version' || x[0]==='android_version') {
       const rr=rows_('Settings').find(y=>String(y.obj.key||'')===x[0]);
@@ -288,14 +288,14 @@ function doGet(e) {
     if(action==='my_claim') return json_(myClaim_(b));
     if(action==='app_version') return json_(appVersion_(b));
     if(action==='activity_logs'){ ensureStructure_(); return json_(activityLogs_(b)); }
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.14-cheque-workflow',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.14.3-cheque-review-fix',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
 function ensureStructure_() {
   const cache=CacheService.getScriptCache();
   const ss = SpreadsheetApp.openById(CFG.SPREADSHEET_ID);
-  if(cache.get('structure_ready_v24')==='1' && ss.getSheetByName('ActivityLogs') && ss.getSheetByName('Cheques')) return;
+  if(cache.get('structure_ready_v25')==='1' && ss.getSheetByName('ActivityLogs') && ss.getSheetByName('Cheques')) return;
   CFG.SHEETS.forEach(name => {
     let sh = ss.getSheetByName(name);
     if (!sh) sh = ss.insertSheet(name);
@@ -307,7 +307,7 @@ function ensureStructure_() {
     }
     sh.setFrozenRows(1);
   });
-  cache.put('structure_ready_v24','1',300);
+  cache.put('structure_ready_v25','1',300);
 }
 
 function doPost(e) {
@@ -1280,7 +1280,7 @@ function chequeList_(b){
   const schools={}; rows_('Schools').forEach(x=>schools[String(x.obj.id)]=x.obj.name);
   const students={}; rows_('Students').forEach(x=>students[String(x.obj.id)]=x.obj);
   let data=rows_('Cheques').map(x=>Object.assign({},x.obj))
-    .filter(x=>['approved','bounced'].indexOf(String(x.status))>=0);
+    .filter(x=>['approved','bounced','rejected','paid'].indexOf(String(x.status))>=0);
   if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>String(x.school_id)===String(u.school_id));
   data=data.map(x=>{const s=students[String(x.student_id)]||{};x.school_name=schools[String(x.school_id)]||'';x.student_name=s.name||'';x.student_grade=s.grade||'';return x;})
     .sort((a,b)=>String(a.due_date||'').localeCompare(String(b.due_date||'')));
@@ -1302,23 +1302,57 @@ function chequeAlerts_(b){
   return {success:true,data:alerts};
 }
 function chequeReview_(b){
-  const u=auth_(b,['senior','admin']);
-  const hit=findRow_('Cheques',b.id); if(!hit) throw new Error('چک یافت نشد.');
-  const c=hit.obj; const action=String(b.action||'');
-  let received=String(c.received_confirmed)==='true'; let favor=String(c.in_favor_confirmed)==='true';
-  if(action==='receive') received=true;
-  else if(action==='favor') favor=true;
-  else if(action==='reject'){ updateRow_('Cheques',hit.row,[c.id,c.date,c.student_id,c.school_id,c.amount,c.sayad_id,c.due_date,c.description,c.created_by,c.created_at,c.payment_method,received,favor,'rejected',c.approved_at,u.id,c.bank_reconciled,c.bank_status,c.bank_date]); return {success:true,status:'rejected'}; }
-  let status=(received&&favor)?'approved':'pending';
-  updateRow_('Cheques',hit.row,[c.id,c.date,c.student_id,c.school_id,c.amount,c.sayad_id,c.due_date,c.description,c.created_by,c.created_at,c.payment_method,received,favor,status,status==='approved'?now_():c.approved_at,status==='approved'?u.id:c.approved_by,c.bank_reconciled,c.bank_status,c.bank_date]);
-  if(status==='approved'){
-    // Only now does the cheque become a student payment and reduce debt.
-    const tid=nextId_('Tuition');
-    sheet_('Tuition').appendRow([tid,c.date,c.student_id,c.school_id,'payment',c.amount,'پرداخت با چک صیادی - '+c.sayad_id,c.sayad_id,'',c.created_by,c.created_at,false,true,'چک']);
-    sheet_('Transactions').appendRow([nextId_('Transactions'),c.date,c.school_id,'payment',c.amount,'پرداخت با چک صیادی - '+c.sayad_id,c.sayad_id,'',c.created_by,c.created_at,false,true,tid,'چک']);
-    addSystemMessage_('✅ چک صیادی '+c.sayad_id+' برای دانش‌آموز تأیید شد و به عنوان پرداخت ثبت گردید.',c.school_id);
+  const lock=LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const u=auth_(b,['senior','admin']);
+    const hit=findRow_('Cheques',b.id);
+    if(!hit) throw new Error('چک یافت نشد.');
+    const c=hit.obj;
+    // `action` is the API route after Android routing; `review_action` is the user's decision.
+    const action=String(b.review_action||b.decision||'');
+    const currentStatus=String(c.status||'pending');
+    if(['receive','favor','reject'].indexOf(action)<0) throw new Error('نوع عملیات چک نامعتبر است. لطفاً برنامه را به‌روزرسانی کنید.');
+
+    // Idempotency: never create a second tuition payment for an already decided cheque.
+    if(currentStatus==='approved' || currentStatus==='rejected' || currentStatus==='bounced' || currentStatus==='paid') {
+      return {success:true,status:currentStatus,already_processed:true,
+        received_confirmed:String(c.received_confirmed)==='true',
+        in_favor_confirmed:String(c.in_favor_confirmed)==='true'};
+    }
+
+    let received=String(c.received_confirmed)==='true';
+    let favor=String(c.in_favor_confirmed)==='true';
+    if(action==='receive') received=true;
+    else if(action==='favor') favor=true;
+    else if(action==='reject') {
+      updateRow_('Cheques',hit.row,[c.id,c.date,c.student_id,c.school_id,c.amount,c.sayad_id,c.due_date,c.description,c.created_by,c.created_at,c.payment_method,received,favor,'rejected',c.approved_at,u.id,c.bank_reconciled,c.bank_status,c.bank_date]);
+      SpreadsheetApp.flush();
+      addSystemMessage_('❌ چک صیادی '+c.sayad_id+' رد شد و به‌عنوان پرداخت شهریه ثبت نشد.',c.school_id);
+      SpreadsheetApp.flush();
+      return {success:true,status:'rejected',received_confirmed:received,in_favor_confirmed:favor};
+    }
+
+    const status=(received&&favor)?'approved':'pending';
+    updateRow_('Cheques',hit.row,[c.id,c.date,c.student_id,c.school_id,c.amount,c.sayad_id,c.due_date,c.description,c.created_by,c.created_at,c.payment_method,received,favor,status,status==='approved'?now_():c.approved_at,status==='approved'?u.id:c.approved_by,c.bank_reconciled,c.bank_status,c.bank_date]);
+
+    if(status==='approved') {
+      // Final approval creates one student payment and one matching ledger transaction.
+      // The script lock plus status guard above prevents duplicate records on repeated taps.
+      const tid=nextId_('Tuition');
+      const description='پرداخت با چک صیادی - '+c.sayad_id;
+      sheet_('Tuition').appendRow([tid,c.date,c.student_id,c.school_id,'payment',c.amount,description,c.sayad_id,'',c.created_by,c.created_at,false,true,'چک']);
+      const txid=nextId_('Transactions');
+      sheet_('Transactions').appendRow([txid,c.date,c.school_id,'payment',c.amount,description,c.sayad_id,'',c.created_by,c.created_at,false,true,tid,'چک']);
+      SpreadsheetApp.flush();
+      addSystemMessage_('✅ چک صیادی '+c.sayad_id+' تأیید شد و پرداخت آن در ریز گردش دانش‌آموز ثبت گردید.',c.school_id);
+      return {success:true,status:'approved',received_confirmed:true,in_favor_confirmed:true,tuition_id:tid,transaction_id:txid};
+    }
+    SpreadsheetApp.flush();
+    return {success:true,status:'pending',received_confirmed:received,in_favor_confirmed:favor,message:'تأیید اول ثبت شد؛ برای نهایی‌شدن، تأیید دیگر نیز لازم است.'};
+  } finally {
+    lock.releaseLock();
   }
-  return {success:true,status:status,received_confirmed:received,in_favor_confirmed:favor};
 }
 function addSystemMessage_(msg,schoolId){ const id='SYS-'+Utilities.getUuid(); sheet_('Messages').appendRow([id,msg,'system',now_(),true,String(schoolId||''),'manager,senior,admin']); }
 function todayIso_(){ return Utilities.formatDate(new Date(),Session.getScriptTimeZone()||'Asia/Tehran','yyyy-MM-dd'); }
@@ -1552,7 +1586,7 @@ function activityLogs_(b){
   return {success:true,data:data.slice(0,500)};
 }
 
-function appVersion_(b){ auth_(b); const settings={}; rows_('Settings').forEach(x=>settings[String(x.obj.key||'')]=String(x.obj.value||'')); return {success:true,version:settings['android_version']||'2.14',apk_url:settings['android_apk_url']||'',backend_version:'2.14-cheque-workflow'}; }
+function appVersion_(b){ auth_(b); const settings={}; rows_('Settings').forEach(x=>settings[String(x.obj.key||'')]=String(x.obj.value||'')); return {success:true,version:settings['android_version']||'2.14',apk_url:settings['android_apk_url']||'',backend_version:'2.14.3-cheque-review-fix'}; }
 
 function myClaim_(b){
   const u=auth_(b);
@@ -1601,11 +1635,12 @@ function sheet_(name) {
 function rows_(name) {
   const sh=sheet_(name);
   if(!sh || sh.getLastRow()<2) return [];
-  const values=sh.getRange(2,1,sh.getLastRow()-1,sh.getLastColumn()).getValues();
-  const headers=HEADERS[name];
+  const lastCol=sh.getLastColumn();
+  const headers=sh.getRange(1,1,1,lastCol).getDisplayValues()[0].map(h=>String(h||'').trim());
+  const values=sh.getRange(2,1,sh.getLastRow()-1,lastCol).getValues();
   return values.map((v,i)=>{
     const obj={};
-    headers.forEach((h,j)=>obj[h]=v[j]);
+    headers.forEach((h,j)=>{ if(h) obj[h]=v[j]; });
     return {row:i+2,obj:obj};
   });
 }
@@ -1616,8 +1651,24 @@ function findRow_(name,id) {
   return null;
 }
 
+// Write by header name, not physical column order. Older deployments may have
+// appended newer columns at the end of a sheet, so positional writes can update
+// the wrong fields while still returning success.
 function updateRow_(name,row,values) {
-  sheet_(name).getRange(row,1,1,values.length).setValues([values]);
+  const sh=sheet_(name);
+  const canonical=HEADERS[name]||[];
+  let headers=sh.getRange(1,1,1,Math.max(1,sh.getLastColumn())).getDisplayValues()[0].map(h=>String(h||'').trim());
+  values.forEach((value,index)=>{
+    const header=canonical[index];
+    if(!header) return;
+    let col=headers.indexOf(header);
+    if(col<0){
+      col=sh.getLastColumn();
+      sh.getRange(1,col+1).setValue(header);
+      headers.push(header);
+    }
+    sh.getRange(row,col+1).setValue(value);
+  });
 }
 
 function softDeleteBySource_(name,id) {

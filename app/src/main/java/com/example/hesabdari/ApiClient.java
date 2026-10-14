@@ -48,6 +48,12 @@ public class ApiClient {
             if (b.has("comment") && !b.has("description")) {
                 b.put("description", b.optString("comment", ""));
             }
+            // The cheque review payload has its own decision (receive/favor/reject).
+            // Preserve it before replacing `action` with the Apps Script route name.
+            if (p.matches("/api/cheques/\\d+/review")) {
+                String decision = b.optString("review_action", b.optString("decision", b.optString("action", "")));
+                if (!decision.isEmpty()) b.put("review_action", decision);
+            }
             String action=actionFor(method,p,b);
             b.put("action",action);
             if(token!=null && token.length()>0)b.put("token",token);
