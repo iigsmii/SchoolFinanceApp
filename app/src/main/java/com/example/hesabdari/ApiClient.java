@@ -43,6 +43,11 @@ public class ApiClient {
         if(write) main.post(this::showWaiting);
         pool.execute(()->{try{
             String p=path; JSONObject b=body==null?new JSONObject():new JSONObject(body.toString());
+            // Keep one request contract between Android and Apps Script.
+            // Older UI forms still send comment; the backend stores description.
+            if (b.has("comment") && !b.has("description")) {
+                b.put("description", b.optString("comment", ""));
+            }
             String action=actionFor(method,p,b);
             b.put("action",action);
             if(token!=null && token.length()>0)b.put("token",token);
@@ -78,13 +83,23 @@ public class ApiClient {
         if(p.startsWith("/api/transactions?kind=")){put(b,"kind_query",Uri.decode(p.substring(p.indexOf('=')+1)));return "transactions";}
         if(p.equals("/api/transactions"))return "transactions";
         if(p.matches("/api/transactions/\\d+/review")){put(b,"id",Long.parseLong(p.split("/")[3]));return "transaction_review";}
-        if(p.matches("/api/transactions/\\d+")){put(b,"id",Long.parseLong(tail(p)));return "transaction_delete";}
+        if(p.matches("/api/transactions/\\d+")){
+            put(b,"id",Long.parseLong(tail(p)));
+            if(method.equalsIgnoreCase("PATCH")) return "transaction_update";
+            if(method.equalsIgnoreCase("DELETE")) return "transaction_delete";
+            return "transactions";
+        }
+        if(p.matches("/api/tuition/\\d+")){
+            put(b,"id",Long.parseLong(tail(p)));
+            return method.equalsIgnoreCase("DELETE") ? "tuition_delete" : "tuition_update";
+        }
         if(p.equals("/api/bank/review"))return "bank_review";
         if(p.equals("/api/bank/reconcile"))return "bank_reconcile";
+        if(p.equals("/api/bank/match"))return "bank_match";
         if(p.equals("/api/bank/upload"))return "bank_upload";
         if(p.equals("/api/students/import"))return "students_import";
         if(p.equals("/api/senior-messages"))return method.equals("GET")?"messages":"message_add";
-        if(p.startsWith("/api/senior-messages/")){put(b,"id",Long.parseLong(tail(p)));return "message_delete";}
+        if(p.startsWith("/api/senior-messages/")){put(b,"id",tail(p));return "message_delete";}
         if(p.equals("/api/managers"))return method.equals("GET")?"managers":"manager_add";
         if(p.equals("/api/managers/import-attached"))return "manager_import_attached";
         if(p.startsWith("/api/managers/")){put(b,"id",Long.parseLong(tail(p)));return method.equals("DELETE")?"manager_delete":"manager_update";}
@@ -113,7 +128,12 @@ public class ApiClient {
         if(!o.optBoolean("success",false))return o;
         if(path.equals("/api/students")||path.startsWith("/api/students?q="))return o;
         if(path.matches("/api/students/\\d+")){
-            JSONArray a=o.optJSONArray("data"); if(a!=null){long id=Long.parseLong(tail(path));for(int i=0;i<a.length();i++)if(a.optJSONObject(i).optLong("id")!=id)a.remove(i--);}
+            JSONArray a=o.optJSONArray("data");
+            if(a!=null){
+                long id=Long.parseLong(tail(path)); JSONObject found=null;
+                for(int i=0;i<a.length();i++){JSONObject item=a.optJSONObject(i);if(item!=null&&item.optLong("id")==id){found=item;break;}}
+                o.put("data",found==null?JSONObject.NULL:found);
+            }
         }
         if(path.matches("/api/students/\\d+/balance")){
             long balance=0; JSONArray a=o.optJSONArray("data"); if(a!=null) for(int i=0;i<a.length();i++){JSONObject x=a.optJSONObject(i); if(x==null)continue; long amount=x.optLong("amount"); if("debt".equals(x.optString("type"))) balance+=amount; else if("payment".equals(x.optString("type"))) balance-=amount;} JSONObject r=new JSONObject(); r.put("success",true); r.put("balance",Math.max(0,balance)); return r;

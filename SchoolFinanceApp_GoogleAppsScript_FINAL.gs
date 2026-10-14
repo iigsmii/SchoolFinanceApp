@@ -342,6 +342,7 @@ function doPost(e) {
       case 'transactions': result=transactions_(body); break;
       case 'finance_transaction': result=financeTransactionAdd_(body); break;
       case 'transaction_delete': result=transactionDelete_(body); break;
+      case 'transaction_update': result=transactionUpdate_(body); break;
       case 'bank': result=bank_(body); break;
       case 'bank_review': result=bankReview_(body); break;
       case 'bank_match': result=bankMatch_(body); break;
@@ -1013,6 +1014,31 @@ function transactions_(b) {
   return {success:true,data:data};
 }
 
+function transactionUpdate_(b) {
+  const u=auth_(b);
+  const hit=findRow_('Transactions',b.id);
+  if(!hit) throw new Error('تراکنش یافت نشد.');
+  if(u.role!=='senior' && String(hit.obj.created_by)!==String(u.id)) throw new Error('دسترسی مجاز نیست.');
+  const kind=String(hit.obj.kind||'');
+  const sourceId=hit.obj.source_id;
+  const amount=b.amount!==undefined?amount_(b.amount):Number(hit.obj.amount);
+  if(amount<=0) throw new Error('مبلغ نامعتبر است.');
+  const description=String(b.description!==undefined?b.description:(b.comment!==undefined?b.comment:hit.obj.description));
+  const date=b.date!==undefined?date_(b.date):hit.obj.date;
+  if(kind==='payment'||kind==='debt') {
+    const src=findRow_('Tuition',sourceId);
+    if(!src) throw new Error('رکورد اصلی شهریه یافت نشد.');
+    if(u.role!=='senior' && String(src.obj.created_by)!==String(u.id)) throw new Error('دسترسی مجاز نیست.');
+    updateRow_('Tuition',src.row,[src.obj.id,date,src.obj.student_id,src.obj.school_id,src.obj.type,amount,description,b.tracking_code!==undefined?String(b.tracking_code):src.obj.tracking_code,src.obj.image_url,src.obj.created_by,src.obj.created_at,src.obj.reconciled,src.obj.approved,src.obj.payment_method||'']);
+  } else if(kind==='expense') {
+    const src=findRow_('Expenses',sourceId);
+    if(!src) throw new Error('رکورد اصلی هزینه یافت نشد.');
+    updateRow_('Expenses',src.row,[src.obj.id,date,src.obj.school_id,src.obj.category,amount,description,b.tracking_code!==undefined?String(b.tracking_code):src.obj.tracking_code,src.obj.image_url,src.obj.created_by,src.obj.created_at,src.obj.reconciled,src.obj.approved,src.obj.payment_source||'bank']);
+  } else throw new Error('ویرایش این نوع تراکنش پشتیبانی نمی‌شود.');
+  updateRow_('Transactions',hit.row,[hit.obj.id,date,hit.obj.school_id,kind,amount,description,b.tracking_code!==undefined?String(b.tracking_code):hit.obj.tracking_code,hit.obj.image_url,hit.obj.created_by,hit.obj.created_at,hit.obj.reconciled,hit.obj.approved,sourceId,hit.obj.payment_source||'bank']);
+  return {success:true};
+}
+
 function transactionDelete_(b) {
   const u=auth_(b);
   const hit=findRow_('Transactions',b.id);
@@ -1056,49 +1082,86 @@ function bankReview_(b) {
 }
 
 function bankMatch_(b) {
-  const u=auth_(b,['senior','admin']);
+  auth_(b,['senior','admin']);
   const hit=findRow_('Bank',b.id);
   if(!hit) throw new Error('تراکنش بانکی یافت نشد.');
   const transactionId=String(b.transaction_id||'');
   const tx=findRow_('Transactions',transactionId);
   if(!tx) throw new Error('تراکنش اپ یافت نشد.');
+  if(String(tx.obj.kind)==='debt') throw new Error('بدهی دانش‌آموز قابل تطبیق با بانک نیست.');
+  if(String(hit.obj.school_id)!==String(tx.obj.school_id)) throw new Error('تراکنش بانکی و تراکنش نرم‌افزار باید متعلق به یک مدرسه باشند.');
   const bankAmount=Number(hit.obj.amount);
   const txAmount=Number(tx.obj.amount);
-  const matched=bankAmount===txAmount;
+  if(!Number.isFinite(bankAmount)||!Number.isFinite(txAmount)||bankAmount<=0||txAmount<=0) throw new Error('مبلغ تراکنش معتبر نیست.');
+  if(bankAmount!==txAmount) throw new Error('مبلغ تراکنش بانکی با مبلغ تراکنش نرم‌افزار برابر نیست.');
+  if(String(hit.obj.matched)==='true' && String(hit.obj.matched_transaction_id)!==transactionId) throw new Error('این ردیف بانکی قبلاً به تراکنش دیگری متصل شده است.');
+  if(String(tx.obj.reconciled)==='true' && String(tx.obj.approved)==='true' && String(hit.obj.matched_transaction_id)!==transactionId) throw new Error('این تراکنش قبلاً تطبیق و تأیید شده است.');
   updateRow_('Bank',hit.row,[
     hit.obj.id,hit.obj.date,hit.obj.school_id,hit.obj.amount,hit.obj.description,
     hit.obj.tracking_code,hit.obj.bank_account,hit.obj.created_at,transactionId,
-    matched,true
+    true,hit.obj.approved
   ]);
   updateRow_('Transactions',tx.row,[
     tx.obj.id,tx.obj.date,tx.obj.school_id,tx.obj.kind,tx.obj.amount,tx.obj.description,
     tx.obj.tracking_code,tx.obj.image_url,tx.obj.created_by,tx.obj.created_at,
-    matched,true,tx.obj.source_id
+    true,true,tx.obj.source_id,tx.obj.payment_source||''
   ]);
-  return {success:true,matched:matched};
+  return {success:true,matched:true};
 }
-
-function transactionReview_(b){ const u=auth_(b,['senior','admin']); const hit=findRow_('Transactions',b.id); if(!hit) throw new Error('تراکنش یافت نشد.'); const r=hit.obj; const approved=String(b.status||'')==='approved'; updateRow_('Transactions',hit.row,[r.id,r.date,r.school_id,r.kind,r.amount,r.description,r.tracking_code,r.image_url,r.created_by,r.created_at,r.reconciled,approved,r.source_id]); return {success:true,approved:approved}; }
+function transactionReview_(b){ const u=auth_(b,['senior','admin']); const hit=findRow_('Transactions',b.id); if(!hit) throw new Error('تراکنش یافت نشد.'); const r=hit.obj; const approved=String(b.status||'')==='approved'; updateRow_('Transactions',hit.row,[r.id,r.date,r.school_id,r.kind,r.amount,r.description,r.tracking_code,r.image_url,r.created_by,r.created_at,r.reconciled,approved,r.source_id,r.payment_source||'']); return {success:true,approved:approved}; }
 function bankReconcile_(b){
   auth_(b,['senior','admin']);
-  const banks=rows_('Bank').map(x=>x.obj);
+  const bankRows=rows_('Bank');
+  const banks=bankRows.map(x=>x.obj);
   const txRows=rows_('Transactions'); let matched=0,unmatched=0;
+  const usedBankIds={};
+  // Reserve bank rows that are already linked, so one deposit cannot match multiple app transactions.
+  bankRows.forEach(x=>{
+    const z=x.obj;
+    if(String(z.matched)==='true' || String(z.matched_transaction_id||'')!=='') usedBankIds[String(z.id)]=true;
+  });
   txRows.forEach(x=>{
     const t=x.obj;
     // Student debts are accounting obligations, not bank deposits and must never be reconciled with Bank.
-    if(String(t.kind)==='debt') return;
-    const hit=banks.find(z=>String(z.tracking_code||'') && String(z.tracking_code||'')===String(t.tracking_code||'') && String(z.school_id)===String(t.school_id)) ||
-              banks.find(z=>Number(z.amount)===Number(t.amount) && String(z.school_id)===String(t.school_id));
-    const ok=!!hit;
-    if(ok){ matched++; updateRow_('Transactions',x.row,[t.id,t.date,t.school_id,t.kind,t.amount,t.description,t.tracking_code,t.image_url,t.created_by,t.created_at,true,t.approved,t.source_id,t.payment_source||'']); }
-    else { unmatched++; updateRow_('Transactions',x.row,[t.id,t.date,t.school_id,t.kind,t.amount,t.description,t.tracking_code,t.image_url,t.created_by,t.created_at,false,t.approved,t.source_id,t.payment_source||'']); }
+    if(String(t.kind)==='debt'){
+      const linked=bankRows.find(z=>String(z.obj.matched_transaction_id||'')===String(t.id));
+      if(linked){
+        const z=linked.obj;
+        updateRow_('Bank',linked.row,[z.id,z.date,z.school_id,z.amount,z.description,z.tracking_code,z.bank_account,z.created_at,'',false,z.approved]);
+        delete usedBankIds[String(z.id)];
+      }
+      if(String(t.reconciled)==='true') updateRow_('Transactions',x.row,[t.id,t.date,t.school_id,t.kind,t.amount,t.description,t.tracking_code,t.image_url,t.created_by,t.created_at,false,t.approved,t.source_id,t.payment_source||'']);
+      return;
+    }
+    // Keep a previously saved link stable on subsequent reconciliation runs.
+    const existing=bankRows.find(z=>String(z.obj.matched_transaction_id||'')===String(t.id));
+    if(existing){
+      usedBankIds[String(existing.obj.id)]=true;
+      matched++;
+      if(String(t.reconciled)!=='true') updateRow_('Transactions',x.row,[t.id,t.date,t.school_id,t.kind,t.amount,t.description,t.tracking_code,t.image_url,t.created_by,t.created_at,true,t.approved,t.source_id,t.payment_source||'']);
+      return;
+    }
+    const available=z=>!usedBankIds[String(z.id)] && String(z.school_id)===String(t.school_id);
+    const hitRow=bankRows.find(z=>available(z.obj) && String(z.obj.tracking_code||'')!=='' && String(z.obj.tracking_code||'')===String(t.tracking_code||'')) ||
+                 bankRows.find(z=>available(z.obj) && Number(z.obj.amount)>0 && Number(z.obj.amount)===Number(t.amount));
+    if(hitRow){
+      const z=hitRow.obj;
+      usedBankIds[String(z.id)]=true;
+      updateRow_('Bank',hitRow.row,[z.id,z.date,z.school_id,z.amount,z.description,z.tracking_code,z.bank_account,z.created_at,String(t.id),true,z.approved]);
+      matched++;
+      updateRow_('Transactions',x.row,[t.id,t.date,t.school_id,t.kind,t.amount,t.description,t.tracking_code,t.image_url,t.created_by,t.created_at,true,t.approved,t.source_id,t.payment_source||'']);
+    } else {
+      unmatched++;
+      if(String(t.reconciled)==='true') updateRow_('Transactions',x.row,[t.id,t.date,t.school_id,t.kind,t.amount,t.description,t.tracking_code,t.image_url,t.created_by,t.created_at,false,t.approved,t.source_id,t.payment_source||'']);
+    }
   });
   // Resolve approved cheques from bank rows. A bank description containing return/bounce terms marks the cheque as unpaid.
   const chequeRows=rows_('Cheques');
   chequeRows.forEach(x=>{
     const c=x.obj; if(String(c.status)!=='approved' || String(c.bank_reconciled)==='true') return;
-    const hit=banks.find(z=>String(z.tracking_code||'')===String(c.sayad_id||'') && String(z.school_id)===String(c.school_id)) || banks.find(z=>Number(z.amount)===Number(c.amount) && String(z.school_id)===String(c.school_id) && String(z.date||'')>=String(c.due_date||''));
+    const hit=banks.find(z=>!usedBankIds[String(z.id)] && String(z.tracking_code||'')===String(c.sayad_id||'') && String(z.school_id)===String(c.school_id)) || banks.find(z=>!usedBankIds[String(z.id)] && Number(z.amount)===Number(c.amount) && String(z.school_id)===String(c.school_id) && String(z.date||'')>=String(c.due_date||''));
     if(!hit) return;
+    usedBankIds[String(hit.id)]=true;
     const desc=String(hit.description||''); const bounced=/(برگشت|برگشتی|بلامحل|پاس نشده|پاس نشد|عدم پرداخت|عودت)/i.test(desc);
     updateRow_('Cheques',x.row,[c.id,c.date,c.student_id,c.school_id,c.amount,c.sayad_id,c.due_date,c.description,c.created_by,c.created_at,c.payment_method,c.received_confirmed,c.in_favor_confirmed,bounced?'bounced':'paid',c.approved_at,c.approved_by,true,bounced?'bounced':'paid',hit.date]);
     if(bounced) addSystemMessage_('⚠️ چک صیادی '+c.sayad_id+' دانش‌آموز با سررسید '+c.due_date+' پاس نشده/برگشت خورده است. مدیر مدرسه و کاربر ارشد باید پیگیری کنند.',c.school_id);
