@@ -105,6 +105,7 @@ public class ApiClient {
     private String pathToAction(String p){
         if(p.equals("/api/tuition"))return "tuition";
         if(p.equals("/api/expenses"))return "expenses";
+        if(p.equals("/api/finance-transaction"))return "finance_transaction";
         return "health";
     }
 

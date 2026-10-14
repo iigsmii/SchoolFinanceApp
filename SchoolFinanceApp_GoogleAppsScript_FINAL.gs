@@ -423,6 +423,9 @@ function auth_(b, roles) {
   const raw=CacheService.getScriptCache().get('sess_'+token);
   if(!raw) throw new Error('نشست منقضی شده است. دوباره وارد شوید.');
   const u=JSON.parse(raw);
+  // The Android client historically receives 'admin' for senior users. Normalize both aliases
+  // to one canonical privileged role so all endpoint-level filters enforce the same access.
+  if (u.role==='admin') u.role='senior';
   if (roles && roles.length && roles.indexOf(u.role)<0) throw new Error('دسترسی مجاز نیست.');
   return u;
 }
@@ -1364,7 +1367,10 @@ function parsianExport_(b) {
       out.push(parsianRow_(t.id,parts[2],parts[1],parts[0],cat,t.description,amount,0,t.tracking_code,'',t.tracking_code,'',0,''));
       out.push(parsianRow_(t.id,bank[2],bank[1],bank[0],'بانک صادرات 002',t.description,0,amount,t.tracking_code,'',t.tracking_code,'',0,''));
     } else {
-      const student=students[String(t.source_id)] || students[String(t.student_id)];
+      const tuitionHit=findRow_('Tuition',t.source_id);
+      const tuitionRecord=tuitionHit?tuitionHit.obj:null;
+      const studentId=tuitionRecord?tuitionRecord.student_id:(t.student_id||'');
+      const student=students[String(studentId)] || students[String(t.student_id)];
       if(!student) return;
             const taf=String(student.tafsili_code||'');
       const moe=String(student.moeen_code||'');
