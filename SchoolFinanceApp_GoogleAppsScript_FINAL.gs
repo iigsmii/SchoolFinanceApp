@@ -244,7 +244,7 @@ function setup() {
   const settings = sheet_('Settings');
   const settingKeys={};
   rows_('Settings').forEach(x=>settingKeys[String(x.obj.key||'').trim()]=true);
-  [['schoolfinance_version','2.14.3-cheque-review-fix'],['android_version','2.14'],['android_apk_url',''],['bank_account_code','0-1-11'],['currency','IRR']].forEach(x=>{
+  [['schoolfinance_version','2.14.4-balance-invoice-leading-zero-fix'],['android_version','2.14.4'],['android_apk_url',''],['bank_account_code','0-1-11'],['currency','IRR']].forEach(x=>{
     if(!settingKeys[x[0]]) { settings.appendRow([x[0],x[1],now_()]); }
     else if(x[0]==='schoolfinance_version' || x[0]==='android_version') {
       const rr=rows_('Settings').find(y=>String(y.obj.key||'')===x[0]);
@@ -288,7 +288,7 @@ function doGet(e) {
     if(action==='my_claim') return json_(myClaim_(b));
     if(action==='app_version') return json_(appVersion_(b));
     if(action==='activity_logs'){ ensureStructure_(); return json_(activityLogs_(b)); }
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.14.3-cheque-review-fix',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.14.4-balance-invoice-leading-zero-fix',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
@@ -485,16 +485,42 @@ function schoolDelete_(b){ auth_(b,['senior','admin']); const hit=findRow_('Scho
 
 function students_(b) {
   const u=auth_(b);
-  let data=rows_('Students').map(x=>x.obj).filter(x=>String(x.active)!=='false');
-  if(u.role!=='senior') data=data.filter(x=>String(x.school_id)===String(u.school_id));
-  if(b.school_id) data=data.filter(x=>String(x.school_id)===String(b.school_id));
-  if(b.id) data=data.filter(x=>String(x.id)===String(b.id));
-  if(b.q) {
-    const q=String(b.q).toLowerCase();
-    data=data.filter(x=>String(x.name).toLowerCase().indexOf(q)>=0 || String(x.national_id).indexOf(q)>=0 || String(x.phone||'').indexOf(q)>=0);
-  }
+  const studentRows=rows_('Students');
+  const sh=sheet_('Students');
+  let data=[];
+  studentRows.forEach(hit=>{
+    const x=hit.obj;
+    if(String(x.active)==='false') return;
+    // Excel/Sheets can drop leading zeroes from numeric identifiers. Recover the
+    // canonical 10-digit national ID and 11-digit mobile where the pattern is known.
+    const nid=normalizeNationalId_(x.national_id||'');
+    const phone=normalizeImportedPhone_(x.phone||'');
+    if(nid!==String(x.national_id==null?'':x.national_id) || phone!==String(x.phone==null?'':x.phone)) {
+      try {
+        sh.getRange(hit.row,4,1,2).setNumberFormat('@');
+        sh.getRange(hit.row,4).setValue(phone);
+        sh.getRange(hit.row,5).setValue(nid);
+        const codes=studentAccountCodes_(x.id,x.grade,x.school_id,nid);
+        sh.getRange(hit.row,7,1,3).setValues([[codes.kol,codes.moeen,codes.tafsili]]);
+        x.phone=phone; x.national_id=nid;
+        x.kol_code=codes.kol; x.moeen_code=codes.moeen; x.tafsili_code=codes.tafsili;
+      } catch(repairErr) {
+        // Still return corrected values for this response; a transient sheet write
+        // issue must not make every student appear to need correction.
+        x.phone=phone; x.national_id=nid;
+      }
+    }
+    if(u.role!=='senior' && String(x.school_id)!==String(u.school_id)) return;
+    if(b.school_id && String(x.school_id)!==String(b.school_id)) return;
+    if(b.id && String(x.id)!==String(b.id)) return;
+    if(b.q) {
+      const q=String(b.q).toLowerCase();
+      if(String(x.name).toLowerCase().indexOf(q)<0 && String(x.national_id).indexOf(q)<0 && String(x.phone||'').indexOf(q)<0) return;
+    }
+    data.push(x);
+  });
   const schoolNames={}; rows_('Schools').forEach(x=>schoolNames[String(x.obj.id)]=x.obj.name);
-   data=data.map(x=>{ x.school_name=schoolNames[String(x.school_id)]||''; const badNid=!/^\d{10}$/.test(digits_(x.national_id||'')); const badGrade=!normalizeGrade_(x.grade||''); const badPhone=String(x.phone||'').trim()!=='' && !/^0\d{10}$/.test(digits_(x.phone||'')); x.needs_fix=badNid||badGrade||badPhone; return x; });
+  data=data.map(x=>{ x.school_name=schoolNames[String(x.school_id)]||''; const nid=normalizeNationalId_(x.national_id||''); const phone=normalizeImportedPhone_(x.phone||''); const badNid=!/^\d{10}$/.test(nid); const badGrade=!normalizeGrade_(x.grade||''); const badPhone=String(phone||'').trim()!=='' && !/^0\d{10}$/.test(phone); x.national_id=nid; x.phone=phone; x.needs_fix=badNid||badGrade||badPhone; return x; });
   if(String(b.needs_fix||'').toLowerCase()==='1' || String(b.needs_fix||'').toLowerCase()==='true') data=data.filter(x=>x.needs_fix);
   return {success:true,data:data};
 }
@@ -507,15 +533,16 @@ function studentAdd_(b) {
   ensureCoreData_();
   const schoolId=(u.role==='senior' || u.role==='admin') ? b.school_id : u.school_id;
   if(!schoolId) throw new Error('مدرسه مشخص نشده است.');
-  const nid=digits_(b.national_id);
+  const nid=normalizeNationalId_(b.national_id);
   if(!/^\d{10}$/.test(nid)) throw new Error('کد ملی باید دقیقاً ۱۰ رقم انگلیسی باشد.');
-  const phone=digits_(b.phone);
+  const phone=normalizeImportedPhone_(b.phone);
   if(phone && !/^0\d{10}$/.test(phone)) throw new Error('شماره تلفن باید ۱۱ رقم و با ۰ شروع شود.');
-  const duplicate=rows_('Students').some(x=>digits_(x.obj.national_id||'')===nid);
+  const duplicate=rows_('Students').some(x=>normalizeNationalId_(x.obj.national_id||'')===nid);
   if(duplicate) throw new Error('این کد ملی قبلاً در سیستم برای یک دانش‌آموز ثبت شده است و در هیچ مدرسه دیگری نیز قابل ثبت نیست.');
   const id=nextId_('Students');
   const grade=normalizeGrade_(b.grade||'');
   const codes=studentAccountCodes_(id,grade,schoolId,nid);
+  try { sheet_('Students').getRange(2,4,Math.max(1,sheet_('Students').getMaxRows()-1),2).setNumberFormat('@'); } catch(ignoreTextFormat) {}
   sheet_('Students').appendRow([
     id,String(b.name||'').trim(),grade,phone,nid,String(schoolId),
     codes.kol,codes.moeen,codes.tafsili,true,now_()
@@ -546,6 +573,8 @@ function studentsImport_(b) {
     const reasons=[];
     const invalidStudents=[];
     const existing=rows_('Students').map(x=>x.obj);
+    const studentsSheet=sheet_('Students');
+    try { studentsSheet.getRange(2,4,Math.max(1,studentsSheet.getMaxRows()-1),2).setNumberFormat('@'); } catch(ignoreFormat) {}
     const seen={};
 
     imported.forEach((r,idx)=>{
@@ -553,7 +582,7 @@ function studentsImport_(b) {
       const first=String(r.first_name||'').trim();
       const last=String(r.last_name||'').trim();
       const name=String(r.name||[first,last].filter(Boolean).join(' ')).replace(/\s+/g,' ').trim();
-      const nid=digits_(r.national_id||'');
+      const nid=normalizeNationalId_(r.national_id||'');
       const grade=normalizeGrade_(r.grade||'');
       const rowErrors=[];
       if(name){} else { missingName++; }
@@ -574,12 +603,12 @@ function studentsImport_(b) {
           skipped++; reasons.push('ردیف '+rowNo+' — '+name+' — رکورد نامعتبر تکراری'); return;
         }
         seen['bad:'+invalidKey]=true;
-      } else if(seen[nid] || existing.some(x=>digits_(x.national_id||'')===nid)) {
+      } else if(seen[nid] || existing.some(x=>normalizeNationalId_(x.national_id||'')===nid)) {
         // Repair missing mobile numbers on previously imported students when the same
         // student is imported again with a valid phone number.
         const importedPhone=normalizeImportedPhone_(r.phone||'');
         if(importedPhone && /^0\d{10}$/.test(importedPhone)){
-          const match=existing.find(x=>digits_(x.national_id||'')===nid && !digits_(x.phone||''));
+          const match=existing.find(x=>normalizeNationalId_(x.national_id||'')===nid && !digits_(x.phone||''));
           if(match){
             const hit=findRow_('Students',match.id);
             if(hit){
@@ -605,7 +634,7 @@ function studentsImport_(b) {
       const id=nextId_('Students');
       const codes=studentAccountCodes_(id,storedGrade,schoolId,nid);
       sheet_('Students').appendRow([
-        id,name,storedGrade,digits_(r.phone||''),nid,schoolId,
+        id,name,storedGrade,normalizeImportedPhone_(r.phone||''),nid,schoolId,
         codes.kol,codes.moeen,codes.tafsili,true,now_()
       ]);
       existing.push({name:name,national_id:nid,school_id:schoolId});
@@ -653,7 +682,7 @@ function studentAccountCodes_(studentId,grade,schoolId,nationalId){
 }
 function dedupeStudents_(){
   const seen={}; let deactivated=0;
-  rows_('Students').forEach(x=>{ const r=x.obj; if(String(r.active)==='false') return; const nid=digits_(r.national_id||''); const key=/^\d{10}$/.test(nid)?'nid:'+nid:'bad:'+(String(r.name||'').trim()+'|'+nid+'|'+digits_(r.phone||'')+'|'+normalizeGrade_(r.grade||'')+'|'+String(r.school_id||'')).toLowerCase(); if(seen[key]){ sheet_('Students').getRange(x.row,10).setValue(false); deactivated++; } else seen[key]=r.id; });
+  rows_('Students').forEach(x=>{ const r=x.obj; if(String(r.active)==='false') return; const nid=normalizeNationalId_(r.national_id||''); const key=/^\d{10}$/.test(nid)?'nid:'+nid:'bad:'+(String(r.name||'').trim()+'|'+nid+'|'+digits_(r.phone||'')+'|'+normalizeGrade_(r.grade||'')+'|'+String(r.school_id||'')).toLowerCase(); if(seen[key]){ sheet_('Students').getRange(x.row,10).setValue(false); deactivated++; } else seen[key]=r.id; });
   return deactivated;
 }
 
@@ -772,9 +801,15 @@ function readStudentXlsx_(base64) {
   return out;
 }
 
+function normalizeNationalId_(value){
+  let n=digits_(value==null?'':value);
+  // Numeric Excel cells may lose leading zeroes; national IDs are exactly 10 digits.
+  if(n && n.length<10 && n.length<=10) n=n.padStart(10,'0');
+  return n;
+}
 function normalizeImportedPhone_(value){
   let p=digits_(value||'');
-  // Excel may store a leading-zero mobile as a 10-digit numeric value.
+  // Excel/Sheets may store a leading-zero mobile as a 10-digit numeric value.
   if(/^9\d{9}$/.test(p)) p='0'+p;
   return p;
 }
@@ -806,14 +841,15 @@ function studentUpdate_(b) {
     const old=hit.obj;
     if(u.role!=='senior' && String(old.school_id)!==String(u.school_id)) throw new Error('دسترسی مجاز نیست.');
     const targetSchool=(u.role==='senior' || u.role==='admin') ? String(b.school_id!==undefined?b.school_id:old.school_id) : String(u.school_id);
-    const targetNid=digits_(b.national_id!==undefined?b.national_id:old.national_id);
+    const targetNid=normalizeNationalId_(b.national_id!==undefined?b.national_id:old.national_id);
     if(!/^\d{10}$/.test(targetNid)) throw new Error('کد ملی باید دقیقاً ۱۰ رقم انگلیسی باشد.');
-    const duplicate=rows_('Students').some(x=>String(x.obj.id)!==String(old.id) && digits_(x.obj.national_id||'')===targetNid);
+    const duplicate=rows_('Students').some(x=>String(x.obj.id)!==String(old.id) && normalizeNationalId_(x.obj.national_id||'')===targetNid);
     if(duplicate) throw new Error('این کد ملی قبلاً در سیستم برای یک دانش‌آموز ثبت شده است و در هیچ مدرسه دیگری نیز قابل ثبت نیست.');
-    const phone=digits_(b.phone!==undefined?b.phone:old.phone);
+    const phone=normalizeImportedPhone_(b.phone!==undefined?b.phone:old.phone);
     if(phone && !/^0\d{10}$/.test(phone)) throw new Error('شماره تلفن نامعتبر است.');
     const grade=normalizeGrade_(b.grade!==undefined?b.grade:old.grade);
     const codes=studentAccountCodes_(old.id,grade,targetSchool,targetNid);
+    try { sheet_('Students').getRange(hit.row,4,1,2).setNumberFormat('@'); } catch(ignoreTextFormat) {}
     updateRow_('Students',hit.row,[
       old.id,b.name!==undefined?b.name:old.name,grade,
       phone,targetNid,targetSchool,codes.kol,codes.moeen,codes.tafsili,
@@ -1586,7 +1622,7 @@ function activityLogs_(b){
   return {success:true,data:data.slice(0,500)};
 }
 
-function appVersion_(b){ auth_(b); const settings={}; rows_('Settings').forEach(x=>settings[String(x.obj.key||'')]=String(x.obj.value||'')); return {success:true,version:settings['android_version']||'2.14',apk_url:settings['android_apk_url']||'',backend_version:'2.14.3-cheque-review-fix'}; }
+function appVersion_(b){ auth_(b); const settings={}; rows_('Settings').forEach(x=>settings[String(x.obj.key||'')]=String(x.obj.value||'')); return {success:true,version:settings['android_version']||'2.14',apk_url:settings['android_apk_url']||'',backend_version:'2.14.4-balance-invoice-leading-zero-fix'}; }
 
 function myClaim_(b){
   const u=auth_(b);

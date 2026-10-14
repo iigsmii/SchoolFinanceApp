@@ -74,6 +74,11 @@ public class ApiClient {
         if(p.equals("/api/students")) return method.equals("GET")?"students":"student_add";
         if(p.matches("/api/students/\\d+")){put(b,"id",Long.parseLong(p.substring(p.lastIndexOf('/')+1)));return method.equals("GET")?"students":method.equals("DELETE")?"student_delete":"student_update";}
         if(p.matches("/api/students/\\d+/balance")){put(b,"student_id",Long.parseLong(p.split("/")[3]));return "tuition";}
+        if(p.startsWith("/api/tuition?")){
+            String qs=p.substring(p.indexOf('?')+1);
+            for(String part:qs.split("&")){int eq=part.indexOf('=');if(eq>0){String k=Uri.decode(part.substring(0,eq));String v=Uri.decode(part.substring(eq+1));put(b,k,v);}}
+            return "tuition";
+        }
         if(p.equals("/api/tuition/debt")||p.equals("/api/tuition/payment")){put(b,"type",p.endsWith("/debt")?"debt":"payment");return "tuition_add";}
         if(p.equals("/api/tuition/bulk-debt")) return "tuition_bulk_debt";
         if(p.equals("/api/expenses"))return method.equals("GET")?"expenses": "expense_add";
@@ -143,7 +148,7 @@ public class ApiClient {
             }
         }
         if(path.matches("/api/students/\\d+/balance")){
-            long balance=0; JSONArray a=o.optJSONArray("data"); if(a!=null) for(int i=0;i<a.length();i++){JSONObject x=a.optJSONObject(i); if(x==null)continue; long amount=x.optLong("amount"); if("debt".equals(x.optString("type"))) balance+=amount; else if("payment".equals(x.optString("type"))) balance-=amount;} JSONObject r=new JSONObject(); r.put("success",true); r.put("balance",Math.max(0,balance)); return r;
+            long balance=0; JSONArray a=o.optJSONArray("data"); if(a!=null) for(int i=0;i<a.length();i++){JSONObject x=a.optJSONObject(i); if(x==null)continue; long amount=x.optLong("amount"); if("debt".equals(x.optString("type"))) balance+=amount; else if("payment".equals(x.optString("type"))) balance-=amount;} JSONObject r=new JSONObject(); r.put("success",true); r.put("balance",balance); r.put("debt",Math.max(0,balance)); r.put("credit",Math.max(0,-balance)); return r;
         }
         if(path.startsWith("/api/transactions")||path.equals("/api/bank/review")){
             JSONArray a=o.optJSONArray("data");

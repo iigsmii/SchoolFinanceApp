@@ -394,7 +394,7 @@ public class MainActivity extends Activity {
     String jalaliFromGregorian(String iso){try{String[] p=iso.substring(0,10).split("-");int[] j=gregorianToJalali(Integer.parseInt(p[0]),Integer.parseInt(p[1]),Integer.parseInt(p[2]));return String.format(Locale.US,"%04d/%02d/%02d",j[0],j[1],j[2]);}catch(Exception e){return iso==null?"":iso;}}
     void deleteTransaction(JSONObject t,LinearLayout history,JSONObject student){new AlertDialog.Builder(this).setTitle("حذف تراکنش").setMessage("این تراکنش حذف شود؟").setPositiveButton("حذف",(d,w)->api.request("DELETE","/api/transactions/"+t.optLong("id"),null,new ApiClient.Callback(){public void ok(JSONObject o){toast("تراکنش حذف شد");loadTuitionHistory(student,history);}public void fail(String m){toast(m);}})).setNegativeButton("انصراف",null).show();}
     
-    void loadBalance(JSONObject s,TextView t){api.request("GET","/api/students/"+s.optLong("id")+"/balance",null,new ApiClient.Callback(){public void ok(JSONObject o){t.setText("انتخاب: "+s.optString("name")+"\nبدهی باقی‌مانده: "+fmt(o.optLong("balance"))+" ریال");}public void fail(String m){}});}
+    void loadBalance(JSONObject s,TextView t){api.request("GET","/api/students/"+s.optLong("id")+"/balance",null,new ApiClient.Callback(){public void ok(JSONObject o){long net=o.optLong("balance");String summary=net>0?"بدهی باقی‌مانده: "+fmt(net)+" ریال":net<0?"بستانکاری دانش‌آموز: "+fmt(Math.abs(net))+" ریال":"حساب تسویه است";t.setText("انتخاب: "+s.optString("name")+"\n"+summary);}public void fail(String m){t.setText("انتخاب: "+s.optString("name")+"\nدریافت مانده حساب انجام نشد");}});}
     void chequesScreen(){
         base("چک صیادی");
         content.addView(tv("چک‌های ثبت‌شده توسط مدیران مدرسه که منتظر تأیید کاربر ارشد هستند.",15));gap();
@@ -833,26 +833,98 @@ public class MainActivity extends Activity {
             final long studentId=st.optLong("id"); if(studentId<=0){toast("شناسه دانش‌آموز معتبر نیست");return;}
             list.removeAllViews();
             list.addView(tv("ریز گردش: "+st.optString("name","")+" | کد ملی: "+st.optString("national_id",""),18));
-            Button pdf=btn("📄 خروجی PDF"); list.addView(pdf); gapView(list);
-            api.request("GET","/api/transactions?student_id="+studentId,null,new ApiClient.Callback(){
+            if(!st.optString("school_name","").isEmpty()) list.addView(tv("مدرسه: "+st.optString("school_name"),15));
+            TextView summary=tv("در حال دریافت گردش حساب…",16);list.addView(summary);gapView(list);
+            Button pdf=btn("📄 دریافت فاکتور PDF"); list.addView(pdf); gapView(list); pdf.setEnabled(false);
+            // Tuition is already indexed by student_id in the backend. Avoid the slower
+            // transactions endpoint, which previously resolved every transaction source.
+            api.request("GET","/api/tuition?student_id="+studentId,null,new ApiClient.Callback(){
                 public void ok(JSONObject o){try{
                     JSONArray a=o==null?null:o.optJSONArray("data"); ArrayList<JSONObject> rows=new ArrayList<>(); long balance=0;
-                    if(a!=null) for(int i=0;i<a.length();i++){JSONObject t=a.optJSONObject(i);if(t==null)continue;String k=t.optString("kind","");if(!"شهریه".equals(k)&&!"شهریه_بدهی".equals(k))continue;long amount=t.optLong("amount",0);if(amount<0)amount=0;rows.add(t);if("شهریه_بدهی".equals(k))balance+=amount;else balance-=amount;}
-                    list.addView(tv("مانده بدهی: "+fmt(Math.max(0,balance))+" ریال",17));
+                    if(a!=null) for(int i=0;i<a.length();i++){
+                        JSONObject t=a.optJSONObject(i);if(t==null)continue;
+                        String type=t.optString("type",""); if(!"debt".equals(type)&&!"payment".equals(type))continue;
+                        long amount=t.optLong("amount",0);if(amount<0)amount=0;rows.add(t);
+                        if("debt".equals(type))balance+=amount;else balance-=amount;
+                    }
+                    String balText=balance>0?"مانده بدهی: "+fmt(balance)+" ریال":balance<0?"مانده بستانکاری: "+fmt(Math.abs(balance))+" ریال":"مانده حساب: صفر ریال (تسویه)";
+                    summary.setText(balText);summary.setTextSize(fs(18));summary.setTypeface(null,Typeface.BOLD);
                     if(rows.isEmpty())list.addView(tv("گردشی ثبت نشده است.",15));
-                    for(JSONObject t:rows){LinearLayout c=new LinearLayout(MainActivity.this);c.setOrientation(LinearLayout.VERTICAL);c.setPadding(10,10,10,10);c.setBackground(bg(Color.WHITE,20));String title="شهریه_بدهی".equals(t.optString("kind"))?"بدهی":"دریافت";long amount=t.optLong("amount",0);c.addView(tv(title+" | "+fmt(Math.max(0,amount))+" ریال",15));String date=t.optString("date","");String track=t.optString("tracking_code","");c.addView(tv("تاریخ: "+jalaliFromGregorian(date)+" | پیگیری: "+(track.isEmpty()?"—":track),14));String comment=t.optString("comment","");if(!comment.isEmpty())c.addView(tv("توضیحات: "+comment,14));list.addView(c);gapView(list);}
-                    final ArrayList<JSONObject> rowsForPdf=new ArrayList<>(rows);final long balanceForPdf=balance;pdf.setOnClickListener(v->exportStatementPdf(st,rowsForPdf,balanceForPdf));
-                }catch(Exception e){list.addView(tv("نمایش ریز گردش با مشکل روبه‌رو شد.",15));}}
-                public void fail(String m){list.addView(tv("دریافت ریز گردش انجام نشد: "+(m==null?"خطای سرویس":m),15));}
+                    for(JSONObject t:rows){
+                        LinearLayout c=new LinearLayout(MainActivity.this);c.setOrientation(LinearLayout.VERTICAL);c.setPadding(12,12,12,12);c.setBackground(bg(Color.WHITE,20));
+                        boolean debt="debt".equals(t.optString("type"));String title=debt?"بدهی شهریه":"دریافت شهریه";long amount=t.optLong("amount",0);
+                        c.addView(tv(title+" | "+fmt(Math.max(0,amount))+" ریال",15));
+                        c.addView(tv("تاریخ: "+jalaliFromGregorian(t.optString("date",""))+" | شماره پیگیری: "+(t.optString("tracking_code","").isEmpty()?"—":t.optString("tracking_code")),14));
+                        if(!t.optString("payment_method","").isEmpty())c.addView(tv("روش پرداخت: "+t.optString("payment_method"),14));
+                        String comment=t.optString("description","");if(!comment.isEmpty())c.addView(tv("توضیحات: "+comment,14));
+                        list.addView(c);gapView(list);
+                    }
+                    final ArrayList<JSONObject> rowsForPdf=new ArrayList<>(rows);final long balanceForPdf=balance;pdf.setEnabled(true);pdf.setOnClickListener(v->exportStatementPdf(st,rowsForPdf,balanceForPdf));
+                }catch(Exception e){summary.setText("نمایش ریز گردش با مشکل روبه‌رو شد.");}}
+                public void fail(String msg){summary.setText("دریافت ریز گردش انجام نشد: "+(msg==null?"خطای سرویس":msg));}
             });
         }catch(Exception e){toast("باز کردن ریز گردش حساب انجام نشد");}
     }
 
     void exportStatementPdf(JSONObject st,ArrayList<JSONObject> rows,long balance){
-        PdfDocument doc=null;java.io.FileOutputStream out=null;
-        try{doc=new PdfDocument();Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);paint.setTextSize(12);int pageNo=1;PdfDocument.PageInfo info=new PdfDocument.PageInfo.Builder(595,842,pageNo).create();PdfDocument.Page page=doc.startPage(info);android.graphics.Canvas c=page.getCanvas();paint.setTextAlign(Paint.Align.RIGHT);float y=50;c.drawText("ریز گردش حساب دانش‌آموز",560,y,paint);y+=28;c.drawText("نام: "+st.optString("name",""),560,y,paint);y+=22;c.drawText("کد ملی: "+st.optString("national_id",""),560,y,paint);y+=22;c.drawText("مانده بدهی: "+fmt(Math.max(0,balance))+" ریال",560,y,paint);y+=30;if(rows!=null)for(JSONObject t:rows){if(t==null)continue;if(y>805){doc.finishPage(page);info=new PdfDocument.PageInfo.Builder(595,842,++pageNo).create();page=doc.startPage(info);c=page.getCanvas();paint.setTextAlign(Paint.Align.RIGHT);y=50;}String title="شهریه_بدهی".equals(t.optString("kind"))?"بدهی":"دریافت";c.drawText(jalaliFromGregorian(t.optString("date",""))+" | "+title+" | "+fmt(Math.max(0,t.optLong("amount",0)))+" ریال",560,y,paint);y+=22;}doc.finishPage(page);java.io.ByteArrayOutputStream pdfBytes=new java.io.ByteArrayOutputStream();doc.writeTo(pdfBytes);byte[] bytes=pdfBytes.toByteArray();String filename="riz-gardesh-"+st.optLong("id")+"-"+System.currentTimeMillis()+".pdf";if(Build.VERSION.SDK_INT>=29){ContentValues values=new ContentValues();values.put(MediaStore.Downloads.DISPLAY_NAME,filename);values.put(MediaStore.Downloads.MIME_TYPE,"application/pdf");values.put(MediaStore.Downloads.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/SchoolFinance");Uri saved=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,values);if(saved==null)throw new Exception("ساخت فایل در پوشه دانلود انجام نشد");try(java.io.OutputStream stream=getContentResolver().openOutputStream(saved)){if(stream==null)throw new Exception("بازکردن فایل مقصد انجام نشد");stream.write(bytes);stream.flush();}Uri finalUri=saved;runOnUiThread(()->new AlertDialog.Builder(MainActivity.this).setTitle("PDF ذخیره شد").setMessage("فایل در پوشه Downloads/SchoolFinance ذخیره شد.").setPositiveButton("باز کردن",(d,w)->{try{Intent open=new Intent(Intent.ACTION_VIEW);open.setDataAndType(finalUri,"application/pdf");open.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(open);}catch(Exception ex){toast("فایل ذخیره شد؛ برای باز کردن آن از پوشه دانلودها استفاده کنید.");}}).setNegativeButton("باشه",null).show());}else{java.io.File dir=Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);dir=new java.io.File(dir,"SchoolFinance");if(!dir.exists()&&!dir.mkdirs())throw new Exception("ساخت پوشه دانلود انجام نشد");java.io.File file=new java.io.File(dir,filename);try(java.io.FileOutputStream stream=new java.io.FileOutputStream(file)){stream.write(bytes);stream.flush();}toast("PDF ذخیره شد: "+file.getAbsolutePath());}}
-        catch(Exception e){toast("ساخت PDF ریز گردش انجام نشد");}
-        finally{try{if(out!=null)out.close();}catch(Exception ignored){}try{if(doc!=null)doc.close();}catch(Exception ignored){}}
+        PdfDocument doc=null;
+        try{
+            doc=new PdfDocument();
+            final int pageW=595,pageH=842,left=35,right=560;
+            final int navy=Color.rgb(27,54,93), teal=Color.rgb(22,125,125), pale=Color.rgb(239,246,250), line=Color.rgb(204,216,226), ink=Color.rgb(35,45,58), muted=Color.rgb(90,105,120);
+            Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setTypeface(Typeface.create("sans-serif",Typeface.NORMAL));p.setTextSize(10);p.setColor(ink);
+            int pageNo=1;PdfDocument.Page page=null;android.graphics.Canvas c=null;float y=0;final int[] rowNo={0};
+            page=doc.startPage(new PdfDocument.PageInfo.Builder(pageW,pageH,pageNo).create());c=page.getCanvas();
+            // Premium invoice header
+            p.setColor(navy);c.drawRoundRect(left,24,right,112,12,12,p);
+            p.setColor(Color.WHITE);p.setTextSize(19);p.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));p.setTextAlign(Paint.Align.RIGHT);
+            String school=st.optString("school_name","");if(school.isEmpty())school="دبستان";
+            c.drawText(school,right-18,54,p);p.setTextSize(14);c.drawText("فاکتور و ریز گردش حساب دانش‌آموز",right-18,80,p);
+            p.setTextSize(9);p.setTypeface(Typeface.create("sans-serif",Typeface.NORMAL));c.drawText("تاریخ صدور: "+todayJalali()+"   |   شماره سند: "+st.optLong("id"),right-18,99,p);
+            // Student detail card
+            p.setColor(pale);c.drawRoundRect(left,126,right,220,10,10,p);p.setColor(line);p.setStyle(Paint.Style.STROKE);c.drawRoundRect(left,126,right,220,10,10,p);p.setStyle(Paint.Style.FILL);
+            p.setColor(navy);p.setTextSize(11);p.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));
+            c.drawText("مشخصات دانش‌آموز",right-14,147,p);
+            p.setColor(ink);p.setTypeface(Typeface.create("sans-serif",Typeface.NORMAL));p.setTextSize(10);
+            c.drawText("نام و نام خانوادگی: "+st.optString("name","—"),right-14,168,p);
+            c.drawText("کد ملی: "+st.optString("national_id","—"),right-14,188,p);
+            c.drawText("پایه تحصیلی: "+st.optString("grade","—"),right-14,207,p);
+            c.drawText("مدرسه: "+school,300,168,p);c.drawText("شماره تماس: "+st.optString("phone","—"),300,188,p);
+            // Balance summary with separate debit / credit fields
+            p.setColor(Color.WHITE);c.drawRoundRect(left,232,right,285,10,10,p);p.setColor(line);p.setStyle(Paint.Style.STROKE);c.drawRoundRect(left,232,right,285,10,10,p);p.setStyle(Paint.Style.FILL);
+            p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(10);p.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));
+            p.setColor(balance>0?Color.rgb(177,57,57):ink);c.drawText("مانده بدهی",right-16,251,p);c.drawText(fmt(Math.max(0,balance))+" ریال",right-16,271,p);
+            p.setColor(balance<0?teal:ink);c.drawText("مانده بستانکاری",300,251,p);c.drawText(fmt(Math.max(0,-balance))+" ریال",300,271,p);
+            p.setColor(ink);p.setTypeface(Typeface.create("sans-serif",Typeface.NORMAL));
+            float tableTop=303; y=tableTop;
+            // Table header and row borders
+            y=drawInvoiceTableHeader(c,p,left,right,y,teal,line,ink);
+            if(rows!=null)for(JSONObject t:rows){
+                if(t==null)continue;
+                if(y>775){
+                    p.setColor(muted);p.setTextSize(8);p.setTextAlign(Paint.Align.CENTER);c.drawText("صفحه "+pageNo,pageW/2,824,p);doc.finishPage(page);pageNo++;
+                    page=doc.startPage(new PdfDocument.PageInfo.Builder(pageW,pageH,pageNo).create());c=page.getCanvas();y=45;
+                    p.setColor(navy);p.setTextAlign(Paint.Align.RIGHT);p.setTextSize(12);p.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));c.drawText(school+" | ادامه ریز گردش",right,y,p);y+=18;p.setTypeface(Typeface.create("sans-serif",Typeface.NORMAL));y=drawInvoiceTableHeader(c,p,left,right,y,teal,line,ink);
+                }
+                boolean debt="debt".equals(t.optString("type"))||"شهریه_بدهی".equals(t.optString("kind"));long amount=Math.max(0,t.optLong("amount",t.optLong(debt?"debit":"credit",0)));
+                String date=jalaliFromGregorian(t.optString("date",""));String desc=t.optString("description",t.optString("comment",debt?"ثبت بدهی شهریه":"دریافت شهریه"));if(desc.length()>23)desc=desc.substring(0,22)+"…";
+                p.setColor(rowNo[0]%2==0?Color.WHITE:pale);c.drawRect(left,y,right,y+31,p);p.setColor(line);p.setStyle(Paint.Style.STROKE);c.drawRect(left,y,right,y+31,p);c.drawLine(480,y,480,y+31,p);c.drawLine(345,y,345,y+31,p);c.drawLine(265,y,265,y+31,p);c.drawLine(160,y,160,y+31,p);p.setStyle(Paint.Style.FILL);
+                p.setColor(ink);p.setTextSize(8.5f);p.setTextAlign(Paint.Align.RIGHT);c.drawText(date,right-8,y+19,p);c.drawText(desc,470,y+19,p);c.drawText(debt?"بدهی":"پرداخت",335,y+19,p);c.drawText(debt?fmt(amount):"—",255,y+19,p);c.drawText(debt?"—":fmt(amount),150,y+19,p);
+                y+=31;rowNo[0]++;
+            }
+            p.setColor(muted);p.setTextSize(8);p.setTextAlign(Paint.Align.CENTER);c.drawText("این سند به‌صورت سیستمی صادر شده است.",pageW/2,810,p);c.drawText("صفحه "+pageNo,pageW/2,824,p);doc.finishPage(page);
+            java.io.ByteArrayOutputStream pdfBytes=new java.io.ByteArrayOutputStream();doc.writeTo(pdfBytes);byte[] bytes=pdfBytes.toByteArray();
+            String filename="factor-"+st.optLong("id")+"-"+System.currentTimeMillis()+".pdf";
+            if(Build.VERSION.SDK_INT>=29){ContentValues values=new ContentValues();values.put(MediaStore.Downloads.DISPLAY_NAME,filename);values.put(MediaStore.Downloads.MIME_TYPE,"application/pdf");values.put(MediaStore.Downloads.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/SchoolFinance");Uri saved=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,values);if(saved==null)throw new Exception("ساخت فایل در پوشه دانلود انجام نشد");try(java.io.OutputStream stream=getContentResolver().openOutputStream(saved)){if(stream==null)throw new Exception("بازکردن فایل مقصد انجام نشد");stream.write(bytes);stream.flush();}Uri finalUri=saved;runOnUiThread(()->new AlertDialog.Builder(MainActivity.this).setTitle("فاکتور PDF ذخیره شد").setMessage("فاکتور در پوشه Downloads/SchoolFinance ذخیره شد.").setPositiveButton("باز کردن",(d,w)->{try{Intent open=new Intent(Intent.ACTION_VIEW);open.setDataAndType(finalUri,"application/pdf");open.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(open);}catch(Exception ex){toast("فایل ذخیره شد؛ از پوشه دانلودها آن را باز کنید.");}}).setNegativeButton("باشه",null).show());}
+            else{java.io.File dir=Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);dir=new java.io.File(dir,"SchoolFinance");if(!dir.exists()&&!dir.mkdirs())throw new Exception("ساخت پوشه دانلود انجام نشد");java.io.File file=new java.io.File(dir,filename);try(java.io.FileOutputStream stream=new java.io.FileOutputStream(file)){stream.write(bytes);stream.flush();}toast("فاکتور PDF ذخیره شد: "+file.getAbsolutePath());}
+        }catch(Exception e){toast("ساخت فاکتور PDF انجام نشد: "+(e.getMessage()==null?"خطای فایل":e.getMessage()));}
+        finally{try{if(doc!=null)doc.close();}catch(Exception ignored){}}
+    }
+
+    float drawInvoiceTableHeader(android.graphics.Canvas canvas,Paint p,int left,int right,float y,int teal,int line,int ink){
+        p.setColor(teal);canvas.drawRect(left,y,right,y+30,p);p.setColor(Color.WHITE);p.setTextSize(9);p.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));p.setTextAlign(Paint.Align.RIGHT);
+        canvas.drawText("تاریخ",right-8,y+19,p);canvas.drawText("شرح",470,y+19,p);canvas.drawText("نوع",335,y+19,p);canvas.drawText("بدهکار (ریال)",255,y+19,p);canvas.drawText("بستانکار (ریال)",150,y+19,p);
+        p.setColor(line);p.setStyle(Paint.Style.STROKE);canvas.drawRect(left,y,right,y+30,p);canvas.drawLine(480,y,480,y+30,p);canvas.drawLine(345,y,345,y+30,p);canvas.drawLine(265,y,265,y+30,p);canvas.drawLine(160,y,160,y+30,p);p.setStyle(Paint.Style.FILL);p.setColor(ink);p.setTypeface(Typeface.create("sans-serif",Typeface.NORMAL));return y+30;
     }
 
     void myClaim(){base("طلب من از مدرسه");LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);content.addView(box);api.request("GET","/api/my-claim",null,new ApiClient.Callback(){public void ok(JSONObject o){box.removeAllViews();box.addView(tv("جمع طلب من از مدرسه: "+fmt(o.optLong("total"))+" ریال",20));JSONArray a=o.optJSONArray("data");if(a==null||a.length()==0){box.addView(tv("هنوز هزینه‌ای از حساب شخصی شما ثبت نشده است.",15));return;}for(int i=0;i<a.length();i++){JSONObject x=a.optJSONObject(i);LinearLayout r=new LinearLayout(MainActivity.this);r.setOrientation(LinearLayout.VERTICAL);r.setPadding(10,10,10,10);r.setBackground(bg(Color.WHITE,20));r.addView(tv("مبلغ: "+fmt(x.optLong("amount"))+" ریال | "+x.optString("category"),15));r.addView(tv("تاریخ: "+jalaliFromGregorian(x.optString("date"))+" | مدرسه: "+x.optString("school_name"),14));r.addView(tv("توضیحات: "+x.optString("description"),14));box.addView(r);gapView(box);}}public void fail(String m){toast(m);}});back();}
