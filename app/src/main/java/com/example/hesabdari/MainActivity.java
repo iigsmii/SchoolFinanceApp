@@ -35,9 +35,11 @@ import java.text.SimpleDateFormat;
 import java.util.Calendar;
 
 public class MainActivity extends Activity {
-    ApiClient api; LinearLayout root, content; JSONObject me; Uri pendingImage, pendingBank, cameraUri; long pendingImportSchoolId=0;
+    ApiClient api; LinearLayout root, content; JSONObject me; Uri pendingImage, pendingBank, cameraUri; long pendingImportSchoolId=0,pendingBankSchoolId=0;
     final String[] grades={"مهد","اول","دوم","سوم","چهارم","پنجم","ششم"};
-    final int navy=Color.rgb(35,55,95), teal=Color.rgb(20,130,125), gold=Color.rgb(220,155,45), ink=Color.rgb(45,55,70);
+    // Modern ledger: plum ink, paper-light surfaces, saffron highlights.
+    final int navy=Color.rgb(52,22,72), teal=Color.rgb(98,32,95), gold=Color.rgb(255,179,66), ink=Color.rgb(48,39,53);
+    String screenTitle="";
     android.content.SharedPreferences prefs;
     float fontScale=1f;
     int themeIndex=0;
@@ -48,38 +50,59 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle b){super.onCreate(b);prefs=getSharedPreferences("school_finance",MODE_PRIVATE);fontScale=prefs.getFloat("font_scale",1f);themeIndex=prefs.getInt("theme_index",0);api=new ApiClient(this);autoLogin();}
     @Override public void onBackPressed(){if(loginScreen){super.onBackPressed();return;}if(!isHomeScreen()){showHome();}else{super.onBackPressed();}}
-    boolean isHomeScreen(){return root!=null && content!=null && "داشبورد".equals(((TextView)root.getChildAt(0)).getText().toString());}
+    boolean isHomeScreen(){return "داشبورد".equals(screenTitle);}
+    @Override protected void onPause(){clockHandler.removeCallbacksAndMessages(null);super.onPause();}
+    @Override protected void onResume(){super.onResume();if(isHomeScreen())startClock();}
+    @Override protected void onDestroy(){clockHandler.removeCallbacksAndMessages(null);if(api!=null)api.close();super.onDestroy();}
 
     float fs(float n){return n*fontScale;}
-    int accent(){int[] a={Color.rgb(20,130,125),Color.rgb(63,81,181),Color.rgb(156,39,176),Color.rgb(230,126,34),Color.rgb(46,125,50),Color.rgb(0,121,107)};return a[Math.max(0,Math.min(themeIndex,a.length-1))];}
-    Typeface yekanBold(){return Typeface.create("Yekan",Typeface.BOLD);}
-    TextView tv(String s,float size){TextView t=new TextView(this);t.setText(s);t.setTextSize(fs(size));t.setTextColor(ink);t.setTypeface(yekanBold());t.setPadding(14,10,14,10);t.setLineSpacing(2f,1.04f);t.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);return t;}
+    int dp(float n){return Math.round(n*getResources().getDisplayMetrics().density);}
+    int accent(){int[] a={Color.rgb(98,32,95),Color.rgb(63,81,181),Color.rgb(123,48,130),Color.rgb(168,82,19),Color.rgb(44,108,75),Color.rgb(20,106,103)};return a[Math.max(0,Math.min(themeIndex,a.length-1))];}
+    Typeface yekanBold(){return Typeface.create("sans-serif",Typeface.BOLD);}
+    TextView tv(String s,float size){TextView t=new TextView(this);t.setText(s);t.setTextSize(fs(Math.max(14,size)));t.setTextColor(ink);t.setTypeface(Typeface.create("sans-serif",size>=18?Typeface.BOLD:Typeface.NORMAL));t.setPadding(dp(12),dp(8),dp(12),dp(8));t.setLineSpacing(dp(3),1.08f);t.setGravity(Gravity.RIGHT|Gravity.CENTER_VERTICAL);t.setTextDirection(View.TEXT_DIRECTION_FIRST_STRONG_RTL);return t;}
     GradientDrawable bg(int c,float r){GradientDrawable g=new GradientDrawable();g.setColor(c);g.setCornerRadius(r);return g;}
+    android.graphics.drawable.Drawable surface(boolean focus){
+        GradientDrawable g=bg(Color.WHITE,dp(16));g.setStroke(dp(focus?2:1),focus?accent():Color.rgb(229,221,232));return g;
+    }
     LinearLayout sectionBox(String title){
-        LinearLayout box=new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL); box.setPadding(14,12,14,12);
-        box.setBackground(bg(Color.WHITE,22));
-        box.setElevation(2f);
+        LinearLayout box=new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL); box.setPadding(dp(12),dp(12),dp(12),dp(12));
+        box.setBackground(surface(false));
+        box.setElevation(dp(1));
         if(title!=null&&!title.trim().isEmpty()){TextView h=tv(title,18);h.setTextColor(navy);h.setPadding(8,6,8,12);box.addView(h);}
         return box;
     }
     LinearLayout sectionBox(LinearLayout parent,String title){LinearLayout box=sectionBox(title);parent.addView(box,new LinearLayout.LayoutParams(-1,-2));Space sp=new Space(this);parent.addView(sp,new LinearLayout.LayoutParams(1,12));return box;}
-    Button btn(String s){Button b=new Button(this);b.setText(s);b.setAllCaps(false);b.setTextSize(fs(16));b.setTextColor(Color.WHITE);b.setTypeface(yekanBold());b.setMinHeight((int)fs(58));b.setPadding(12,8,12,8);b.setBackground(bg(accent(),24));b.setOnTouchListener((v,e)->{if(e.getAction()==MotionEvent.ACTION_DOWN){v.animate().scaleX(.975f).scaleY(.975f).setDuration(70).start();}else if(e.getAction()==MotionEvent.ACTION_UP||e.getAction()==MotionEvent.ACTION_CANCEL){v.animate().scaleX(1f).scaleY(1f).setDuration(100).start();}return false;});return b;}
-    Button cardBtn(String s){Button b=btn(s);b.setTextSize(fs(17));b.setMinHeight((int)fs(145));b.setGravity(Gravity.CENTER);b.setBackground(bg(Color.WHITE,30));b.setTextColor(navy);return b;}
+    Button btn(String s){
+        Button b=new Button(this){
+            @Override protected void onAttachedToWindow(){
+                super.onAttachedToWindow();android.view.ViewGroup.LayoutParams lp=getLayoutParams();
+                int min=dp(Math.max(56,28+getText().toString().split("\n",-1).length*24));
+                if(lp!=null&&lp.height>0&&lp.height<min){lp.height=min;setLayoutParams(lp);}
+            }
+        };
+        b.setText(s);b.setAllCaps(false);b.setTextSize(fs(15));b.setTextColor(Color.WHITE);b.setTypeface(yekanBold());b.setMinHeight(dp(54));b.setPadding(dp(16),dp(12),dp(16),dp(12));b.setStateListAnimator(null);
+        int fill=accent();if(s.contains("حذف")){fill=Color.rgb(252,233,236);b.setTextColor(Color.rgb(153,36,65));}else if(s.contains("بازگشت")){fill=Color.rgb(237,229,240);b.setTextColor(accent());}
+        b.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x30FFFFFF),bg(fill,dp(14)),null));
+        b.setOnTouchListener((v,e)->{if(e.getAction()==MotionEvent.ACTION_DOWN){v.animate().scaleX(.985f).scaleY(.985f).setDuration(80).start();}else if(e.getAction()==MotionEvent.ACTION_UP||e.getAction()==MotionEvent.ACTION_CANCEL){v.animate().scaleX(1f).scaleY(1f).setDuration(100).start();}return false;});return b;
+    }
+    ScrollView scrollForm(LinearLayout l){ScrollView s=new ScrollView(this);s.setFillViewport(false);s.setPadding(dp(8),dp(8),dp(8),dp(8));s.addView(l);return s;}
+    Button cardBtn(String s){Button b=btn(s.substring(s.indexOf('\n')+1));b.setTextSize(fs(15));b.setMinHeight(dp(126));b.setGravity(Gravity.CENTER);b.setCompoundDrawablePadding(dp(10));b.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x1862205F),surface(false),null));b.setTextColor(navy);return b;}
     void gap(){Space s=new Space(this);content.addView(s,new LinearLayout.LayoutParams(1,14));}
     void gapView(LinearLayout l){Space s=new Space(this);l.addView(s,new LinearLayout.LayoutParams(1,10));}
     void base(String title){
-        root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(12,8,12,12);root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-        GradientDrawable shell=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{Color.rgb(238,248,249),Color.rgb(255,249,232),Color.rgb(235,240,250)});root.setBackground(shell);
-        TextView h=tv(title,23);h.setTextColor(navy);h.setTypeface(yekanBold());h.setGravity(Gravity.RIGHT);root.addView(h);
-        TextView brand=tv("حسابداری مدارس مجموعه مدرسه القرآن کریم شهرضا",16);brand.setTextColor(accent());brand.setTypeface(Typeface.create("Neyriz",Typeface.BOLD));brand.setGravity(Gravity.RIGHT);root.addView(brand);
-        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(2,6,2,18);
-        ScrollView sv=new ScrollView(this);sv.setFillViewport(true);sv.addView(content);root.addView(sv,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);
+        screenTitle=title;clockHandler.removeCallbacksAndMessages(null);dashboardClock=null;
+        root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(16),dp(10),dp(16),0);root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);root.setBackgroundColor(Color.rgb(248,245,249));
+        getWindow().setStatusBarColor(Color.rgb(248,245,249));getWindow().setNavigationBarColor(Color.rgb(248,245,249));
+        TextView brand=tv("مدرسة القرآن  /  امور مالی",14);brand.setTextColor(accent());root.addView(brand);
+        TextView h=tv(title,26);h.setTextColor(navy);h.setTypeface(yekanBold());h.setGravity(Gravity.RIGHT);root.addView(h);
+        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(0,dp(12),0,dp(24));
+        ScrollView sv=new ScrollView(this);sv.setClipToPadding(false);sv.setFillViewport(true);sv.setVerticalScrollBarEnabled(false);sv.addView(content);root.addView(sv,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);
     }
-    EditText field(String hint){EditText e=new EditText(this);e.setHint(hint);e.setTextSize(fs(16));e.setTextColor(ink);e.setHintTextColor(Color.rgb(125,135,145));e.setTypeface(yekanBold());e.setPadding(16,10,16,10);e.setMinHeight((int)fs(54));e.setBackground(bg(Color.WHITE,16));return e;}
+    EditText field(String hint){EditText e=new EditText(this);e.setHint(hint);e.setContentDescription(hint);e.setTextSize(fs(16));e.setTextColor(ink);e.setHintTextColor(Color.rgb(114,101,121));e.setTypeface(Typeface.create("sans-serif",Typeface.NORMAL));e.setPadding(dp(16),dp(14),dp(16),dp(14));e.setMinHeight(dp(58));e.setBackground(surface(false));e.setOnFocusChangeListener((v,focused)->v.setBackground(surface(focused)));return e;}
     EditText amountField(){EditText e=field("مبلغ به ریال");e.setInputType(2);final boolean[] lock={false};e.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int b,int c){}public void afterTextChanged(Editable x){if(lock[0])return;String raw=x.toString().replace(",","").trim();if(raw.isEmpty())return;try{long n=Long.parseLong(raw);String f=NumberFormat.getNumberInstance(Locale.US).format(n);if(!f.equals(x.toString())){int oldPos=e.getSelectionStart();int digitsBefore=0;for(int i=0;i<Math.min(oldPos,x.length());i++)if(Character.isDigit(x.charAt(i)))digitsBefore++;lock[0]=true;x.replace(0,x.length(),f);int pos=0,seen=0;while(pos<f.length()&&seen<digitsBefore){if(Character.isDigit(f.charAt(pos)))seen++;pos++;}e.setSelection(Math.min(pos,f.length()));lock[0]=false;}}catch(Exception ignored){}}});return e;}
     EditText edit(String hint){EditText e=field(hint);content.addView(e,new LinearLayout.LayoutParams(-1,-2));gap();return e;}
     EditText amount(){EditText e=amountField();content.addView(e,new LinearLayout.LayoutParams(-1,-2));gap();return e;}
-    long money(EditText e){return Long.parseLong(e.getText().toString().replace(",",""));}
+    long money(EditText e){long n=Long.parseLong(FinanceDate.latinDigits(e.getText().toString()).replace(",","").replace("٬","").trim());if(n<=0||n>9007199254740991L)throw new IllegalArgumentException("مبلغ نامعتبر است.");return n;}
     void toast(String s){Toast.makeText(this,s,Toast.LENGTH_LONG).show();}
     String todayGregorian(){return new SimpleDateFormat("yyyy-MM-dd",Locale.US).format(new Date());}
     String todayJalali(){int[] j=gregorianToJalali(Calendar.getInstance().get(Calendar.YEAR),Calendar.getInstance().get(Calendar.MONTH)+1,Calendar.getInstance().get(Calendar.DAY_OF_MONTH));return String.format(Locale.US,"%04d/%02d/%02d",j[0],j[1],j[2]);}
@@ -88,10 +111,14 @@ public class MainActivity extends Activity {
         LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.HORIZONTAL);l.setGravity(Gravity.CENTER);Spinner ys=new Spinner(this), ms=new Spinner(this), ds=new Spinner(this);
         ArrayList<String> yl=new ArrayList<>();for(int y=1400;y<=1415;y++)yl.add(String.valueOf(y));ArrayList<String> ml=new ArrayList<>();for(int m=1;m<=12;m++)ml.add(String.valueOf(m));ArrayList<String> dl=new ArrayList<>();for(int d=1;d<=31;d++)dl.add(String.valueOf(d));
         ys.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,yl));ms.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,ml));ds.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,dl));ys.setSelection(Math.max(0,yy-1400));ms.setSelection(mm-1);ds.setSelection(dd-1);l.addView(ds,new LinearLayout.LayoutParams(0,70,1));l.addView(ms,new LinearLayout.LayoutParams(0,70,1));l.addView(ys,new LinearLayout.LayoutParams(0,70,1));
-        new AlertDialog.Builder(this).setTitle("انتخاب تاریخ شمسی").setView(l).setPositiveButton("تأیید",(di,w)->target.setText(String.format(Locale.US,"%04d/%02d/%02d",Integer.parseInt(ys.getSelectedItem().toString()),Integer.parseInt(ms.getSelectedItem().toString()),Integer.parseInt(ds.getSelectedItem().toString())))).setNegativeButton("انصراف",null).show();}
-    String jalaliToGregorianString(String s){try{String[] p=s.split("/");int[] g=jalaliToGregorian(Integer.parseInt(p[0]),Integer.parseInt(p[1]),Integer.parseInt(p[2]));return String.format(Locale.US,"%04d-%02d-%02d",g[0],g[1],g[2]);}catch(Exception e){return todayGregorian();}}
-    int[] jalaliToGregorian(int jy,int jm,int jd){int gy=jy+621;int[] gdm={0,31,28,31,30,31,30,31,31,30,31,30,31};int[] jdm={0,31,31,31,31,31,31,30,30,30,30,30,29};int days=365*(jy-979)+((jy-979)/33)*8+(((jy-979)%33)+3)/4;for(int i=1;i<jm;i++)days+=jdm[i];days+=jd-1;int gday=days+79;gy=1600+400*(gday/146097);gday%=146097;boolean leap=true;if(gday>=36525){gday--;gy+=100*(gday/36524);gday%=36524;if(gday>=365)gday++;}gy+=4*(gday/1461);gday%=1461;if(gday>=366){leap=false;gday--;gy+=gday/365;gday%=365;}int gm=1;while(gday>gdm[gm]+((gm==2&&leap)?1:0)){gday-=gdm[gm]+((gm==2&&leap)?1:0);gm++;}return new int[]{gy,gm,gday+1};}
-    int[] gregorianToJalali(int gy,int gm,int gd){int[] gdm={0,31,28,31,30,31,30,31,31,30,31,30,31};int[] jdm={0,31,31,31,31,31,31,30,30,30,30,30,29};int gy2=gy-1600,gm2=gm-1,gd2=gd-1;int gday=365*gy2+(gy2+3)/4-(gy2+99)/100+(gy2+399)/400;for(int i=0;i<gm2;i++)gday+=gdm[i+1];if(gm>2&&((gy%4==0&&gy%100!=0)||gy%400==0))gday++;gday+=gd2;int jday=gday-79;int jy=979+33*(jday/12053);jday%=12053;jy+=4*(jday/1461);jday%=1461;if(jday>=366){jy+=(jday-1)/365;jday=(jday-1)%365;}int jm,jd;if(jday<186){jm=1+jday/31;jd=1+jday%31;}else{jm=7+(jday-186)/30;jd=1+(jday-186)%30;}return new int[]{jy,jm,jd};}
+        Runnable updateDays=()->{int y=Integer.parseInt(ys.getSelectedItem().toString()),m=Integer.parseInt(ms.getSelectedItem().toString());int old=ds.getSelectedItemPosition();ArrayList<String> days=new ArrayList<>();for(int d=1;d<=FinanceDate.daysInMonth(y,m);d++)days.add(String.valueOf(d));ds.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,days));ds.setSelection(Math.max(0,Math.min(old,days.size()-1)));};
+        AdapterView.OnItemSelectedListener changed=new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,View v,int pos,long id){updateDays.run();}};
+        ys.setOnItemSelectedListener(changed);ms.setOnItemSelectedListener(changed);updateDays.run();
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("انتخاب تاریخ شمسی").setView(l).setPositiveButton("تأیید",null).setNegativeButton("انصراف",null).create();
+        dialog.setOnShowListener(x->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{String chosen=String.format(Locale.US,"%04d/%02d/%02d",Integer.parseInt(ys.getSelectedItem().toString()),Integer.parseInt(ms.getSelectedItem().toString()),Integer.parseInt(ds.getSelectedItem().toString()));try{FinanceDate.iso(chosen);target.setText(chosen);dialog.dismiss();}catch(IllegalArgumentException ex){toast(ex.getMessage());}}));dialog.show();}
+    String jalaliToGregorianString(String s){try{return FinanceDate.iso(s);}catch(IllegalArgumentException e){toast(e.getMessage());return "";}}
+    int[] jalaliToGregorian(int jy,int jm,int jd){return FinanceDate.toGregorian(jy,jm,jd);}
+    int[] gregorianToJalali(int gy,int gm,int gd){return FinanceDate.fromGregorian(gy,gm,gd);}
     void addDateField(LinearLayout l,String label,String initial){l.addView(tv(label+" *",14));l.addView(dateButton(initial));gapView(l);}
     void startClock(){if(dashboardClock==null)return;clockHandler.removeCallbacksAndMessages(null);Runnable r=new Runnable(){public void run(){if(dashboardClock!=null){dashboardClock.setText("تاریخ امروز: "+todayJalali()+"\nساعت: "+new SimpleDateFormat("HH:mm:ss",Locale.US).format(new Date()));clockHandler.postDelayed(this,1000);}}};clockHandler.post(r);}
 
@@ -103,8 +130,10 @@ public class MainActivity extends Activity {
     }
     void showLogin(){
         loginScreen=true;
-        base("سامانه یکپارچه حسابداری زیر مجموعه های مدرسة القرآن الکریم شهرضا");
-        // Keep the login screen focused: the page title already contains the system name.
+        base("ورود به حساب");
+        LinearLayout intro=sectionBox("مدیریت مالی، روشن و منظم");
+        intro.addView(tv("حسابداری مدارس مجموعه مدرسة القرآن الکریم شهرضا",16));
+        intro.addView(tv("برای ادامه، وارد حساب مدرسه خود شوید.",14));content.addView(intro);
         gap();
         EditText u=edit("نام کاربری"); EditText p=edit("رمز عبور"); p.setInputType(129);
         LinearLayout passRow=new LinearLayout(this);passRow.setOrientation(LinearLayout.HORIZONTAL);passRow.setGravity(Gravity.CENTER_VERTICAL);passRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
@@ -118,12 +147,17 @@ public class MainActivity extends Activity {
     void showHome(){
         loginScreen=false;
         base("داشبورد");
-        LinearLayout welcome=new LinearLayout(this);welcome.setOrientation(LinearLayout.VERTICAL);welcome.setPadding(8,8,8,8);welcome.setBackground(bg(Color.WHITE,28));
-        welcome.addView(tv("خوش آمدید، "+me.optString("name","مدیر"),20));welcome.addView(tv("مدرسه: "+me.optString("school_name","همه مدارس"),15));dashboardClock=tv("",18);dashboardClock.setTextColor(accent());welcome.addView(dashboardClock);content.addView(welcome);startClock();gap();
+        LinearLayout welcome=new LinearLayout(this);welcome.setOrientation(LinearLayout.VERTICAL);welcome.setPadding(dp(12),dp(14),dp(12),dp(14));welcome.setBackground(new GradientDrawable(GradientDrawable.Orientation.TR_BL,new int[]{accent(),navy}));((GradientDrawable)welcome.getBackground()).setCornerRadius(dp(22));
+        TextView hello=tv("خوش آمدید، "+me.optString("name","مدیر"),22);hello.setTextColor(Color.WHITE);welcome.addView(hello);
+        TextView schoolLabel=tv(isSeniorUser()?"نمای کلی مجموعه مدارس":"مدرسه شما، حساب‌های شما",15);schoolLabel.setTextColor(Color.rgb(245,223,242));welcome.addView(schoolLabel);
+        dashboardClock=tv("",14);dashboardClock.setTextColor(Color.rgb(255,211,83));welcome.addView(dashboardClock);content.addView(welcome);startClock();gap();
+        LinearLayout overview=sectionBox("وضعیت مالی");TextView totals=tv("در حال دریافت اطلاعات…",16);overview.addView(totals);content.addView(overview);gap();
+        api.request("GET","/api/summary",null,new ApiClient.Callback(){public void ok(JSONObject o){totals.setText("دانش‌آموزان فعال: "+fmt(o.optLong("total_students"))+"\nمانده بدهی دانش‌آموزان: "+fmt(o.optLong("total_debt"))+" ریال");}public void fail(String m){totals.setText("اطلاعات مالی دریافت نشد؛ برای تلاش دوباره داشبورد را باز کنید.");}});
+        content.addView(tv("دسترسی سریع",19));
         String[][] ms={{"👨‍🎓\nدانش‌آموزان","students"},{"💳\nدریافت شهریه","receipts"},{"📋\nلیست چک‌ها","cheque_list"},{"🧾\nهزینه‌ها","expenses"},{"🔄\nتراکنش‌ها","transactions"},{"📒\nریز گردش حساب","statement"},{"💰\nطلب من از مدرسه","claim"},{"📊\nگزارش مالی","report"},{"📝\nگزارش فعالیت","activity"},{"⚙️\nتنظیمات","settings"}};
         if(isSeniorUser())ms=new String[][]{{"👨‍🎓\nدانش‌آموزان","students"},{"💳\nدریافت شهریه","receipts"},{"🧾\nهزینه‌ها","expenses"},{"🏦\nتطبیق بانک","bank"},{"🧾\nچک صیادی","cheques"},{"📋\nلیست چک‌ها","cheque_list"},{"👤\nمدیران","managers"},{"🏫\nمدارس","schools"},{"📒\nریز گردش حساب","statement"},{"💰\nطلب من از مدرسه","claim"},{"📊\nگزارش مالی","report"},{"📝\nگزارش فعالیت","activity"},{"📥\nخروجی پارسیان","export"},{"📢\nپیام به مدیران","messages"},{"⚙️\nتنظیمات","settings"}};
         GridLayout grid=new GridLayout(this);grid.setColumnCount(2);grid.setUseDefaultMargins(false);content.addView(grid);
-        for(String[] m:ms){Button b=cardBtn(m[0]);GridLayout.LayoutParams gp=new GridLayout.LayoutParams();gp.width=0;gp.height=(int)fs(145);gp.columnSpec=GridLayout.spec(GridLayout.UNDEFINED,1f);gp.setMargins(7,21,7,21);grid.addView(b,gp);b.setOnClickListener(v->{switch(m[1]){case"students":students();break;case"tuition":tuition();break;case"receipts":tuition();break;case"expenses":expenses();break;case"bank":bank();break;case"cheques":chequesScreen();break;case"cheque_list":chequeListScreen();break;case"managers":managers();break;case"schools":schools();break;case"report":report();break;case"transactions":transactionsScreen();break;case"export":exportParsian();break;case"messages":messagesAdmin();break;case"activity":activityLog();break;case"statement":accountStatement();break;case"claim":myClaim();break;case"update":checkForUpdate();break;default:settings();}});}
+        for(String[] m:ms){Button b=cardBtn(m[0]);DashboardIcon icon=new DashboardIcon(m[1],accent(),dp(32));b.setCompoundDrawablesWithIntrinsicBounds(null,icon,null,null);GridLayout.LayoutParams gp=new GridLayout.LayoutParams();gp.width=0;gp.height=dp(142);gp.columnSpec=GridLayout.spec(GridLayout.UNDEFINED,1f);gp.setMargins(dp(4),dp(6),dp(4),dp(6));grid.addView(b,gp);b.setOnClickListener(v->{switch(m[1]){case"students":students();break;case"tuition":tuition();break;case"receipts":tuition();break;case"expenses":expenses();break;case"bank":bank();break;case"cheques":chequesScreen();break;case"cheque_list":chequeListScreen();break;case"managers":managers();break;case"schools":schools();break;case"report":report();break;case"transactions":transactionsScreen();break;case"export":exportParsian();break;case"messages":messagesAdmin();break;case"activity":activityLog();break;case"statement":accountStatement();break;case"claim":myClaim();break;case"update":checkForUpdate();break;default:settings();}});}
         gap();content.addView(tv("پیام کاربر ارشد به مدیران",19));LinearLayout msgBox=new LinearLayout(this);msgBox.setOrientation(LinearLayout.VERTICAL);msgBox.setPadding(8,4,8,8);msgBox.setBackground(bg(Color.WHITE,24));content.addView(msgBox);loadMessages(msgBox);
         // Check the published version when the dashboard is opened. Android still requires user confirmation for APK installation.
         checkForUpdate();
@@ -151,7 +185,7 @@ public class MainActivity extends Activity {
             if(isSeniorUser() && !old.optString("school_name","").isEmpty()) l.addView(tv("مدرسه دانش‌آموز: "+old.optString("school_name"),15));for(int i=0;i<grades.length;i++)if(grades[i].equals(old.optString("grade")))g.setSelection(i);}
         Runnable updateInfo=()->{String nid=national.getText().toString().trim();String schoolMoeen="—";long sid=0;if(isSeniorUser()&&!schoolIds.isEmpty()&&school.getSelectedItemPosition()>=0&&school.getSelectedItemPosition()<schoolIds.size())sid=schoolIds.get(school.getSelectedItemPosition());else if(old!=null)sid=old.optLong("school_id");int moeen=schoolMoeenLocal(sid);schoolMoeen=moeen>0?String.valueOf(moeen):"—";codeInfo.setText("کد کامل: "+(nid.isEmpty()?"—":nid+"-"+schoolMoeen+"-67")+"\nکد کلی: 67 | کد معین مدرسه: "+schoolMoeen+" | کد تفصیلی: "+(nid.isEmpty()?"—":nid));};
         if(isSeniorUser()){schoolBox.addView(tv("مدرسه *",14));schoolBox.addView(school);}else{schoolBox.setVisibility(View.GONE);}
-        AlertDialog.Builder builder=new AlertDialog.Builder(this).setTitle(old==null?"افزودن دانش‌آموز":"ویرایش دانش‌آموز").setView(l).setPositiveButton("ذخیره",null).setNegativeButton("انصراف",null);if(old!=null)builder.setNeutralButton("حذف دانش‌آموز",null);AlertDialog dlg=builder.create();
+        AlertDialog.Builder builder=new AlertDialog.Builder(this).setTitle(old==null?"افزودن دانش‌آموز":"ویرایش دانش‌آموز").setView(scrollForm(l)).setPositiveButton("ذخیره",null).setNegativeButton("انصراف",null);if(old!=null)builder.setNeutralButton("حذف دانش‌آموز",null);AlertDialog dlg=builder.create();
         dlg.setOnShowListener(x->{Button save=dlg.getButton(AlertDialog.BUTTON_POSITIVE);if(old!=null){Button del=dlg.getButton(AlertDialog.BUTTON_NEUTRAL);if(del!=null)del.setOnClickListener(v->new AlertDialog.Builder(this).setTitle("حذف دانش‌آموز").setMessage("دانش‌آموز از فهرست فعال خارج شود؟").setPositiveButton("حذف",(dd,ww)->api.request("DELETE","/api/students/"+old.optLong("id"),null,new ApiClient.Callback(){public void ok(JSONObject o){dlg.dismiss();toast("دانش‌آموز حذف شد");students();}public void fail(String m){toast(m);}})).setNegativeButton("انصراف",null).show());}
             Runnable schoolsLoad=()->api.request("GET","/api/schools",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");schoolNames.clear();schoolIds.clear();if(a!=null)for(int i=0;i<a.length();i++){JSONObject ss=a.optJSONObject(i);if(ss!=null){schoolNames.add(ss.optString("name"));schoolIds.add(ss.optLong("id"));}}school.setAdapter(new ArrayAdapter<String>(MainActivity.this,android.R.layout.simple_spinner_dropdown_item,schoolNames));if(old!=null){long sid=old.optLong("school_id");for(int i=0;i<schoolIds.size();i++)if(schoolIds.get(i)==sid)school.setSelection(i);}save.setEnabled(!isSeniorUser()||!schoolIds.isEmpty());updateInfo.run();}public void fail(String m){showFormError(error,m);}});
             if(isSeniorUser())schoolsLoad.run();else{save.setEnabled(true);updateInfo.run();}
@@ -425,7 +459,7 @@ public class MainActivity extends Activity {
         ScrollView formScroll=new ScrollView(this);formScroll.setFillViewport(false);formScroll.setPadding(4,4,4,4);formScroll.addView(l);AlertDialog dlg=new AlertDialog.Builder(this).setTitle(title).setView(formScroll).setPositiveButton(old==null?"ثبت":"ذخیره",null).setNegativeButton("انصراف",null).create();final EditText trackingField=tr;
         dlg.setOnShowListener(x->dlg.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{String ds=date.getText().toString().trim();if(!ds.matches("\\d{4}/\\d{2}/\\d{2}")){showFormError(error,"تاریخ الزامی است.");return;}String selectedMethod=payment?methods.get(method.getSelectedItemPosition()):"";long amount="چک".equals(selectedMethod)?1:money(a);if(!"چک".equals(selectedMethod)&&amount<=0){showFormError(error,"مبلغ را وارد کنید.");return;}JSONObject z=new JSONObject();z.put("amount",amount);z.put("student_id",student.optLong("id"));z.put("date",jalaliToGregorianString(ds));z.put("comment",comment.getText().toString().trim());if(student.has("school_id"))z.put("school_id",student.optLong("school_id"));if(payment){z.put("payment_method",selectedMethod);if("چک".equals(selectedMethod)){String sid=sayad.getText().toString().replaceAll("\\D","");if(!sid.matches("\\d{16}")){showFormError(error,"شناسه صیاد باید دقیقاً 16 رقمی باشد.");return;}if(!favor.isChecked()){showFormError(error,"برای ثبت چک باید گزینه ثبت چک در وجه مدرسه القرآن را انتخاب کنید.");return;}String d=due.getText().toString().trim();if(!d.matches("\\d{4}/\\d{2}/\\d{2}")){showFormError(error,"تاریخ سررسید چک الزامی است.");return;}long chequeRial=money(chequeAmount);if(chequeRial<=0){showFormError(error,"مبلغ چک را به ریال وارد کنید.");return;}z.put("amount",chequeRial);z.put("sayad_id",sid);z.put("due_date",jalaliToGregorianString(d));z.put("in_favor_school",true);}else{if(trackingField!=null)z.put("tracking_code",trackingField.getText().toString().trim());if(!"پول نقد".equals(selectedMethod)&&z.optString("tracking_code").isEmpty()){showFormError(error,"شماره پیگیری برای این روش پرداخت الزامی است.");return;}}}String methodHttp=old==null?"POST":"PATCH",endpoint=old==null?path:"/api/tuition/"+old.optLong("source_id");api.request(methodHttp,endpoint,z,new ApiClient.Callback(){public void ok(JSONObject o){if(old==null && o.optLong("id")>0 && pendingImage!=null){
                     long id=o.optLong("id"); Uri imageToUpload=pendingImage; pendingImage=null;
-                    uploadAttachment("tuition",id,imageToUpload);
+                    uploadAttachment(o.optBoolean("cheque",false)?"cheque":"tuition",id,imageToUpload);
                 }dlg.dismiss();toast("چک".equals(selectedMethod)?"چک برای تأیید کاربر ارشد ثبت شد":"ثبت شد");tuition();}public void fail(String m){showFormError(error,m);}});}catch(Exception e){showFormError(error,"مبلغ یا تاریخ معتبر نیست.");}}));dlg.show();android.view.Window dialogWindow=dlg.getWindow();if(dialogWindow!=null){dialogWindow.setLayout((int)(getResources().getDisplayMetrics().widthPixels*0.94),(int)(getResources().getDisplayMetrics().heightPixels*0.82));}
     }
 
@@ -454,19 +488,31 @@ public class MainActivity extends Activity {
 
     void categories(){base("لیست هزینه‌ها");Button add=btn("➕ افزودن نوع هزینه");content.addView(add);gap();LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);api.request("GET","/api/expense-categories",null,new ApiClient.Callback(){public void ok(JSONObject o){JSONArray a=o.optJSONArray("data");for(int i=0;i<(a==null?0:a.length());i++){JSONObject x=a.optJSONObject(i);Button b=btn(x.optString("name")+(x.optBoolean("active",true)?"":" | غیرفعال"));list.addView(b);gapView(list);b.setOnClickListener(v->{if(isSeniorUser())categoryEdit(x);});}}public void fail(String m){toast(m);}});add.setOnClickListener(v->{EditText n=new EditText(this);n.setHint("نام هزینه");new AlertDialog.Builder(this).setTitle("افزودن نوع هزینه").setView(n).setPositiveButton("ذخیره",(d,w)->{JSONObject x=new JSONObject();try{x.put("name",n.getText().toString());}catch(Exception ignored){}api.request("POST","/api/expense-categories",x,new ApiClient.Callback(){public void ok(JSONObject o){categories();}public void fail(String m){toast(m);}});}).setNegativeButton("انصراف",null).show();});back();}
     void categoryEdit(JSONObject old){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText n=new EditText(this);n.setText(old.optString("name"));CheckBox a=new CheckBox(this);a.setText("فعال");a.setChecked(old.optBoolean("active",true));l.addView(n);l.addView(a);new AlertDialog.Builder(this).setTitle("ویرایش نوع هزینه").setView(l).setPositiveButton("ذخیره",(d,w)->{JSONObject x=new JSONObject();try{x.put("name",n.getText().toString());x.put("active",a.isChecked());}catch(Exception ignored){}api.request("PATCH","/api/expense-categories/"+Uri.encode(old.optString("id")),x,new ApiClient.Callback(){public void ok(JSONObject o){categories();}public void fail(String m){toast(m);}});}).setNegativeButton("انصراف",null).show();}
-    void uploadAttachment(String type,long id,Uri uri){JSONObject f=new JSONObject();try{f.put("entity_type",type);f.put("entity_id",id);}catch(Exception ignored){}api.upload(uri,"file","/api/attachments",f,new ApiClient.Callback(){public void ok(JSONObject o){toast("تصویر کم‌حجم با DPI=96 ذخیره شد");}public void fail(String m){toast(m);}});}
+    void uploadAttachment(String type,long id,Uri uri){JSONObject f=new JSONObject();try{f.put("entity_type",type);f.put("entity_id",id);}catch(Exception ignored){}api.upload(uri,"file","/api/attachments",f,new ApiClient.Callback(){public void ok(JSONObject o){toast("تصویر پیوست ذخیره شد");}public void fail(String m){toast(m);}});}
     void pickImage(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("image/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,77);}
     void takePhoto(){
         if(Build.VERSION.SDK_INT>=23 && checkSelfPermission(android.Manifest.permission.CAMERA)!=android.content.pm.PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{android.Manifest.permission.CAMERA},901);return;}
         try{
-            android.content.ContentValues v=new android.content.ContentValues();v.put(MediaStore.Images.Media.DISPLAY_NAME,"schoolfinance-"+System.currentTimeMillis()+".jpg");v.put(MediaStore.Images.Media.MIME_TYPE,"image/jpeg");if(Build.VERSION.SDK_INT>=29)v.put(MediaStore.Images.Media.RELATIVE_PATH,"Pictures/SchoolFinance");
-            cameraUri=getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,v);if(cameraUri==null){toast("دسترسی دوربین آماده نیست");return;}
-            Intent i=new Intent(MediaStore.ACTION_IMAGE_CAPTURE);i.putExtra(MediaStore.EXTRA_OUTPUT,cameraUri);i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivityForResult(i,90);
+            java.io.File dir=new java.io.File(getCacheDir(),"photos");if(!dir.exists()&&!dir.mkdirs())throw new Exception("Photo cache unavailable");
+            java.io.File photo=java.io.File.createTempFile("schoolfinance-",".jpg",dir);
+            cameraUri=androidx.core.content.FileProvider.getUriForFile(this,getPackageName()+".fileprovider",photo);
+            Intent i=new Intent(MediaStore.ACTION_IMAGE_CAPTURE);i.putExtra(MediaStore.EXTRA_OUTPUT,cameraUri);i.setClipData(ClipData.newRawUri("photo",cameraUri));i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivityForResult(i,90);
         }catch(Exception e){toast("باز کردن دوربین انجام نشد");}
     }
     @Override public void onRequestPermissionsResult(int r,String[] p,int[] g){super.onRequestPermissionsResult(r,p,g);if(r==901&&g.length>0&&g[0]==android.content.pm.PackageManager.PERMISSION_GRANTED)takePhoto();else if(r==901)toast("برای عکس گرفتن باید اجازه دوربین را بدهید");}
     @Override protected void onActivityResult(int r,int c,Intent d){super.onActivityResult(r,c,d);if(c!=RESULT_OK)return;if(r==77&&d!=null){pendingImage=d.getData();toast("تصویر انتخاب شد؛ هنگام ثبت ذخیره می‌شود");}else if(r==90){pendingImage=cameraUri;cameraUri=null;toast("عکس دوربین آماده ثبت است");}else if(r==88&&d!=null){pendingBank=d.getData();uploadBank();}else if(r==89&&d!=null){uploadStudentExcel(d.getData(),pendingImportSchoolId);}}
-    void uploadBank(){JSONObject f=new JSONObject();try{f.put("school_id",me.optLong("school_id"));}catch(Exception ignored){}api.uploadFile(pendingBank,"file","/api/bank/upload",f,"bank-file","application/octet-stream",new ApiClient.Callback(){public void ok(JSONObject o){toast("فایل بانک وارد شد: "+o.optInt("count")+" تراکنش");pendingBank=null;}public void fail(String m){toast(m);}});}
+    void uploadBank(){
+        if(pendingBank==null)return;
+        if(isSeniorUser()&&pendingBankSchoolId<=0){
+            api.request("GET","/api/schools",null,new ApiClient.Callback(){public void ok(JSONObject o){
+                JSONArray a=o.optJSONArray("data");if(a==null||a.length()==0){toast("مدرسه‌ای برای ورود فایل بانک یافت نشد.");return;}
+                String[] names=new String[a.length()];for(int n=0;n<a.length();n++)names[n]=a.optJSONObject(n).optString("name");
+                new AlertDialog.Builder(MainActivity.this).setTitle("این فایل بانک متعلق به کدام مدرسه است؟").setItems(names,(d,index)->{pendingBankSchoolId=a.optJSONObject(index).optLong("id");uploadBank();}).setNegativeButton("انصراف",null).show();
+            }public void fail(String m){toast(m);}});return;
+        }
+        JSONObject f=new JSONObject();try{f.put("school_id",isSeniorUser()?pendingBankSchoolId:me.optLong("school_id"));}catch(Exception ignored){}
+        api.uploadFile(pendingBank,"file","/api/bank/upload",f,"bank.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",new ApiClient.Callback(){public void ok(JSONObject o){toast("فایل بانک وارد شد: "+o.optInt("count")+" تراکنش");pendingBank=null;pendingBankSchoolId=0;}public void fail(String m){pendingBankSchoolId=0;toast(m);}});
+    }
     boolean isSeniorUser(){String r=me.optString("role","");return "admin".equalsIgnoreCase(r)||"senior".equalsIgnoreCase(r)||"manager_admin".equalsIgnoreCase(r);}
 
     void uploadStudentExcel(Uri uri,long schoolId){
@@ -541,7 +587,17 @@ public class MainActivity extends Activity {
     }
 
     void bank(){base("تطبیق بانک");content.addView(tv("تمام تراکنش‌های ثبت‌شده توسط مدیران در این بخش نمایش داده می‌شود. تیک سبز یعنی با بانک تطبیق شده و ضربدر قرمز یعنی مغایرت/عدم تطبیق.",16));gap();Button upload=btn("📄\nانتخاب فایل بانک");Button rec=btn("🔄\nتطبیق تراکنش‌ها");content.addView(upload);gap();content.addView(rec);gap();LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);upload.setOnClickListener(v->{Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("*/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,88);});rec.setOnClickListener(v->api.request("POST","/api/bank/reconcile",new JSONObject(),new ApiClient.Callback(){public void ok(JSONObject o){toast("تطبیق انجام شد: "+o.optInt("matched")+" مورد؛ "+o.optInt("unmatched")+" مورد بدون تطبیق");bankReview(list);}public void fail(String m){toast(m);}}));bankReview(list);back();}
-    void addAttachmentPreview(LinearLayout row,JSONObject t){String url=t.optString("attachment_url","");if(url.isEmpty())return;ImageView im=new ImageView(this);im.setAdjustViewBounds(true);im.setScaleType(ImageView.ScaleType.CENTER_INSIDE);im.setPadding(8,8,8,8);row.addView(tv("📷 تصویر پیوست تراکنش",14));row.addView(im,new LinearLayout.LayoutParams(-1,(int)fs(180)));new Thread(()->{try{java.net.HttpURLConnection c=(java.net.HttpURLConnection)new java.net.URL(url).openConnection();c.setConnectTimeout(12000);c.setReadTimeout(20000);c.setRequestMethod("GET");java.io.InputStream in=c.getInputStream();final android.graphics.Bitmap bm=android.graphics.BitmapFactory.decodeStream(in);in.close();c.disconnect();if(bm!=null)runOnUiThread(()->im.setImageBitmap(bm));}catch(Exception ignored){}}).start();}
+    void addAttachmentPreview(LinearLayout row,JSONObject t){
+        String url=t.optString("attachment_url",t.optString("image_url",""));if(url.isEmpty())return;
+        TextView status=tv("تصویر پیوست · برای نمایش لمس کنید",14);status.setTextColor(accent());row.addView(status);
+        ImageView im=new ImageView(this);im.setAdjustViewBounds(true);im.setScaleType(ImageView.ScaleType.CENTER_INSIDE);im.setVisibility(View.GONE);row.addView(im,new LinearLayout.LayoutParams(-1,dp(200)));
+        status.setOnClickListener(v->{status.setEnabled(false);status.setText("در حال دریافت امن تصویر…");JSONObject b=new JSONObject();try{b.put("url",url);}catch(Exception ignored){}
+            api.request("GET","/api/attachment-read",b,new ApiClient.Callback(){public void ok(JSONObject o){
+                new Thread(()->{try{byte[] data=Base64.decode(o.optString("base64"),Base64.DEFAULT);android.graphics.BitmapFactory.Options bounds=new android.graphics.BitmapFactory.Options();bounds.inJustDecodeBounds=true;android.graphics.BitmapFactory.decodeByteArray(data,0,data.length,bounds);if(bounds.outWidth<=0||bounds.outHeight<=0)throw new IllegalArgumentException();int sample=1;while(bounds.outWidth/sample>1200||bounds.outHeight/sample>1200)sample*=2;android.graphics.BitmapFactory.Options opts=new android.graphics.BitmapFactory.Options();opts.inSampleSize=sample;final android.graphics.Bitmap bitmap=android.graphics.BitmapFactory.decodeByteArray(data,0,data.length,opts);if(bitmap==null)throw new IllegalArgumentException();runOnUiThread(()->{if(isDestroyed()||isFinishing())return;im.setImageBitmap(bitmap);im.setVisibility(View.VISIBLE);status.setText("تصویر پیوست · دریافت‌شده از حساب شما");});}
+                catch(Exception ex){runOnUiThread(()->{status.setText("تصویر قابل نمایش نیست؛ دوباره لمس کنید.");status.setEnabled(true);});}}).start();
+            }public void fail(String message){status.setText(message+" · تلاش دوباره");status.setEnabled(true);}});
+        });
+    }
     void reviewTransaction(JSONObject t,boolean approve,LinearLayout list){EditText note=field(approve?"توضیح تأیید (اختیاری)":"دلیل رد تراکنش");new AlertDialog.Builder(this).setTitle(approve?"تأیید تراکنش":"رد تراکنش").setView(note).setPositiveButton(approve?"تأیید":"رد",(d,w)->{JSONObject z=new JSONObject();try{z.put("status",approve?"approved":"rejected");z.put("note",note.getText().toString().trim());}catch(Exception ignored){}api.request("POST","/api/transactions/"+t.optLong("id")+"/review",z,new ApiClient.Callback(){public void ok(JSONObject o){toast("وضعیت تراکنش ثبت شد");bankReview(list);}public void fail(String m){toast(m);}});}).setNegativeButton("انصراف",null).show();}
 
     void bankReview(LinearLayout list){api.request("GET","/api/bank/review",null,new ApiClient.Callback(){public void ok(JSONObject o){list.removeAllViews();JSONArray a=o.optJSONArray("data");for(int i=0;i<(a==null?0:a.length());i++){JSONObject t=a.optJSONObject(i);String k=t.optString("kind");String title="هزینه".equals(k)?expenseComment(t):("شهریه_بدهی".equals(k)?"بدهی شهریه":("شهریه".equals(k)?"پرداخت شهریه":k));boolean matched=t.optBoolean("reconciled",false);String rs=t.optString("review_status","pending");LinearLayout row=new LinearLayout(MainActivity.this);row.setOrientation(LinearLayout.VERTICAL);row.setPadding(10,10,10,10);row.setBackground(bg(Color.WHITE,20));row.addView(tv("نوع: "+title+" | مبلغ: "+fmt(t.optLong("debit")+t.optLong("credit"))+" ریال",16));row.addView(tv("تاریخ: "+jalaliFromGregorian(t.optString("date"))+" | مدرسه: "+t.optString("school_name",""),14));row.addView(tv("حساب: "+t.optString("account","")+" | بدهکار: "+fmt(t.optLong("debit"))+" | بستانکار: "+fmt(t.optLong("credit")),14));row.addView(tv("روش پرداخت: "+t.optString("payment_method","")+" | کد پیگیری: "+(t.optString("tracking_code","").isEmpty()?"—":t.optString("tracking_code")),14));if(!t.optString("student_name","").isEmpty())row.addView(tv("دانش‌آموز: "+t.optString("student_name")+" | پایه: "+t.optString("student_grade",""),14));row.addView(tv("توضیحات: "+t.optString("comment","").replaceFirst("^\\[expense_category_id=\\d+\\]\\s*",""),14));row.addView(tv("تطبیق بانک: "+(matched?"✓ تأیید شده":"✕ در انتظار/مغایرت")+"\nنظر مدیر ارشد: "+("approved".equals(rs)?"✓ تأیید":"rejected".equals(rs)?"✕ رد":"در انتظار بررسی"),14));addAttachmentPreview(row,t);LinearLayout actions=new LinearLayout(MainActivity.this);Button ap=btn("✓ تأیید");Button re=btn("✕ رد");actions.addView(ap,new LinearLayout.LayoutParams(0,68,1));actions.addView(re,new LinearLayout.LayoutParams(0,68,1));row.addView(actions);ap.setOnClickListener(v->reviewTransaction(t,true,list));re.setOnClickListener(v->reviewTransaction(t,false,list));list.addView(row);gapView(list);}}public void fail(String m){toast(m);}});}
@@ -916,11 +972,18 @@ public class MainActivity extends Activity {
             java.io.ByteArrayOutputStream pdfBytes=new java.io.ByteArrayOutputStream();doc.writeTo(pdfBytes);byte[] bytes=pdfBytes.toByteArray();
             String filename="factor-"+st.optLong("id")+"-"+System.currentTimeMillis()+".pdf";
             if(Build.VERSION.SDK_INT>=29){ContentValues values=new ContentValues();values.put(MediaStore.Downloads.DISPLAY_NAME,filename);values.put(MediaStore.Downloads.MIME_TYPE,"application/pdf");values.put(MediaStore.Downloads.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/SchoolFinance");Uri saved=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,values);if(saved==null)throw new Exception("ساخت فایل در پوشه دانلود انجام نشد");try(java.io.OutputStream stream=getContentResolver().openOutputStream(saved)){if(stream==null)throw new Exception("بازکردن فایل مقصد انجام نشد");stream.write(bytes);stream.flush();}Uri finalUri=saved;runOnUiThread(()->new AlertDialog.Builder(MainActivity.this).setTitle("فاکتور PDF ذخیره شد").setMessage("فاکتور در پوشه Downloads/SchoolFinance ذخیره شد.").setPositiveButton("باز کردن",(d,w)->{try{Intent open=new Intent(Intent.ACTION_VIEW);open.setDataAndType(finalUri,"application/pdf");open.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(open);}catch(Exception ex){toast("فایل ذخیره شد؛ از پوشه دانلودها آن را باز کنید.");}}).setNegativeButton("باشه",null).show());}
-            else{java.io.File dir=Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);dir=new java.io.File(dir,"SchoolFinance");if(!dir.exists()&&!dir.mkdirs())throw new Exception("ساخت پوشه دانلود انجام نشد");java.io.File file=new java.io.File(dir,filename);try(java.io.FileOutputStream stream=new java.io.FileOutputStream(file)){stream.write(bytes);stream.flush();}toast("فاکتور PDF ذخیره شد: "+file.getAbsolutePath());}
+            else{java.io.File dir=new java.io.File(getFilesDir(),"invoices");if(!dir.exists()&&!dir.mkdirs())throw new Exception("ساخت پوشه فاکتور انجام نشد");java.io.File file=new java.io.File(dir,filename);try(java.io.FileOutputStream stream=new java.io.FileOutputStream(file)){stream.write(bytes);stream.flush();}showSavedInvoice(file);}
         }catch(Exception e){toast("ساخت فاکتور PDF انجام نشد: "+(e.getMessage()==null?"خطای فایل":e.getMessage()));}
         finally{try{if(doc!=null)doc.close();}catch(Exception ignored){}}
     }
 
+    void showSavedInvoice(java.io.File file){
+        Uri uri=androidx.core.content.FileProvider.getUriForFile(this,getPackageName()+".fileprovider",file);
+        new AlertDialog.Builder(this).setTitle("فاکتور ذخیره شد").setMessage("فایل در فضای خصوصی برنامه ذخیره شده است؛ می‌توانید آن را باز یا اشتراک‌گذاری کنید.")
+            .setPositiveButton("باز کردن",(d,w)->{try{Intent i=new Intent(Intent.ACTION_VIEW);i.setDataAndType(uri,"application/pdf");i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(i);}catch(Exception e){toast("برای بازکردن فایل، برنامه PDF نصب کنید.");}})
+            .setNeutralButton("اشتراک‌گذاری",(d,w)->{Intent i=new Intent(Intent.ACTION_SEND);i.setType("application/pdf");i.putExtra(Intent.EXTRA_STREAM,uri);i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(Intent.createChooser(i,"ارسال فاکتور"));})
+            .setNegativeButton("بستن",null).show();
+    }
     float drawInvoiceTableHeader(android.graphics.Canvas canvas,Paint p,int left,int right,float y,int teal,int line,int ink){
         p.setColor(teal);canvas.drawRect(left,y,right,y+30,p);p.setColor(Color.WHITE);p.setTextSize(9);p.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));p.setTextAlign(Paint.Align.RIGHT);
         canvas.drawText("تاریخ",right-8,y+19,p);canvas.drawText("شرح",470,y+19,p);canvas.drawText("نوع",335,y+19,p);canvas.drawText("بدهکار (ریال)",255,y+19,p);canvas.drawText("بستانکار (ریال)",150,y+19,p);
@@ -955,15 +1018,32 @@ public class MainActivity extends Activity {
             return;
         }
         Toast.makeText(this,"در حال دریافت نسخه "+version+"...",Toast.LENGTH_LONG).show();
-        new Thread(()->{java.io.File outFile=null;try{
-            java.net.URL u=new java.net.URL(url);java.net.HttpURLConnection c=(java.net.HttpURLConnection)u.openConnection();c.setInstanceFollowRedirects(true);c.setConnectTimeout(20000);c.setReadTimeout(120000);c.connect();if(!"https".equalsIgnoreCase(c.getURL().getProtocol()))throw new Exception("Update redirect must remain HTTPS");int code=c.getResponseCode();if(code<200||code>=400)throw new Exception("HTTP "+code);
-            outFile=new java.io.File(getExternalCacheDir()!=null?getExternalCacheDir():getCacheDir(),"SchoolFinanceApp-"+version+".apk");
-            try(java.io.InputStream in=c.getInputStream();java.io.FileOutputStream out=new java.io.FileOutputStream(outFile)){byte[] buf=new byte[16384];int n;while((n=in.read(buf))!=-1)out.write(buf,0,n);}c.disconnect();
-            java.io.File finalFile=outFile;runOnUiThread(()->installApk(finalFile));
-        }catch(Exception e){runOnUiThread(()->toast("دریافت آپدیت انجام نشد. اتصال اینترنت و آدرس APK را بررسی کنید."));}}).start();
+        new Thread(()->{java.io.File outFile=null;java.net.HttpURLConnection c=null;try{
+            java.net.URL u=new java.net.URL(url);
+            for(int redirect=0;redirect<=5;redirect++){
+                if(!"https".equalsIgnoreCase(u.getProtocol()))throw new Exception("HTTPS required");
+                c=(java.net.HttpURLConnection)u.openConnection();c.setInstanceFollowRedirects(false);c.setConnectTimeout(20000);c.setReadTimeout(120000);
+                int code=c.getResponseCode();
+                if(code==301||code==302||code==303||code==307||code==308){String location=c.getHeaderField("Location");if(location==null||redirect==5)throw new Exception("Invalid redirect");java.net.URL next=new java.net.URL(u,location);c.disconnect();c=null;u=next;continue;}
+                if(code!=200)throw new Exception("HTTP "+code);break;
+            }
+            if(c==null)throw new Exception("No download");
+            java.io.File dir=new java.io.File(getCacheDir(),"updates");if(!dir.exists()&&!dir.mkdirs())throw new Exception("Cache unavailable");
+            outFile=new java.io.File(dir,"SchoolFinanceApp-update.apk");
+            try(java.io.InputStream in=c.getInputStream();java.io.FileOutputStream out=new java.io.FileOutputStream(outFile)){byte[] buf=new byte[16384];int n,total=0;while((n=in.read(buf))!=-1){total+=n;if(total>100*1024*1024)throw new Exception("APK exceeds limit");out.write(buf,0,n);}}
+            java.io.File finalFile=outFile;runOnUiThread(()->{if(!isFinishing()&&!isDestroyed())installApk(finalFile);});
+        }catch(Exception e){if(outFile!=null)outFile.delete();runOnUiThread(()->{if(!isDestroyed())toast("دریافت آپدیت انجام نشد. اتصال اینترنت و آدرس APK را بررسی کنید.");});}finally{if(c!=null)c.disconnect();}}).start();
     }
     void installApk(java.io.File file){
         if(file==null||!file.exists()){toast("فایل آپدیت پیدا نشد");return;}
+        try{
+            android.content.pm.PackageManager pm=getPackageManager();
+            android.content.pm.PackageInfo installed=pm.getPackageInfo(getPackageName(),android.content.pm.PackageManager.GET_SIGNATURES);
+            android.content.pm.PackageInfo update=pm.getPackageArchiveInfo(file.getAbsolutePath(),android.content.pm.PackageManager.GET_SIGNATURES);
+            if(update==null||!getPackageName().equals(update.packageName)||update.versionCode<=installed.versionCode||installed.signatures==null||update.signatures==null||installed.signatures.length==0||!new java.util.HashSet<>(java.util.Arrays.asList(installed.signatures)).equals(new java.util.HashSet<>(java.util.Arrays.asList(update.signatures)))){
+                toast("آپدیت رد شد: شناسه، نسخه یا امضای فایل با این برنامه سازگار نیست.");return;
+            }
+        }catch(Exception e){toast("اعتبار امضای فایل آپدیت تأیید نشد.");return;}
         if(Build.VERSION.SDK_INT>=26&&!getPackageManager().canRequestPackageInstalls()){
             new AlertDialog.Builder(this).setTitle("اجازه نصب آپدیت").setMessage("برای نصب خودکار نسخه جدید، یک‌بار اجازه «نصب برنامه‌های ناشناس» را برای این برنامه فعال کنید.").setPositiveButton("باز کردن تنظیمات",(d,w)->{try{Intent i=new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+getPackageName()));startActivity(i);}catch(Exception e){startActivity(new Intent(Settings.ACTION_SECURITY_SETTINGS));}}).setNegativeButton("بعداً",null).show();return;
         }

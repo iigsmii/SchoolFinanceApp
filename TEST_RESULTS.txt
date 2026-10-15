@@ -1,0 +1,38 @@
+Local verification performed on the delivered sources.
+No Android SDK/Gradle build, device UI test, live Apps Script execution, live concurrency test or Google Drive integration test was performed.
+Workflow YAML scripts were not executed.
+
+PASS strict date validation
+PASS strict money rejects negative, decimal, junk and unsafe integers
+PASS cross-school tuition rejected
+PASS source and ledger created once; real source id preserved
+PASS tuition update mirrors ledger and preserves cash method
+PASS soft delete removes balances and only the correct source kind
+PASS pair compensation on ledger append failure
+PASS cross-school attachment rejected before creating Drive file
+PASS new attachments remain private
+PASS unsupported attachment MIME rejected
+PASS duplicate cheque ID rejected
+PASS approved records cannot be edited
+PASS manual matching preserves separate approval
+PASS automatic matching never guesses between duplicate references
+PASS cash is not bank eligible
+PASS disabled accounts lose existing sessions
+PASS expired session rejected
+PASS durable financial idempotency replays success, never writes twice
+PASS idempotency key payload mismatch rejected
+PASS uncertain failed write is never replayed
+PASS students read leaves physical cells unchanged
+PASS read-only POST bypasses write lock
+PASS corrupt DONE response becomes review instead of unsafe retry
+PASS cheque attachment uses Cheques, not Tuition
+PASS private attachment reader enforces school access
+PASS manual bank match rejects cheque payments
+PASS bounced cheque payment no longer reduces the student balance
+PASS unsupported bank CSV cannot report false success
+
+28 backend regression tests passed (mocked, not live Apps Script).
+PASS Java syntax parse: 4 source files (not Android compilation)
+PASS FinanceDate: 5843 valid dates round-trip; boundaries, Persian digits, invalid dates
+PASS Android resource XML parsing
+NOTICE: Android SDK build, device UI tests, and live Apps Script tests must still run before production.

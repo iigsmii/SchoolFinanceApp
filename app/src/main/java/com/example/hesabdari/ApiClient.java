@@ -28,20 +28,37 @@ public class ApiClient {
     private Dialog waitDialog;
     private final ExecutorService pool = Executors.newFixedThreadPool(6);
     private volatile String token;
+    private volatile boolean closed;
+    private int activeWrites;
+    private static final int MAX_FILE_BYTES=5*1024*1024, MAX_RESPONSE_BYTES=8*1024*1024;
+    private final java.util.Set<String> inFlight=new java.util.HashSet<>();
     public ApiClient(Context c){ context=c; }
     private void showWaiting(){
-        if(!(context instanceof Activity)) return; Activity a=(Activity)context; if(a.isFinishing()) return; if(waitDialog!=null&&waitDialog.isShowing()) return;
+        activeWrites++;
+        if(!alive())return;
+        if(!(context instanceof Activity)) return; Activity a=(Activity)context; if(a.isFinishing()||a.isDestroyed()) return; if(waitDialog!=null&&waitDialog.isShowing()) return;
         waitDialog=new Dialog(a);TextView t=new TextView(a);t.setText("لطفاً منتظر بمانید...\nدر حال ثبت اطلاعات");t.setTextSize(18);t.setTextColor(Color.DKGRAY);t.setGravity(Gravity.CENTER);t.setPadding(45,35,45,35);waitDialog.setContentView(t);waitDialog.setCancelable(false);if(waitDialog.getWindow()!=null)waitDialog.getWindow().setBackgroundDrawableResource(android.R.color.white);waitDialog.show();
     }
-    private void hideWaiting(){if(waitDialog!=null&&waitDialog.isShowing())waitDialog.dismiss();}
+    private void hideWaiting(){activeWrites=Math.max(0,activeWrites-1);if(activeWrites==0&&waitDialog!=null&&waitDialog.isShowing())waitDialog.dismiss();}
+    private boolean alive(){return !closed&&(!(context instanceof Activity)||(!((Activity)context).isFinishing()&&!((Activity)context).isDestroyed()));}
+    public void close(){closed=true;pool.shutdownNow();main.removeCallbacksAndMessages(null);if(waitDialog!=null&&waitDialog.isShowing())waitDialog.dismiss();waitDialog=null;}
+    private boolean guarded(String action){return action.equals("tuition_add")||action.equals("tuition_bulk_debt")||action.equals("expense_add")||action.equals("finance_transaction")||action.equals("cheque_review");}
+    private String operationKey(JSONObject b)throws Exception{
+        java.util.TreeMap<String,String> sorted=new java.util.TreeMap<>();java.util.Iterator<String> keys=b.keys();
+        while(keys.hasNext()){String k=keys.next();if(!k.equals("token")&&!k.equals("request_id"))sorted.put(k,b.optString(k));}
+        byte[] digest=java.security.MessageDigest.getInstance("SHA-256").digest(sorted.toString().getBytes("UTF-8"));
+        StringBuilder out=new StringBuilder();for(byte x:digest)out.append(String.format(java.util.Locale.US,"%02x",x&255));
+        return "pending_"+out;
+    }
     public void setToken(String t){token=t;}
     public String getToken(){return token;}
-    public void clearToken(){token=null;}
+    public void clearToken(){token=null;context.getSharedPreferences("school_finance",Context.MODE_PRIVATE).edit().remove("login_user").remove("login_pass").apply();}
 
     public void request(String method,String path,JSONObject body,Callback cb){
+        if(closed)return;
         final boolean write=!method.equalsIgnoreCase("GET");
         if(write) main.post(this::showWaiting);
-        pool.execute(()->{try{
+        pool.execute(()->{String pendingKey=null;boolean claimed=false;try{
             String p=path; JSONObject b=body==null?new JSONObject():new JSONObject(body.toString());
             // Keep one request contract between Android and Apps Script.
             // Older UI forms still send comment; the backend stores description.
@@ -56,12 +73,26 @@ public class ApiClient {
             }
             String action=actionFor(method,p,b);
             b.put("action",action);
+            if(guarded(action)){
+                pendingKey=operationKey(b);
+                synchronized(inFlight){if(!inFlight.add(pendingKey))throw new IOException("این عملیات هنوز در حال ثبت است.");claimed=true;}
+                android.content.SharedPreferences pending=context.getSharedPreferences("financial_pending",Context.MODE_PRIVATE);
+                String saved=pending.getString(pendingKey,null);
+                String rid=saved==null?java.util.UUID.randomUUID().toString():saved;
+                if(saved==null&&!pending.edit().putString(pendingKey,rid).commit())throw new IOException("ذخیره شناسه عملیات انجام نشد.");
+                b.put("request_id",rid);
+            }
             if(token!=null && token.length()>0)b.put("token",token);
-            JSONObject o=method.equalsIgnoreCase("GET") ? getJson(b) : postJson(b);
+            // Authenticated reads use POST too: session tokens never belong in URLs.
+            JSONObject o=postJson(b);
             JSONObject result=adaptResponse(p,o);
-            if(result.optBoolean("success",false)) main.post(()->{if(write)hideWaiting();cb.ok(result);});
-            else main.post(()->{if(write)hideWaiting();cb.fail(result.optString("message",result.optString("error","خطا در ارتباط با سرویس گوگل")));});
-        }catch(Exception e){main.post(()->{if(write)hideWaiting();cb.fail("ارتباط با سرویس گوگل برقرار نشد");});}});
+            // Keep the same ID on every failure, including expired auth, until success is known.
+            if(pendingKey!=null&&result.optBoolean("success",false))
+                context.getSharedPreferences("financial_pending",Context.MODE_PRIVATE).edit().remove(pendingKey).commit();
+            if(result.optBoolean("success",false)) main.post(()->{if(write)hideWaiting();if(alive())cb.ok(result);});
+            else main.post(()->{if(write)hideWaiting();if(alive())cb.fail(result.optString("message",result.optString("error","خطا در ارتباط با سرویس گوگل")));});
+        }catch(Exception e){main.post(()->{if(write)hideWaiting();if(alive())cb.fail(e instanceof IOException&&e.getMessage()!=null?e.getMessage():"ارتباط برقرار نشد؛ برای ثبت مالی، نتیجه را بررسی و همان اطلاعات را دوباره ارسال کنید.");});}
+        finally{if(claimed&&pendingKey!=null)synchronized(inFlight){inFlight.remove(pendingKey);}}});
     }
 
     private String actionFor(String method,String path,JSONObject b){
@@ -85,12 +116,13 @@ public class ApiClient {
         if(p.matches("/api/expense/\\d+")){put(b,"id",Long.parseLong(tail(p)));return method.equals("DELETE")?"expense_delete":"expense_update";}
         if(p.equals("/api/bank"))return "bank";
         if(p.equals("/api/my-claim"))return "my_claim";
+        if(p.equals("/api/summary"))return "summary";
         if(p.equals("/api/app-version"))return "app_version";
         if(p.equals("/api/cheques/list"))return "cheque_list";
         if(p.equals("/api/cheques"))return "cheques";
         if(p.equals("/api/cheque/alerts"))return "cheque_alerts";
         if(p.matches("/api/cheques/\\d+/review")){put(b,"id",Long.parseLong(p.split("/")[3]));return "cheque_review";}
-        if(p.startsWith("/api/expense-categories")){String id=tail(p);if(id.length()>0)put(b,"id",id);return method.equals("GET")?"categories":method.equals("DELETE")?"category_delete":id.length()==0?"category_add":"category_update";}
+        if(p.startsWith("/api/expense-categories")){String id=p.equals("/api/expense-categories")?"":tail(p);if(id.length()>0)put(b,"id",id);return method.equals("GET")?"categories":method.equals("DELETE")?"category_delete":id.length()==0?"category_add":"category_update";}
         if(p.startsWith("/api/transactions?student_id=")){put(b,"student_id",Long.parseLong(p.substring(p.indexOf('=')+1)));return "transactions";}
         if(p.startsWith("/api/transactions?kind=")){put(b,"kind_query",Uri.decode(p.substring(p.indexOf('=')+1)));return "transactions";}
         if(p.equals("/api/transactions"))return "transactions";
@@ -122,6 +154,7 @@ public class ApiClient {
         if(p.startsWith("/api/parsian/student-accounts")){int q=p.indexOf("?q=");if(q>=0)put(b,"q",Uri.decode(p.substring(q+3)));return "parsian_student_accounts";}
         if(p.equals("/api/parsian/student-account/allocate"))return "parsian_allocate";
         if(p.equals("/api/attachments"))return "attachment";
+        if(p.equals("/api/attachment-read"))return "attachment_read";
         if(p.equals("/api/activity-logs")) return "activity_logs";
         if(p.startsWith("/api/activity-logs?")){int q=p.indexOf("?");String qs=p.substring(q+1);for(String part:qs.split("&")){int eq=part.indexOf('=');if(eq>0)put(b,Uri.decode(part.substring(0,eq)),Uri.decode(part.substring(eq+1)));}return "activity_logs";}
         if(p.equals("/api/login"))return "login";
@@ -133,7 +166,7 @@ public class ApiClient {
         if(p.equals("/api/tuition"))return "tuition";
         if(p.equals("/api/expenses"))return "expenses";
         if(p.equals("/api/finance-transaction"))return "finance_transaction";
-        return "health";
+        throw new IllegalArgumentException("مسیر درخواست پشتیبانی نمی‌شود: "+p);
     }
 
     private JSONObject adaptResponse(String path,JSONObject o) throws Exception{
@@ -160,6 +193,7 @@ public class ApiClient {
     private static void put(JSONObject b,String k,Object v){try{b.put(k,v);}catch(Exception ignored){}}
 
     private JSONObject getJson(JSONObject b)throws Exception{
+        if(b.has("token"))return postJson(b);
         StringBuilder q=new StringBuilder();
         JSONArray names=b.names();
         if(names!=null) for(int i=0;i<names.length();i++){
@@ -191,9 +225,11 @@ public class ApiClient {
 
     public void upload(Uri uri,String field,String path,JSONObject fields,Callback cb){uploadFile(uri,field,path,fields,"file","image/jpeg",cb);}
     public void uploadFile(Uri uri,String field,String path,JSONObject fields,String fileName,String mime,Callback cb){
+        if(closed)return;
+        main.post(this::showWaiting);
         pool.execute(()->{try{
-            byte[] data=readUri(uri);JSONObject b=fields==null?new JSONObject():new JSONObject(fields.toString());b.put("base64",android.util.Base64.encodeToString(data,android.util.Base64.NO_WRAP));b.put("file_name",fileName);b.put("mime_type",mime);b.put("content_type",mime);b.put("source_type",fields==null?"general":fields.optString("entity_type",fields.optString("source_type","general")));b.put("source_id",fields==null?"":fields.optString("entity_id",fields.optString("source_id","")));String a=uploadAction(path);b.put("action",a);b.put("endpoint",a);b.put("api_version","2026-10-05-v2.12-expense-statement-update");if(token!=null)b.put("token",token);JSONObject o=postJson(b);if(o.optBoolean("success",false))main.post(()->cb.ok(o));else main.post(()->cb.fail(o.optString("message",o.optString("error","آپلود انجام نشد"))));
-        }catch(Exception e){main.post(()->cb.fail("آپلود فایل انجام نشد"));}});
+            byte[] data=readUri(uri);JSONObject b=fields==null?new JSONObject():new JSONObject(fields.toString());b.put("base64",android.util.Base64.encodeToString(data,android.util.Base64.NO_WRAP));b.put("file_name",fileName);b.put("mime_type",mime);b.put("content_type",mime);b.put("source_type",fields==null?"general":fields.optString("entity_type",fields.optString("source_type","general")));b.put("source_id",fields==null?"":fields.optString("entity_id",fields.optString("source_id","")));String a=uploadAction(path);b.put("action",a);b.put("endpoint",a);b.put("api_version","2.15.0");if(token!=null)b.put("token",token);JSONObject o=postJson(b);main.post(()->{hideWaiting();if(!alive())return;if(o.optBoolean("success",false))cb.ok(o);else cb.fail(o.optString("message",o.optString("error","آپلود انجام نشد")));});
+        }catch(Exception e){main.post(()->{hideWaiting();if(alive())cb.fail(e.getMessage()==null?"آپلود فایل انجام نشد":e.getMessage());});}});
     }
 
     private String uploadAction(String path){
@@ -201,8 +237,14 @@ public class ApiClient {
         if("/api/bank/upload".equals(path)) return "bank_upload";
         return "attachment";
     }
-    private byte[] readUri(Uri uri)throws Exception{try(InputStream in=context.getContentResolver().openInputStream(uri);ByteArrayOutputStream out=new ByteArrayOutputStream()){if(in==null)throw new IOException();byte[] buf=new byte[8192];int n;while((n=in.read(buf))!=-1)out.write(buf,0,n);return out.toByteArray();}}
+    private byte[] readUri(Uri uri)throws Exception{
+        try(Cursor cur=context.getContentResolver().query(uri,new String[]{OpenableColumns.SIZE},null,null,null)){if(cur!=null&&cur.moveToFirst()&&!cur.isNull(0)&&cur.getLong(0)>MAX_FILE_BYTES)throw new IOException("حجم فایل نباید بیشتر از ۵ مگابایت باشد.");}
+        try(InputStream in=context.getContentResolver().openInputStream(uri);ByteArrayOutputStream out=new ByteArrayOutputStream()){
+            if(in==null)throw new IOException("فایل باز نشد.");byte[] buf=new byte[8192];int n,total=0;
+            while((n=in.read(buf))!=-1){total+=n;if(total>MAX_FILE_BYTES)throw new IOException("حجم فایل نباید بیشتر از ۵ مگابایت باشد.");out.write(buf,0,n);}return out.toByteArray();
+        }
+    }
     private static String tail(String p){String s=p.substring(p.lastIndexOf('/')+1);int q=s.indexOf('?');return q>=0?s.substring(0,q):s;}
-    private static String read(InputStream in)throws Exception{if(in==null)return "";BufferedReader r=new BufferedReader(new InputStreamReader(in,"UTF-8"));StringBuilder s=new StringBuilder();String x;while((x=r.readLine())!=null)s.append(x);return s.toString();}
+    private static String read(InputStream in)throws Exception{if(in==null)return "";try(InputStream source=in;ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] buf=new byte[8192];int n,total=0;while((n=source.read(buf))!=-1){total+=n;if(total>MAX_RESPONSE_BYTES)throw new IOException("پاسخ سرور بیش از حد بزرگ است.");out.write(buf,0,n);}return out.toString("UTF-8");}}
 }
 
