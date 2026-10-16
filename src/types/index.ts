@@ -113,6 +113,19 @@ export interface ActivityLog {
   date: string;
 }
 
+export interface SmsLog {
+  id: string;
+  student_id: number;
+  student_name: string;
+  school_name?: string;
+  phone: string;
+  amount: number;
+  overdue_days: number;
+  message: string;
+  sent_at: string;
+  status: 'sent' | 'delivered' | 'failed';
+}
+
 export type ScreenType =
   | 'dashboard'
   | 'students'
@@ -130,4 +143,5 @@ export type ScreenType =
   | 'managers'
   | 'schools'
   | 'export'
-  | 'messages';
+  | 'messages'
+  | 'sms_reminders';

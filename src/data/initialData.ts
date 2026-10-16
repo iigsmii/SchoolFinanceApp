@@ -1,4 +1,4 @@
-import { School, User, Student, Transaction, Cheque, ExpenseCategory, BankTransaction, SeniorMessage, ActivityLog } from '../types';
+import { School, User, Student, Transaction, Cheque, ExpenseCategory, BankTransaction, SeniorMessage, ActivityLog, SmsLog } from '../types';
 
 export const INITIAL_SCHOOLS: School[] = [
   { id: 1, name: 'دبستان نور ۱', code: 'NOOR1', type: 'دبستان پسرانه', active: true, moeen_code: 3 },
@@ -274,6 +274,57 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     reconciled: true,
     review_status: 'approved',
   },
+  {
+    id: 108,
+    date: '2026-08-25',
+    jalali_date: '1405/06/03',
+    school_id: 1,
+    school_name: 'دبستان نور ۱',
+    student_id: 3,
+    student_name: 'سید امیرعلی موسوی',
+    student_grade: 'چهارم',
+    kind: 'شهریه_بدهی',
+    amount: 160000000,
+    debit: 160000000,
+    credit: 0,
+    description: 'شهریه مصوب پایه چهارم دبستان',
+    reconciled: true,
+    review_status: 'approved',
+  },
+  {
+    id: 109,
+    date: '2026-09-02',
+    jalali_date: '1405/06/11',
+    school_id: 5,
+    school_name: 'مهد مرکزی صبح',
+    student_id: 6,
+    student_name: 'امیرمهدی سلطانی',
+    student_grade: 'مهد',
+    kind: 'شهریه_بدهی',
+    amount: 130000000,
+    debit: 130000000,
+    credit: 0,
+    description: 'شهریه دوره مهد و پیش‌دبستانی',
+    reconciled: true,
+    review_status: 'approved',
+  },
+  {
+    id: 110,
+    date: '2026-08-10',
+    jalali_date: '1405/05/19',
+    school_id: 1,
+    school_name: 'دبستان نور ۱',
+    student_id: 7,
+    student_name: 'پارسا امینی (نیازمند اصلاح)',
+    student_grade: 'پنجم',
+    kind: 'شهریه_بدهی',
+    amount: 150000000,
+    debit: 150000000,
+    credit: 0,
+    description: 'شهریه مصوب پایه پنجم دبستان',
+    reconciled: true,
+    review_status: 'approved',
+  },
 ];
 
 export const INITIAL_CHEQUES: Cheque[] = [
@@ -384,5 +435,20 @@ export const INITIAL_ACTIVITY_LOGS: ActivityLog[] = [
     entity_type: 'tuition',
     entity_id: 102,
     date: '1405/07/11 09:20',
+  },
+];
+
+export const INITIAL_SMS_LOGS: SmsLog[] = [
+  {
+    id: 'sms_1',
+    student_id: 3,
+    student_name: 'سید امیرعلی موسوی',
+    school_name: 'دبستان نور ۱',
+    phone: '09138765432',
+    amount: 160000000,
+    overdue_days: 51,
+    message: 'اولیا محترم دانش‌آموز سید امیرعلی موسوی، با سلام. شهریه معوقه به مبلغ ۱۶۰,۰۰۰,۰۰۰ ریال بیش از ۵۰ روز است که به سررسید رسیده است. خواهشمند است جهت تسویه به امور مالی دبستان نور ۱ مراجعه فرمایید.',
+    sent_at: '1405/07/20 14:30',
+    status: 'delivered',
   },
 ];

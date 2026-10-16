@@ -10,6 +10,7 @@ import {
   SeniorMessage,
   ActivityLog,
   ScreenType,
+  SmsLog,
 } from '../types';
 import {
   INITIAL_SCHOOLS,
@@ -21,9 +22,11 @@ import {
   INITIAL_BANK_TRANSACTIONS,
   INITIAL_MESSAGES,
   INITIAL_ACTIVITY_LOGS,
+  INITIAL_SMS_LOGS,
 } from '../data/initialData';
 import { buildParsianCode } from '../utils/parsian';
 import { jalaliFromGregorian, todayGregorian } from '../utils/jalali';
+import { calculateStudentOverdue, DEFAULT_SMS_TEMPLATE } from '../utils/debt';
 
 interface AppContextType {
   currentUser: User | null;
@@ -45,6 +48,14 @@ interface AppContextType {
   bankTransactions: BankTransaction[];
   seniorMessages: SeniorMessage[];
   activityLogs: ActivityLog[];
+  smsLogs: SmsLog[];
+  autoSmsEnabled: boolean;
+  setAutoSmsEnabled: (enabled: boolean) => void;
+  smsTemplate: string;
+  setSmsTemplate: (t: string) => void;
+  sendSmsReminder: (studentId: number, customMessage?: string) => { success: boolean; message: string; log: SmsLog };
+  sendBatchSmsReminders: (studentIds?: number[]) => { sentCount: number; failedCount: number };
+  clearSmsLogs: () => void;
 
   // Student ops
   addStudent: (data: Omit<Student, 'id' | 'parsian_code'>) => Student;
