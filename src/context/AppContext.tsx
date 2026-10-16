@@ -167,6 +167,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [bankTransactions, setBankTransactions] = useState<BankTransaction[]>(() => loadFromStorage('bank_txs', INITIAL_BANK_TRANSACTIONS));
   const [seniorMessages, setSeniorMessages] = useState<SeniorMessage[]>(() => loadFromStorage('senior_msgs', INITIAL_MESSAGES));
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(() => loadFromStorage('activity_logs', INITIAL_ACTIVITY_LOGS));
+  const [smsLogs, setSmsLogs] = useState<SmsLog[]>(() => loadFromStorage('sms_logs', INITIAL_SMS_LOGS));
+  const [autoSmsEnabled, setAutoSmsEnabledState] = useState<boolean>(() => loadFromStorage('auto_sms_enabled', false));
+  const [smsTemplate, setSmsTemplateState] = useState<string>(() => loadFromStorage('sms_template', DEFAULT_SMS_TEMPLATE));
 
   useEffect(() => saveToStorage('theme_index', themeIndex), [themeIndex]);
   useEffect(() => saveToStorage('font_scale', fontScale), [fontScale]);
@@ -180,12 +183,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => saveToStorage('bank_txs', bankTransactions), [bankTransactions]);
   useEffect(() => saveToStorage('senior_msgs', seniorMessages), [seniorMessages]);
   useEffect(() => saveToStorage('activity_logs', activityLogs), [activityLogs]);
+  useEffect(() => saveToStorage('sms_logs', smsLogs), [smsLogs]);
+  useEffect(() => saveToStorage('auto_sms_enabled', autoSmsEnabled), [autoSmsEnabled]);
+  useEffect(() => saveToStorage('sms_template', smsTemplate), [smsTemplate]);
 
   const setThemeIndex = (idx: number) => setThemeIndexState(Math.max(0, Math.min(idx, THEME_ACCENTS.length - 1)));
   const setFontScale = (scale: number) => setFontScaleState(Math.max(0.85, Math.min(scale, 1.3)));
   const setCurrentUser = (u: User | null) => setCurrentUserState(u);
 
   const accentColor = THEME_ACCENTS[themeIndex] || THEME_ACCENTS[0];
+
+  const setAutoSmsEnabled = (enabled: boolean) => setAutoSmsEnabledState(enabled);
+  const setSmsTemplate = (template: string) => setSmsTemplateState(template);
+
+  // SMS gateway integration is not configured in this project. Keep an auditable
+  // failed log rather than falsely reporting that a text message was delivered.
+  const sendSmsReminder = (studentId: number, customMessage?: string) => {
+    const student = students.find((item) => item.id === studentId);
+    if (!student) {
+      const log: SmsLog = { id: `sms_${Date.now()}`, student_id: studentId, student_name: 'دانش‌آموز نامشخص', phone: '', amount: 0, overdue_days: 0, message: customMessage || '', sent_at: new Date().toISOString(), status: 'failed' };
+      setSmsLogs((prev) => [log, ...prev]);
+      return { success: false, message: 'دانش‌آموز پیدا نشد.', log };
+    }
+    const overdue = calculateStudentOverdue(student, transactions, smsTemplate);
+    const log: SmsLog = {
+      id: `sms_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      student_id: student.id, student_name: student.name, school_name: student.school_name,
+      phone: student.phone || '', amount: overdue.balance, overdue_days: overdue.overdueDays,
+      message: customMessage?.trim() || overdue.formattedMessage, sent_at: new Date().toISOString(), status: 'failed',
+    };
+    setSmsLogs((prev) => [log, ...prev]);
+    const message = !student.phone?.trim()
+      ? 'برای این دانش‌آموز شماره تلفن ثبت نشده است.'
+      : 'ارسال واقعی پیامک انجام نشد؛ سرویس ارسال پیامک به پروژه متصل نیست.';
+    return { success: false, message, log };
+  };
+
+  const sendBatchSmsReminders = (studentIds?: number[]) => {
+    const targets = students.filter((student) => !studentIds || studentIds.includes(student.id));
+    let sentCount = 0;
+    let failedCount = 0;
+    targets.forEach((student) => {
+      const result = sendSmsReminder(student.id);
+      if (result.success) sentCount += 1; else failedCount += 1;
+    });
+    return { sentCount, failedCount };
+  };
+
+  const clearSmsLogs = () => setSmsLogs([]);
 
   const logActivity = (action: string, description: string, entity_type?: string, entity_id?: string | number) => {
     if (!currentUser) return;
@@ -734,6 +779,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         bankTransactions,
         seniorMessages,
         activityLogs,
+        smsLogs,
+        autoSmsEnabled,
+        setAutoSmsEnabled,
+        smsTemplate,
+        setSmsTemplate,
+        sendSmsReminder,
+        sendBatchSmsReminders,
+        clearSmsLogs,
         addStudent,
         updateStudent,
         deleteStudent,
