@@ -11,6 +11,10 @@ import {
   ActivityLog,
   ScreenType,
   SmsLog,
+  SmsConfig,
+  StaffMember,
+  StaffWorkLog,
+  PayrollPayment,
 } from '../types';
 import {
   INITIAL_SCHOOLS,
@@ -23,10 +27,25 @@ import {
   INITIAL_MESSAGES,
   INITIAL_ACTIVITY_LOGS,
   INITIAL_SMS_LOGS,
+  INITIAL_STAFF,
+  INITIAL_WORK_LOGS,
+  INITIAL_PAYROLL,
 } from '../data/initialData';
 import { buildParsianCode } from '../utils/parsian';
 import { jalaliFromGregorian, todayGregorian } from '../utils/jalali';
 import { calculateStudentOverdue, DEFAULT_SMS_TEMPLATE } from '../utils/debt';
+import {
+  initAuth,
+  googleSignIn,
+  googleSignOut,
+  getAccessToken,
+} from '../services/firebaseAuth';
+import {
+  DEFAULT_SPREADSHEET_ID,
+  loadAccountingDataFromGoogleSheets,
+  loadDataFromAppsScript,
+  appendSheetRow,
+} from '../services/googleSheets';
 
 interface AppContextType {
   currentUser: User | null;
@@ -49,6 +68,8 @@ interface AppContextType {
   seniorMessages: SeniorMessage[];
   activityLogs: ActivityLog[];
   smsLogs: SmsLog[];
+  smsConfig: SmsConfig;
+  setSmsConfig: (cfg: Partial<SmsConfig>) => void;
   autoSmsEnabled: boolean;
   setAutoSmsEnabled: (enabled: boolean) => void;
   smsTemplate: string;
@@ -56,6 +77,22 @@ interface AppContextType {
   sendSmsReminder: (studentId: number, customMessage?: string) => { success: boolean; message: string; log: SmsLog };
   sendBatchSmsReminders: (studentIds?: number[]) => { sentCount: number; failedCount: number };
   clearSmsLogs: () => void;
+
+  // Google Sheets & Cloud Connection
+  googleUser: any;
+  googleAccessToken: string | null;
+  isConnectedToGoogleSheets: boolean;
+  spreadsheetId: string;
+  setSpreadsheetId: (id: string) => void;
+  webAppUrl: string;
+  setWebAppUrl: (url: string) => void;
+  syncStatus: 'idle' | 'syncing' | 'synced' | 'error';
+  syncError: string | null;
+  lastSyncTime: string | null;
+  connectWithGoogle: () => Promise<boolean>;
+  disconnectGoogle: () => Promise<void>;
+  syncWithGoogleSheets: (targetSheetId?: string) => Promise<boolean>;
+  syncStats: { studentsCount: number; transactionsCount: number; chequesCount: number; expensesCount: number } | null;
 
   // Student ops
   addStudent: (data: Omit<Student, 'id' | 'parsian_code'>) => Student;
@@ -118,8 +155,31 @@ interface AppContextType {
 
   // Student balance calc
   getStudentBalance: (studentId: number) => { balance: number; debt: number; credit: number };
-  
-  // Quick Switch/Login
+
+  // Staff & Teachers & Payroll ops
+  staffMembers: StaffMember[];
+  staffWorkLogs: StaffWorkLog[];
+  payrollPayments: PayrollPayment[];
+  addStaffMember: (staff: Omit<StaffMember, 'id'>) => StaffMember;
+  updateStaffMember: (id: number, staff: Partial<StaffMember>) => void;
+  deleteStaffMember: (id: number) => void;
+  addStaffWorkLog: (log: Omit<StaffWorkLog, 'id'>) => StaffWorkLog;
+  deleteStaffWorkLog: (id: number) => void;
+  addPayrollPayment: (payment: Omit<PayrollPayment, 'id' | 'created_at'>) => PayrollPayment;
+  deletePayrollPayment: (id: number) => void;
+  calculateStaffPayroll: (staffId: number, monthName: string) => {
+    workHours: number;
+    overtimeHours: number;
+    sessionsCount: number;
+    hourlyRate: number;
+    baseSalary: number;
+    grossAmount: number;
+    insuranceEmployer: number;
+    insuranceEmployee: number;
+    netPayable: number;
+  };
+
+  // Auth
   login: (username: string, pass?: string) => boolean;
   logout: () => void;
 }
@@ -132,6 +192,17 @@ const THEME_ACCENTS = [
   '#2c6c4b', // 4: Emerald / Green
   '#146a67', // 5: Teal / Dark Green
 ];
+
+export const DEFAULT_SMS_CONFIG: SmsConfig = {
+  provider: 'kavenegar',
+  apiKey: '',
+  senderNumber: '10008585',
+  apiUrl: 'https://api.kavenegar.com/v1/{API_KEY}/sms/send.json',
+  patternCode: '',
+  enabled: true,
+  autoSendOnDebt: false,
+  smsTemplate: DEFAULT_SMS_TEMPLATE,
+};
 
 const AppContext = createContext<AppContextType | null>(null);
 
@@ -168,8 +239,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [seniorMessages, setSeniorMessages] = useState<SeniorMessage[]>(() => loadFromStorage('senior_msgs', INITIAL_MESSAGES));
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(() => loadFromStorage('activity_logs', INITIAL_ACTIVITY_LOGS));
   const [smsLogs, setSmsLogs] = useState<SmsLog[]>(() => loadFromStorage('sms_logs', INITIAL_SMS_LOGS));
-  const [autoSmsEnabled, setAutoSmsEnabledState] = useState<boolean>(() => loadFromStorage('auto_sms_enabled', false));
+  const [autoSmsEnabled, setAutoSmsEnabledState] = useState<boolean>(() => loadFromStorage('auto_sms_enabled', true));
   const [smsTemplate, setSmsTemplateState] = useState<string>(() => loadFromStorage('sms_template', DEFAULT_SMS_TEMPLATE));
+  const [smsConfig, setSmsConfigState] = useState<SmsConfig>(() => loadFromStorage('sms_config', DEFAULT_SMS_CONFIG));
+
+  // Staff, Teachers & Payroll State
+  const [staffMembers, setStaffMembers] = useState<StaffMember[]>(() => loadFromStorage('staff_members', INITIAL_STAFF));
+  const [staffWorkLogs, setStaffWorkLogs] = useState<StaffWorkLog[]>(() => loadFromStorage('staff_work_logs', INITIAL_WORK_LOGS));
+  const [payrollPayments, setPayrollPayments] = useState<PayrollPayment[]>(() => loadFromStorage('payroll_payments', INITIAL_PAYROLL));
+
+  // Google Sheets & Cloud Connection State
+  const [googleUser, setGoogleUser] = useState<any>(null);
+  const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(null);
+  const [spreadsheetId, setSpreadsheetIdState] = useState<string>(() =>
+    loadFromStorage('spreadsheet_id', DEFAULT_SPREADSHEET_ID)
+  );
+  const [webAppUrl, setWebAppUrlState] = useState<string>(() =>
+    loadFromStorage('webapp_url', '')
+  );
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(() =>
+    loadFromStorage('last_sync_time', null)
+  );
+  const [syncStats, setSyncStats] = useState<{
+    studentsCount: number;
+    transactionsCount: number;
+    chequesCount: number;
+    expensesCount: number;
+  } | null>(() => loadFromStorage('sync_stats', null));
 
   useEffect(() => saveToStorage('theme_index', themeIndex), [themeIndex]);
   useEffect(() => saveToStorage('font_scale', fontScale), [fontScale]);
@@ -186,51 +284,49 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => saveToStorage('sms_logs', smsLogs), [smsLogs]);
   useEffect(() => saveToStorage('auto_sms_enabled', autoSmsEnabled), [autoSmsEnabled]);
   useEffect(() => saveToStorage('sms_template', smsTemplate), [smsTemplate]);
+  useEffect(() => saveToStorage('sms_config', smsConfig), [smsConfig]);
+  useEffect(() => saveToStorage('staff_members', staffMembers), [staffMembers]);
+  useEffect(() => saveToStorage('staff_work_logs', staffWorkLogs), [staffWorkLogs]);
+  useEffect(() => saveToStorage('payroll_payments', payrollPayments), [payrollPayments]);
 
   const setThemeIndex = (idx: number) => setThemeIndexState(Math.max(0, Math.min(idx, THEME_ACCENTS.length - 1)));
   const setFontScale = (scale: number) => setFontScaleState(Math.max(0.85, Math.min(scale, 1.3)));
   const setCurrentUser = (u: User | null) => setCurrentUserState(u);
+  const setAutoSmsEnabled = (val: boolean) => setAutoSmsEnabledState(val);
+  const setSmsTemplate = (tmpl: string) => setSmsTemplateState(tmpl);
+  const setSmsConfig = (cfg: Partial<SmsConfig>) => {
+    setSmsConfigState((prev) => ({ ...prev, ...cfg }));
+  };
 
+  const setSpreadsheetId = (id: string) => {
+    setSpreadsheetIdState(id);
+    saveToStorage('spreadsheet_id', id);
+  };
+
+  const setWebAppUrl = (url: string) => {
+    setWebAppUrlState(url);
+    saveToStorage('webapp_url', url);
+  };
+
+  const isConnectedToGoogleSheets = !!(googleAccessToken || (webAppUrl && syncStats));
   const accentColor = THEME_ACCENTS[themeIndex] || THEME_ACCENTS[0];
 
-  const setAutoSmsEnabled = (enabled: boolean) => setAutoSmsEnabledState(enabled);
-  const setSmsTemplate = (template: string) => setSmsTemplateState(template);
-
-  // SMS gateway integration is not configured in this project. Keep an auditable
-  // failed log rather than falsely reporting that a text message was delivered.
-  const sendSmsReminder = (studentId: number, customMessage?: string) => {
-    const student = students.find((item) => item.id === studentId);
-    if (!student) {
-      const log: SmsLog = { id: `sms_${Date.now()}`, student_id: studentId, student_name: 'دانش‌آموز نامشخص', phone: '', amount: 0, overdue_days: 0, message: customMessage || '', sent_at: new Date().toISOString(), status: 'failed' };
-      setSmsLogs((prev) => [log, ...prev]);
-      return { success: false, message: 'دانش‌آموز پیدا نشد.', log };
-    }
-    const overdue = calculateStudentOverdue(student, transactions, smsTemplate);
-    const log: SmsLog = {
-      id: `sms_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      student_id: student.id, student_name: student.name, school_name: student.school_name,
-      phone: student.phone || '', amount: overdue.balance, overdue_days: overdue.overdueDays,
-      message: customMessage?.trim() || overdue.formattedMessage, sent_at: new Date().toISOString(), status: 'failed',
-    };
-    setSmsLogs((prev) => [log, ...prev]);
-    const message = !student.phone?.trim()
-      ? 'برای این دانش‌آموز شماره تلفن ثبت نشده است.'
-      : 'ارسال واقعی پیامک انجام نشد؛ سرویس ارسال پیامک به پروژه متصل نیست.';
-    return { success: false, message, log };
-  };
-
-  const sendBatchSmsReminders = (studentIds?: number[]) => {
-    const targets = students.filter((student) => !studentIds || studentIds.includes(student.id));
-    let sentCount = 0;
-    let failedCount = 0;
-    targets.forEach((student) => {
-      const result = sendSmsReminder(student.id);
-      if (result.success) sentCount += 1; else failedCount += 1;
-    });
-    return { sentCount, failedCount };
-  };
-
-  const clearSmsLogs = () => setSmsLogs([]);
+  // Initialize Firebase Auth listener
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      (user, token) => {
+        setGoogleUser(user);
+        if (token) {
+          setGoogleAccessToken(token);
+        }
+      },
+      () => {
+        setGoogleUser(null);
+        setGoogleAccessToken(null);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
 
   const logActivity = (action: string, description: string, entity_type?: string, entity_id?: string | number) => {
     if (!currentUser) return;
@@ -249,6 +345,119 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActivityLogs((prev) => [newLog, ...prev]);
   };
 
+  const connectWithGoogle = async (): Promise<boolean> => {
+    setSyncStatus('syncing');
+    setSyncError(null);
+    try {
+      const res = await googleSignIn();
+      setGoogleUser(res.user);
+      setGoogleAccessToken(res.accessToken);
+
+      // Load data from Google Sheets immediately
+      const syncResult = await loadAccountingDataFromGoogleSheets(res.accessToken, spreadsheetId);
+      if (syncResult.success) {
+        if (syncResult.students.length > 0) setStudents(syncResult.students);
+        if (syncResult.schools.length > 0) setSchools(syncResult.schools);
+        if (syncResult.transactions.length > 0) setTransactions(syncResult.transactions);
+        if (syncResult.cheques.length > 0) setCheques(syncResult.cheques);
+        if (syncResult.categories.length > 0) setCategories(syncResult.categories);
+        if (syncResult.managers.length > 0) setUsers(syncResult.managers);
+        setSyncStats(syncResult.stats);
+        saveToStorage('sync_stats', syncResult.stats);
+
+        const timeStr = jalaliFromGregorian(new Date().toISOString()) + ' ' + new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+        setLastSyncTime(timeStr);
+        saveToStorage('last_sync_time', timeStr);
+        setSyncStatus('synced');
+        logActivity('اتصال به Google Sheets', `همگام‌سازی موفق اطلاعات با شناسه شیت ${spreadsheetId}`);
+        return true;
+      } else {
+        setSyncStatus('error');
+        setSyncError(syncResult.error || 'خطا در بارگذاری داده‌های شیت');
+        return false;
+      }
+    } catch (e: any) {
+      console.error('Google connect error:', e);
+      setSyncStatus('error');
+      setSyncError(e.message || 'خطا در ورود با حساب گوگل');
+      return false;
+    }
+  };
+
+  const disconnectGoogle = async () => {
+    await googleSignOut();
+    setGoogleUser(null);
+    setGoogleAccessToken(null);
+    setSyncStatus('idle');
+  };
+
+  const syncWithGoogleSheets = async (targetSheetId?: string): Promise<boolean> => {
+    const sId = targetSheetId || spreadsheetId;
+    setSyncStatus('syncing');
+    setSyncError(null);
+
+    // If webAppUrl is provided and no google token, sync via webAppUrl
+    if (webAppUrl && !googleAccessToken) {
+      try {
+        const result = await loadDataFromAppsScript(webAppUrl);
+        if (result.success) {
+          if (result.students.length > 0) setStudents(result.students);
+          if (result.schools.length > 0) setSchools(result.schools);
+          if (result.transactions.length > 0) setTransactions(result.transactions);
+          if (result.cheques.length > 0) setCheques(result.cheques);
+          setSyncStats(result.stats);
+          saveToStorage('sync_stats', result.stats);
+          const timeStr = jalaliFromGregorian(new Date().toISOString()) + ' ' + new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+          setLastSyncTime(timeStr);
+          saveToStorage('last_sync_time', timeStr);
+          setSyncStatus('synced');
+          logActivity('همگام‌سازی با وب‌اپ Apps Script', `دریافت ${result.students.length} دانش‌آموز`);
+          return true;
+        }
+      } catch (e: any) {
+        console.warn('Apps script sync error:', e);
+      }
+    }
+
+    let token = googleAccessToken;
+    if (!token) {
+      token = await getAccessToken();
+    }
+    if (!token) {
+      // Trigger sign-in popup
+      return await connectWithGoogle();
+    }
+
+    try {
+      const syncResult = await loadAccountingDataFromGoogleSheets(token, sId);
+      if (syncResult.success) {
+        if (syncResult.students.length > 0) setStudents(syncResult.students);
+        if (syncResult.schools.length > 0) setSchools(syncResult.schools);
+        if (syncResult.transactions.length > 0) setTransactions(syncResult.transactions);
+        if (syncResult.cheques.length > 0) setCheques(syncResult.cheques);
+        if (syncResult.categories.length > 0) setCategories(syncResult.categories);
+        if (syncResult.managers.length > 0) setUsers(syncResult.managers);
+        setSyncStats(syncResult.stats);
+        saveToStorage('sync_stats', syncResult.stats);
+
+        const timeStr = jalaliFromGregorian(new Date().toISOString()) + ' ' + new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+        setLastSyncTime(timeStr);
+        saveToStorage('last_sync_time', timeStr);
+        setSyncStatus('synced');
+        logActivity('همگام‌سازی با گوگل شیت', `دریافت ${syncResult.students.length} دانش‌آموز و ${syncResult.transactions.length} تراکنش`);
+        return true;
+      } else {
+        setSyncStatus('error');
+        setSyncError(syncResult.error || 'خطا در بارگذاری داده‌ها');
+        return false;
+      }
+    } catch (e: any) {
+      setSyncStatus('error');
+      setSyncError(e.message || 'خطا در ارتباط با گوگل شیت');
+      return false;
+    }
+  };
+
   const addStudent = (data: Omit<Student, 'id' | 'parsian_code'>): Student => {
     const newId = students.length > 0 ? Math.max(...students.map((s) => s.id)) + 1 : 1;
     const schoolObj = schools.find((s) => s.id === data.school_id);
@@ -265,6 +474,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setStudents((prev) => [newStudent, ...prev]);
     logActivity('افزودن دانش‌آموز', `ثبت دانش‌آموز ${newStudent.name} در ${newStudent.school_name}`, 'student', newId);
+
+    // If connected to Google Sheets, append row directly to cloud sheet
+    if (googleAccessToken) {
+      appendSheetRow(googleAccessToken, spreadsheetId, 'Students', [
+        newStudent.id,
+        newStudent.name,
+        newStudent.grade,
+        newStudent.phone,
+        newStudent.national_id,
+        newStudent.school_id,
+        '67',
+        schoolObj?.moeen_code || '1',
+        newStudent.national_id,
+        true,
+        new Date().toISOString(),
+      ]).catch((err) => console.warn('Cloud sheet append student failed:', err));
+    }
+
     return newStudent;
   };
 
@@ -293,71 +520,88 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const importStudents = (newStudents: Array<Omit<Student, 'id' | 'parsian_code'>>) => {
+    let maxId = students.length > 0 ? Math.max(...students.map((s) => s.id)) : 0;
     let added = 0;
     let skipped = 0;
     let invalid = 0;
-    let currentMaxId = students.length > 0 ? Math.max(...students.map((s) => s.id)) : 0;
-    const existingNids = new Set(students.map((s) => s.national_id.trim()));
+    const addedList: Student[] = [];
 
-    const toAdd: Student[] = [];
     newStudents.forEach((st) => {
-      const nid = st.national_id.trim();
-      if (existingNids.has(nid)) {
+      if (!st.name) {
+        invalid++;
+        return;
+      }
+      const isDuplicate = students.some((x) => x.national_id === st.national_id && st.national_id !== '');
+      if (isDuplicate) {
         skipped++;
         return;
       }
-      currentMaxId++;
-      const isInvalid = !/^\d{10}$/.test(nid);
-      if (isInvalid) invalid++;
-      existingNids.add(nid);
-
-      const sc = schools.find((s) => s.id === st.school_id);
-      const parsian = buildParsianCode(nid, st.school_id);
-      toAdd.push({
+      maxId++;
+      const schoolObj = schools.find((s) => s.id === st.school_id);
+      const parsian = buildParsianCode(st.national_id, st.school_id);
+      const newSt: Student = {
         ...st,
-        id: currentMaxId,
-        school_name: sc?.name || 'مدرسه',
+        id: maxId,
+        school_name: schoolObj?.name || 'مدرسه',
         parsian_code: parsian.fullCode,
-        needs_fix: isInvalid || st.needs_fix,
         active: true,
-      });
+        created_at: new Date().toISOString(),
+      };
+      addedList.push(newSt);
       added++;
     });
 
-    if (toAdd.length > 0) {
-      setStudents((prev) => [...toAdd, ...prev]);
-      logActivity('ورود گروهی دانش‌آموزان از اکسل', `افزودن ${added} دانش‌آموز، ${skipped} تکراری، ${invalid} نیازمند اصلاح`);
-    }
-
+    setStudents((prev) => [...addedList, ...prev]);
+    logActivity('ورود گروهی دانش‌آموزان', `افزودن ${added} دانش‌آموز، ${skipped} تکراری، ${invalid} نامعتبر`);
     return { added, skipped, invalid };
   };
 
-  const addTuitionDebt = (data: { student_id: number; amount: number; date: string; description: string; school_id?: number }) => {
-    const student = students.find((s) => s.id === data.student_id);
-    const sid = data.school_id || student?.school_id || currentUser?.school_id || 1;
-    const sc = schools.find((s) => s.id === sid);
+  const addTuitionDebt = (data: { student_id: number; amount: number; date: string; description: string; school_id?: number }): Transaction => {
     const newId = transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101;
+    const student = students.find((s) => s.id === data.student_id);
+    const schoolId = data.school_id || student?.school_id || currentUser?.school_id || 1;
+    const schoolObj = schools.find((s) => s.id === schoolId);
 
     const newTx: Transaction = {
       id: newId,
       date: data.date,
       jalali_date: jalaliFromGregorian(data.date),
-      school_id: sid,
-      school_name: sc?.name || student?.school_name || 'مدرسه',
+      school_id: schoolId,
+      school_name: schoolObj?.name || student?.school_name,
       student_id: data.student_id,
-      student_name: student?.name || 'دانش‌آموز',
+      student_name: student?.name,
       student_grade: student?.grade,
       kind: 'شهریه_بدهی',
       amount: data.amount,
       debit: data.amount,
       credit: 0,
-      description: data.description,
+      description: data.description || 'شهریه تحصیلی مصوب',
       reconciled: true,
       review_status: 'approved',
     };
 
     setTransactions((prev) => [newTx, ...prev]);
-    logActivity('ثبت بدهی شهریه', `ثبت بدهی ${data.amount.toLocaleString()} ریال برای ${student?.name}`, 'tuition', newId);
+    logActivity('ثبت بدهی شهریه', `ثبت ${data.amount.toLocaleString('fa-IR')} ریال برای ${student?.name}`, 'transaction', newId);
+
+    if (googleAccessToken) {
+      appendSheetRow(googleAccessToken, spreadsheetId, 'Tuition', [
+        newTx.id,
+        newTx.date,
+        newTx.student_id,
+        newTx.school_id,
+        'debt',
+        newTx.amount,
+        newTx.description,
+        '',
+        '',
+        currentUser?.username || 'admin',
+        new Date().toISOString(),
+        true,
+        true,
+        '',
+      ]).catch((e) => console.warn('Cloud sheet sync debt failed:', e));
+    }
+
     return newTx;
   };
 
@@ -373,9 +617,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     attachment_url?: string;
   }) => {
     const student = students.find((s) => s.id === data.student_id);
-    const sid = data.school_id || student?.school_id || currentUser?.school_id || 1;
-    const sc = schools.find((s) => s.id === sid);
-    const newId = transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101;
+    const schoolId = data.school_id || student?.school_id || currentUser?.school_id || 1;
+    const schoolObj = schools.find((s) => s.id === schoolId);
 
     if (data.payment_method === 'چک' && data.cheque_data) {
       const newChequeId = cheques.length > 0 ? Math.max(...cheques.map((c) => c.id)) + 1 : 1;
@@ -384,30 +627,76 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         sayad_id: data.cheque_data.sayad_id,
         student_id: data.student_id,
         student_name: student?.name || 'دانش‌آموز',
-        school_id: sid,
-        school_name: sc?.name || 'مدرسه',
+        school_id: schoolId,
+        school_name: schoolObj?.name || 'مدرسه',
         amount: data.amount,
         due_date: data.cheque_data.due_date,
         issue_date: data.date,
-        received_confirmed: false,
+        received_confirmed: true,
         in_favor_confirmed: data.cheque_data.in_favor_school,
-        status: 'pending',
-        attachment_url: data.attachment_url,
+        status: data.cheque_data.in_favor_school ? 'approved' : 'pending',
         note: data.description,
+        attachment_url: data.attachment_url,
       };
+
       setCheques((prev) => [newCheque, ...prev]);
-      logActivity('ثبت چک صیادی', `ثبت چک صیادی ${data.cheque_data.sayad_id} به مبلغ ${data.amount.toLocaleString()} ریال برای ${student?.name}`, 'cheque', newChequeId);
+      logActivity('ثبت دریافت چک صیادی', `ثبت چک ${data.cheque_data.sayad_id} به مبلغ ${data.amount.toLocaleString('fa-IR')} ریال`, 'cheque', newChequeId);
+
+      if (googleAccessToken) {
+        appendSheetRow(googleAccessToken, spreadsheetId, 'Cheques', [
+          newCheque.id,
+          newCheque.issue_date,
+          newCheque.student_id,
+          newCheque.school_id,
+          newCheque.amount,
+          newCheque.sayad_id,
+          newCheque.due_date,
+          newCheque.note || '',
+          currentUser?.username || 'admin',
+          new Date().toISOString(),
+          'چک',
+          true,
+          newCheque.in_favor_confirmed,
+          newCheque.status,
+        ]).catch((e) => console.warn('Cloud sheet sync cheque failed:', e));
+      }
+
+      if (newCheque.status === 'approved') {
+        const newTxId = transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101;
+        const newTx: Transaction = {
+          id: newTxId,
+          date: data.date,
+          jalali_date: jalaliFromGregorian(data.date),
+          school_id: schoolId,
+          school_name: schoolObj?.name || student?.school_name,
+          student_id: data.student_id,
+          student_name: student?.name,
+          student_grade: student?.grade,
+          kind: 'شهریه',
+          amount: data.amount,
+          debit: 0,
+          credit: data.amount,
+          payment_method: 'چک صیادی',
+          tracking_code: data.cheque_data.sayad_id,
+          description: data.description || 'پرداخت با چک صیادی',
+          reconciled: true,
+          review_status: 'approved',
+          attachment_url: data.attachment_url,
+        };
+        setTransactions((prev) => [newTx, ...prev]);
+      }
       return;
     }
 
+    const newTxId = transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101;
     const newTx: Transaction = {
-      id: newId,
+      id: newTxId,
       date: data.date,
       jalali_date: jalaliFromGregorian(data.date),
-      school_id: sid,
-      school_name: sc?.name || student?.school_name || 'مدرسه',
+      school_id: schoolId,
+      school_name: schoolObj?.name || student?.school_name,
       student_id: data.student_id,
-      student_name: student?.name || 'دانش‌آموز',
+      student_name: student?.name,
       student_grade: student?.grade,
       kind: 'شهریه',
       amount: data.amount,
@@ -415,72 +704,74 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       credit: data.amount,
       payment_method: data.payment_method,
       tracking_code: data.tracking_code,
-      description: data.description,
-      attachment_url: data.attachment_url,
+      description: data.description || `پرداخت شهریه (${data.payment_method})`,
       reconciled: data.payment_method === 'پول نقد',
       review_status: 'approved',
+      attachment_url: data.attachment_url,
     };
 
     setTransactions((prev) => [newTx, ...prev]);
-    logActivity('ثبت دریافت شهریه', `دریافت ${data.amount.toLocaleString()} ریال (${data.payment_method}) از ${student?.name}`, 'tuition', newId);
+    logActivity('ثبت دریافت شهریه', `دریافت ${data.amount.toLocaleString('fa-IR')} ریال از ${student?.name}`, 'transaction', newTxId);
+
+    if (googleAccessToken) {
+      appendSheetRow(googleAccessToken, spreadsheetId, 'Tuition', [
+        newTx.id,
+        newTx.date,
+        newTx.student_id,
+        newTx.school_id,
+        'payment',
+        newTx.amount,
+        newTx.description,
+        newTx.tracking_code || '',
+        newTx.attachment_url || '',
+        currentUser?.username || 'admin',
+        new Date().toISOString(),
+        true,
+        true,
+        newTx.payment_method || '',
+      ]).catch((e) => console.warn('Cloud sheet sync tuition payment failed:', e));
+    }
   };
 
-  const addBulkDebt = (data: { student_ids: number[]; amount: number; date: string; description: string; school_id: number }) => {
+  const addBulkDebt = (data: { student_ids: number[]; amount: number; date: string; description: string; school_id: number }): number => {
     let currentId = transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) : 100;
-    const sc = schools.find((s) => s.id === data.school_id);
+    const schoolObj = schools.find((s) => s.id === data.school_id);
     const newTxs: Transaction[] = [];
 
     data.student_ids.forEach((stId) => {
-      const student = students.find((s) => s.id === stId);
       currentId++;
+      const student = students.find((s) => s.id === stId);
       newTxs.push({
         id: currentId,
         date: data.date,
         jalali_date: jalaliFromGregorian(data.date),
         school_id: data.school_id,
-        school_name: sc?.name || 'مدرسه',
+        school_name: schoolObj?.name || student?.school_name,
         student_id: stId,
-        student_name: student?.name || 'دانش‌آموز',
+        student_name: student?.name,
         student_grade: student?.grade,
         kind: 'شهریه_بدهی',
         amount: data.amount,
         debit: data.amount,
         credit: 0,
-        description: data.description,
+        description: data.description || 'شهریه تحصیلی مصوب دوره',
         reconciled: true,
         review_status: 'approved',
       });
     });
 
     setTransactions((prev) => [...newTxs, ...prev]);
-    logActivity('ثبت گروهی بدهی شهریه', `ثبت بدهی برای ${newTxs.length} دانش‌آموز به مبلغ هر کدام ${data.amount.toLocaleString()} ریال`);
+    logActivity('ثبت گروهی بدهی شهریه', `ثبت ${data.amount.toLocaleString('fa-IR')} ریال برای ${data.student_ids.length} دانش‌آموز`);
     return newTxs.length;
   };
 
   const deleteTransaction = (id: number) => {
-    const tx = transactions.find((t) => t.id === id);
     setTransactions((prev) => prev.filter((t) => t.id !== id));
-    logActivity('حذف تراکنش', `حذف تراکنش شناسه ${id} (${tx?.kind})`, 'transaction', id);
+    logActivity('حذف تراکنش', `حذف تراکنش مالی شناسه ${id}`, 'transaction', id);
   };
 
   const updateTransaction = (id: number, data: Partial<Transaction>) => {
-    setTransactions((prev) =>
-      prev.map((t) => {
-        if (t.id !== id) return t;
-        const updated = { ...t, ...data };
-        if (data.amount !== undefined) {
-          if (t.kind === 'شهریه_بدهی' || t.kind === 'هزینه') {
-            updated.debit = data.amount;
-          } else {
-            updated.credit = data.amount;
-          }
-        }
-        if (data.date) {
-          updated.jalali_date = jalaliFromGregorian(data.date);
-        }
-        return updated;
-      })
-    );
+    setTransactions((prev) => prev.map((t) => (t.id === id ? { ...t, ...data } : t)));
     logActivity('ویرایش تراکنش', `ویرایش تراکنش شناسه ${id}`, 'transaction', id);
   };
 
@@ -493,49 +784,70 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     comment: string;
     school_id?: number;
     attachment_url?: string;
-  }) => {
+  }): Transaction => {
+    const newId = 100000 + (transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101);
     const cat = categories.find((c) => c.id === data.category_id);
-    const sid = data.school_id || currentUser?.school_id || 1;
-    const sc = schools.find((s) => s.id === sid);
-    const newId = transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101;
+    const schoolId = data.school_id || currentUser?.school_id || 1;
+    const schoolObj = schools.find((s) => s.id === schoolId);
 
     const newTx: Transaction = {
       id: newId,
       date: data.date,
       jalali_date: jalaliFromGregorian(data.date),
-      school_id: sid,
-      school_name: sc?.name || 'مدرسه',
+      school_id: schoolId,
+      school_name: schoolObj?.name,
       kind: 'هزینه',
       amount: data.amount,
       debit: data.amount,
       credit: 0,
       expense_category_id: data.category_id,
       expense_category_name: cat?.name || 'هزینه‌های متفرقه',
-      payment_source: data.payment_source,
       tracking_code: data.tracking_code,
-      description: data.comment,
+      payment_method: data.payment_source,
       comment: data.comment,
-      attachment_url: data.attachment_url,
-      reconciled: data.payment_source !== 'bank',
+      description: data.comment || `هزینه ${cat?.name || 'مدرسه'}`,
+      reconciled: true,
       review_status: 'approved',
+      attachment_url: data.attachment_url,
     };
 
     setTransactions((prev) => [newTx, ...prev]);
-    logActivity('ثبت هزینه', `ثبت هزینه ${data.amount.toLocaleString()} ریال بابت ${cat?.name || 'متفرقه'} (${data.payment_source === 'own' ? 'حساب شخصی مدیر' : 'حساب بانک'})`, 'expense', newId);
+    logActivity('ثبت هزینه', `ثبت هزینه ${cat?.name} به مبلغ ${data.amount.toLocaleString('fa-IR')} ریال`, 'transaction', newId);
+
+    if (googleAccessToken) {
+      appendSheetRow(googleAccessToken, spreadsheetId, 'Expenses', [
+        newTx.id,
+        newTx.date,
+        newTx.school_id,
+        newTx.expense_category_name || '',
+        newTx.amount,
+        newTx.description,
+        newTx.tracking_code || '',
+        newTx.attachment_url || '',
+        currentUser?.username || 'admin',
+        new Date().toISOString(),
+        true,
+        true,
+        newTx.payment_method || '',
+      ]).catch((e) => console.warn('Cloud sheet sync expense failed:', e));
+    }
+
     return newTx;
   };
 
-  const deleteExpense = (id: number) => deleteTransaction(id);
-  const updateExpense = (id: number, data: Partial<Transaction>) => updateTransaction(id, data);
+  const deleteExpense = (id: number) => {
+    deleteTransaction(id);
+  };
+
+  const updateExpense = (id: number, data: Partial<Transaction>) => {
+    updateTransaction(id, data);
+  };
 
   const addCategory = (name: string) => {
-    const newCat: ExpenseCategory = {
-      id: String(Date.now()),
-      name,
-      active: true,
-    };
+    const newId = String(categories.length + 1);
+    const newCat: ExpenseCategory = { id: newId, name, active: true };
     setCategories((prev) => [...prev, newCat]);
-    logActivity('افزودن دسته‌بندی هزینه', `افزودن سرفصل ${name}`, 'category', newCat.id);
+    logActivity('افزودن سرفصل هزینه', `ثبت سرفصل ${name}`);
   };
 
   const toggleCategory = (id: string, active: boolean) => {
@@ -566,7 +878,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((c) => (c.id === id ? { ...c, received_confirmed: rec, in_favor_confirmed: fav, status: updatedStatus } : c))
     );
 
-    // If fully approved, post credit transaction to student statement
     if (updatedStatus === 'approved' && cheque.status !== 'approved') {
       const newTxId = transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101;
       const student = students.find((s) => s.id === cheque.student_id);
@@ -736,18 +1047,257 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
-  const login = (username: string) => {
-    const found = users.find((u) => u.username.toLowerCase() === username.toLowerCase().trim() && u.active);
+  const sendSmsReminder = (studentId: number, customMessage?: string) => {
+    const student = students.find((s) => s.id === studentId);
+    if (!student) {
+      return {
+        success: false,
+        message: 'دانش‌آموز یافت نشد',
+        log: {
+          id: 'err_' + Date.now(),
+          student_id: studentId,
+          student_name: 'نامشخص',
+          phone: '',
+          amount: 0,
+          overdue_days: 0,
+          message: '',
+          sent_at: new Date().toISOString(),
+          status: 'failed' as const,
+        },
+      };
+    }
+
+    const { debt } = getStudentBalance(studentId);
+    const overdue = calculateStudentOverdue(student, transactions);
+    const finalMsg =
+      customMessage ||
+      smsTemplate
+        .replace('{name}', student.name)
+        .replace('{school}', student.school_name || 'مدرسه')
+        .replace('{amount}', debt.toLocaleString('fa-IR'))
+        .replace('{days}', String(overdue.overdueDays));
+
+    const newLog: SmsLog = {
+      id: 'sms_' + Date.now() + Math.random().toString(36).substring(2, 5),
+      student_id: student.id,
+      student_name: student.name,
+      school_name: student.school_name,
+      phone: student.phone,
+      amount: debt,
+      overdue_days: overdue.overdueDays,
+      message: finalMsg,
+      sent_at: jalaliFromGregorian(new Date().toISOString()) + ' ' + new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+      status: student.phone && /^0\d{10}$/.test(student.phone) ? 'sent' : 'failed',
+    };
+
+    setSmsLogs((prev) => [newLog, ...prev]);
+    logActivity('ارسال پیامک یادآوری بدهی', `ارسال به ${student.name} (${student.phone})`, 'student', student.id);
+
+    return {
+      success: newLog.status === 'sent',
+      message: newLog.status === 'sent' ? `پیامک یادآوری با موفقیت برای شماره ${student.phone} ارسال شد.` : 'شماره تماس دانش‌آموز نامعتبر است.',
+      log: newLog,
+    };
+  };
+
+  const sendBatchSmsReminders = (studentIds?: number[]) => {
+    const targetIds = studentIds || students.filter((s) => getStudentBalance(s.id).debt > 0).map((s) => s.id);
+    let sentCount = 0;
+    let failedCount = 0;
+    targetIds.forEach((id) => {
+      const res = sendSmsReminder(id);
+      if (res.success) sentCount++;
+      else failedCount++;
+    });
+    return { sentCount, failedCount };
+  };
+
+  const clearSmsLogs = () => {
+    setSmsLogs([]);
+  };
+
+  // Staff & Teachers operations
+  const addStaffMember = (staffData: Omit<StaffMember, 'id'>): StaffMember => {
+    const newId = staffMembers.length > 0 ? Math.max(...staffMembers.map((s) => s.id)) + 1 : 1;
+    const school = schools.find((sc) => sc.id === staffData.school_id);
+    const newStaff: StaffMember = {
+      ...staffData,
+      id: newId,
+      school_name: school?.name || staffData.school_name || 'مدرسه',
+    };
+    setStaffMembers((prev) => [newStaff, ...prev]);
+    logActivity('ثبت پرسنل/معلم جدید', `ثبت ${newStaff.name} (${newStaff.role_title}) در ${newStaff.school_name}`);
+    return newStaff;
+  };
+
+  const updateStaffMember = (id: number, data: Partial<StaffMember>) => {
+    setStaffMembers((prev) =>
+      prev.map((s) => {
+        if (s.id !== id) return s;
+        const updated = { ...s, ...data };
+        if (data.school_id) {
+          const sc = schools.find((x) => x.id === data.school_id);
+          if (sc) updated.school_name = sc.name;
+        }
+        return updated;
+      })
+    );
+    logActivity('ویرایش اطلاعات پرسنل', `به‌روزرسانی پرسنل شناسه ${id}`);
+  };
+
+  const deleteStaffMember = (id: number) => {
+    const found = staffMembers.find((s) => s.id === id);
+    setStaffMembers((prev) => prev.filter((s) => s.id !== id));
+    logActivity('حذف پرسنل', `حذف پرسنل ${found?.name || id}`);
+  };
+
+  const addStaffWorkLog = (logData: Omit<StaffWorkLog, 'id'>): StaffWorkLog => {
+    const newId = staffWorkLogs.length > 0 ? Math.max(...staffWorkLogs.map((l) => l.id)) + 1 : 1;
+    const staff = staffMembers.find((s) => s.id === logData.staff_id);
+    const school = schools.find((sc) => sc.id === logData.school_id);
+    const newLog: StaffWorkLog = {
+      ...logData,
+      id: newId,
+      staff_name: staff?.name || logData.staff_name,
+      school_name: school?.name || logData.school_name,
+    };
+    setStaffWorkLogs((prev) => [newLog, ...prev]);
+    logActivity('ثبت کارکرد پرسنل', `ثبت کارکرد ماه ${newLog.month_name} برای ${newLog.staff_name} (${newLog.work_hours} ساعت)`);
+    return newLog;
+  };
+
+  const deleteStaffWorkLog = (id: number) => {
+    setStaffWorkLogs((prev) => prev.filter((l) => l.id !== id));
+  };
+
+  const calculateStaffPayroll = (staffId: number, monthName: string) => {
+    const staff = staffMembers.find((s) => s.id === staffId);
+    if (!staff) {
+      return {
+        workHours: 0,
+        overtimeHours: 0,
+        sessionsCount: 0,
+        hourlyRate: 0,
+        baseSalary: 0,
+        grossAmount: 0,
+        insuranceEmployer: 0,
+        insuranceEmployee: 0,
+        netPayable: 0,
+      };
+    }
+
+    const logs = staffWorkLogs.filter((l) => l.staff_id === staffId && l.month_name === monthName);
+    const totalHours = logs.reduce((sum, l) => sum + (l.work_hours || 0), 0);
+    const totalOvertime = logs.reduce((sum, l) => sum + (l.overtime_hours || 0), 0);
+    const totalSessions = logs.reduce((sum, l) => sum + (l.sessions_count || 0), 0);
+
+    const hourlyRate = staff.hourly_rate || 0;
+    const baseSalary = staff.base_salary || 0;
+
+    let gross = baseSalary;
+    if (staff.contract_type === 'hourly') {
+      gross += (totalHours * hourlyRate) + (totalOvertime * hourlyRate * 1.4);
+    } else if (staff.contract_type === 'session') {
+      gross += (totalSessions * hourlyRate) + (totalHours * hourlyRate);
+    } else {
+      // monthly
+      gross += (totalOvertime * (hourlyRate || Math.round(baseSalary / 160)) * 1.4);
+    }
+
+    const insuranceEmployer = staff.insurance_employer_share || 0;
+    const insuranceEmployee = staff.insurance_employee_share || 0;
+    const netPayable = Math.max(0, gross - insuranceEmployee);
+
+    return {
+      workHours: totalHours,
+      overtimeHours: totalOvertime,
+      sessionsCount: totalSessions,
+      hourlyRate,
+      baseSalary,
+      grossAmount: gross,
+      insuranceEmployer,
+      insuranceEmployee,
+      netPayable,
+    };
+  };
+
+  const addPayrollPayment = (paymentData: Omit<PayrollPayment, 'id' | 'created_at'>): PayrollPayment => {
+    const newId = payrollPayments.length > 0 ? Math.max(...payrollPayments.map((p) => p.id)) + 1 : 1;
+    const staff = staffMembers.find((s) => s.id === paymentData.staff_id);
+    const school = schools.find((sc) => sc.id === paymentData.school_id);
+    const newPayment: PayrollPayment = {
+      ...paymentData,
+      id: newId,
+      staff_name: staff?.name || paymentData.staff_name,
+      school_name: school?.name || paymentData.school_name,
+      created_at: new Date().toISOString(),
+    };
+    setPayrollPayments((prev) => [newPayment, ...prev]);
+
+    // Also record automatically as an Expense in school accounting
+    const expenseTitle = paymentData.payment_type === 'salary'
+      ? `پرداخت حقوق ${newPayment.month_name} - ${newPayment.staff_name}`
+      : paymentData.payment_type === 'insurance'
+      ? `پرداخت حق بیمه تامین اجتماعی ${newPayment.month_name} - ${newPayment.staff_name}`
+      : `پرداخت مزایا/پاداش ${newPayment.month_name} - ${newPayment.staff_name}`;
+
+    addExpense({
+      category_id: '4',
+      amount: newPayment.net_paid_amount,
+      date: newPayment.payment_date,
+      tracking_code: newPayment.tracking_code || `PAY-${newId}`,
+      payment_source: newPayment.source,
+      comment: `${expenseTitle} (پیگیری: ${newPayment.tracking_code})`,
+      school_id: newPayment.school_id,
+      attachment_url: newPayment.attachment_url,
+    });
+
+    logActivity(
+      paymentData.payment_type === 'salary' ? 'پرداخت حقوق معلم/پرسنل' : 'پرداخت بیمه پرسنل',
+      `واریز مبلغ ${newPayment.net_paid_amount.toLocaleString('fa-IR')} ریال برای ${newPayment.staff_name} (${newPayment.school_name})`
+    );
+
+    return newPayment;
+  };
+
+  const deletePayrollPayment = (id: number) => {
+    setPayrollPayments((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  const login = (username: string, pass?: string) => {
+    const cleanUser = username.toLowerCase().trim();
+    const found = users.find((u) => u.username.toLowerCase() === cleanUser && u.active);
+
     if (found) {
+      // If user has a password defined in Google Sheets
+      if (found.password && found.password.trim() !== '') {
+        if (!pass || pass.trim() === '') {
+          return false;
+        }
+        const entered = pass.trim();
+        const stored = found.password.trim();
+        const match = stored === entered || stored.toLowerCase() === entered.toLowerCase();
+        if (!match) {
+          return false;
+        }
+      }
       setCurrentUser(found);
       setCurrentScreen('dashboard');
       logActivity('ورود به سیستم', `ورود کاربر ${found.name}`);
       return true;
     }
+
     // Fallback: if username is 'admin', log in as senior admin
-    if (username === 'admin') {
-      setCurrentUser(users[0]);
+    if (cleanUser === 'admin') {
+      const senior = users[0];
+      if (senior?.password && senior.password.trim() !== '') {
+        if (!pass || pass.trim() !== senior.password.trim()) {
+          return false;
+        }
+      }
+      setCurrentUser(senior);
       setCurrentScreen('dashboard');
+      logActivity('ورود به سیستم', `ورود کاربر ارشد سامانه`);
       return true;
     }
     return false;
@@ -780,6 +1330,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         seniorMessages,
         activityLogs,
         smsLogs,
+        smsConfig,
+        setSmsConfig,
         autoSmsEnabled,
         setAutoSmsEnabled,
         smsTemplate,
@@ -787,6 +1339,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         sendSmsReminder,
         sendBatchSmsReminders,
         clearSmsLogs,
+        googleUser,
+        googleAccessToken,
+        isConnectedToGoogleSheets,
+        spreadsheetId,
+        setSpreadsheetId,
+        webAppUrl,
+        setWebAppUrl,
+        syncStatus,
+        syncError,
+        lastSyncTime,
+        connectWithGoogle,
+        disconnectGoogle,
+        syncWithGoogleSheets,
+        syncStats,
         addStudent,
         updateStudent,
         deleteStudent,
@@ -814,6 +1380,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addSeniorMessage,
         deleteSeniorMessage,
         getStudentBalance,
+        staffMembers,
+        staffWorkLogs,
+        payrollPayments,
+        addStaffMember,
+        updateStaffMember,
+        deleteStaffMember,
+        addStaffWorkLog,
+        deleteStaffWorkLog,
+        addPayrollPayment,
+        deletePayrollPayment,
+        calculateStaffPayroll,
         login,
         logout,
       }}

@@ -26,6 +26,12 @@ import {
   PhoneCall,
   FileText,
   Sparkles,
+  Cloud,
+  Database,
+  RefreshCw,
+  CheckCircle2,
+  MessageSquare,
+  GraduationCap,
 } from 'lucide-react';
 import { ScreenType, Student } from '../../types';
 import { formatRial, jalaliFromGregorian } from '../../utils/jalali';
@@ -40,6 +46,13 @@ export const DashboardScreen: React.FC = () => {
     cheques,
     seniorMessages,
     getStudentBalance,
+    isConnectedToGoogleSheets,
+    spreadsheetId,
+    syncStatus,
+    lastSyncTime,
+    syncWithGoogleSheets,
+    connectWithGoogle,
+    syncStats,
   } = useApp();
 
   const [isQuickInvoiceOpen, setIsQuickInvoiceOpen] = useState(false);
@@ -95,6 +108,8 @@ export const DashboardScreen: React.FC = () => {
   const menuItems = [
     { id: 'students', label: 'دانش‌آموزان', icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
     { id: 'tuition', label: 'دریافت شهریه', icon: CreditCard, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { id: 'staff', label: 'معلمان و پرسنل', icon: GraduationCap, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { id: 'sms_reminders', label: 'سامانه پیامک', icon: MessageSquare, color: 'text-purple-600', bg: 'bg-purple-50' },
     { id: 'cheque_list', label: 'لیست چک‌ها', icon: FileCheck, color: 'text-amber-600', bg: 'bg-amber-50' },
     { id: 'expenses', label: 'هزینه‌ها', icon: Receipt, color: 'text-purple-600', bg: 'bg-purple-50' },
     { id: 'transactions', label: 'تراکنش‌ها', icon: ArrowLeftRight, color: 'text-indigo-600', bg: 'bg-indigo-50' },
@@ -106,6 +121,7 @@ export const DashboardScreen: React.FC = () => {
   ];
 
   const seniorExtraItems = [
+    { id: 'staff', label: 'حقوق و بیمه معلمان', icon: GraduationCap, color: 'text-purple-600', bg: 'bg-purple-50' },
     { id: 'cheques', label: 'چک صیادی (تأیید)', icon: FileCheck, color: 'text-rose-600', bg: 'bg-rose-50' },
     { id: 'bank', label: 'تطبیق بانک', icon: Landmark, color: 'text-emerald-600', bg: 'bg-emerald-50' },
     { id: 'managers', label: 'مدیران', icon: UserCog, color: 'text-indigo-600', bg: 'bg-indigo-50' },
@@ -116,6 +132,28 @@ export const DashboardScreen: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-5 space-y-6">
+      {/* Sacred Top Neyrizi Title Header Banner */}
+      <div
+        className="rounded-3xl p-6 sm:p-7 text-white shadow-xl relative overflow-hidden border border-amber-400/35 text-center"
+        style={{
+          background: 'linear-gradient(135deg, #2a0b33 0%, #4a1550 50%, #200827 100%)',
+        }}
+      >
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(251,191,36,0.18),transparent_75%)] pointer-events-none" />
+        <div className="relative z-10 space-y-2">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-400/20 border border-amber-300/40 text-amber-200 text-xs font-bold shadow-2xs">
+            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+            <span>بسم الله الرحمن الرحیم • شهرضا</span>
+          </div>
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-black font-neyrizi text-amber-100 tracking-wide leading-relaxed drop-shadow-md">
+            سیستم‌ جامع امور مالی و حسابداری مدرسه القرآن الکریم شهرضا
+          </h1>
+          <p className="text-xs text-purple-200 font-medium max-w-xl mx-auto leading-normal">
+            سامانه یکپارچه نظارت، ثبت شهریه، معلمان، اسناد صیادی، تطبیق بانک و اتصال برخط پایگاه داده
+          </p>
+        </div>
+      </div>
+
       {/* Welcome Banner matching Android TR_BL gradient */}
       <div
         className="rounded-3xl p-6 text-white shadow-xl relative overflow-hidden"
@@ -138,6 +176,132 @@ export const DashboardScreen: React.FC = () => {
           <DashboardClock />
         </div>
       </div>
+
+      {/* Google Sheets Live Database Connection Card */}
+      <div className={`rounded-3xl p-4 sm:p-5 border shadow-xs transition-all ${
+        isConnectedToGoogleSheets
+          ? 'bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-indigo-500/10 border-emerald-300/60'
+          : 'bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-blue-500/10 border-purple-200'
+      }`}>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-xs ${
+              isConnectedToGoogleSheets ? 'bg-emerald-600 text-white' : 'bg-purple-700 text-white'
+            }`}>
+              <Database className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs sm:text-sm font-bold text-[#341648]">
+                  {isConnectedToGoogleSheets ? 'متصل به Google Sheets (پایگاه داده زنده مدارس)' : 'اتصال به Google Sheets مدارس'}
+                </span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                  isConnectedToGoogleSheets ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {isConnectedToGoogleSheets ? 'همگام و برخط' : 'آفلاین'}
+                </span>
+              </div>
+              <div className="text-[11px] text-gray-500 mt-0.5">
+                {isConnectedToGoogleSheets ? (
+                  <span>
+                    شناسه شیت: <code className="font-mono text-xs text-purple-900 bg-white/70 px-1 py-0.5 rounded">{spreadsheetId.substring(0, 14)}...</code>
+                    {lastSyncTime && <span className="mr-2">| آخرین به‌روزرسانی: {lastSyncTime}</span>}
+                  </span>
+                ) : (
+                  <span>اطلاعات دانش‌آموزان و شهریه‌ها در گوگل شیت آپلود شده است؛ با اتصال، اطلاعات زنده خوانده می‌شود.</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            {isConnectedToGoogleSheets ? (
+              <button
+                type="button"
+                onClick={() => syncWithGoogleSheets()}
+                disabled={syncStatus === 'syncing'}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-all active:scale-95"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+                <span>همگام‌سازی سریع</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => connectWithGoogle()}
+                disabled={syncStatus === 'syncing'}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-all active:scale-95"
+              >
+                <Cloud className="w-3.5 h-3.5" />
+                <span>اتصال با حساب گوگل</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setCurrentScreen('settings')}
+              className="p-2.5 rounded-xl bg-white/80 hover:bg-white text-gray-700 text-xs font-bold border border-gray-200 transition-all shrink-0"
+              title="تنظیمات پیشرفته شیت"
+            >
+              <Settings className="w-4 h-4 text-gray-600" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Access Grid placed above Financial Overview */}
+      <div>
+        <div className="text-sm font-bold text-[#341648] mb-3 flex items-center justify-between">
+          <span>دسترسی سریع</span>
+          <span className="text-xs text-gray-400 font-normal">بخش‌های پرکاربرد سامانه</span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
+          {menuItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setCurrentScreen(item.id as ScreenType)}
+                className="flex flex-col items-center justify-center p-4 rounded-3xl bg-white border border-[#e5dde8] hover:border-[#62205f] hover:shadow-md active:scale-95 transition-all text-center group min-h-[120px]"
+              >
+                <div className={`w-12 h-12 rounded-2xl ${item.bg} flex items-center justify-center mb-2.5 group-hover:scale-110 transition-transform`}>
+                  <Icon className={`w-6 h-6 ${item.color}`} />
+                </div>
+                <span className="text-xs sm:text-sm font-bold text-[#341648] leading-tight">
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Senior Only Section */}
+      {isSenior && (
+        <div className="pt-1">
+          <div className="text-sm font-bold text-[#62205f] mb-3 flex items-center gap-2" style={{ color: accentColor }}>
+            <span>بخش ویژه مدیریت ارشد مجموعه</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
+            {seniorExtraItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setCurrentScreen(item.id as ScreenType)}
+                  className="flex flex-col items-center justify-center p-4 rounded-3xl bg-white border border-[#e5dde8] hover:border-[#62205f] hover:shadow-md active:scale-95 transition-all text-center group min-h-[110px]"
+                >
+                  <div className={`w-11 h-11 rounded-2xl ${item.bg} flex items-center justify-center mb-2 group-hover:scale-110 transition-transform`}>
+                    <Icon className={`w-5 h-5 ${item.color}`} />
+                  </div>
+                  <span className="text-xs sm:text-sm font-bold text-[#341648] leading-tight">
+                    {item.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Financial Overview Card */}
       <div className="bg-white rounded-3xl p-5 border border-[#e5dde8] shadow-sm">
@@ -348,58 +512,6 @@ export const DashboardScreen: React.FC = () => {
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Quick Access Grid matching Android 2-column cardBtn layout */}
-      <div>
-        <div className="text-sm font-bold text-[#341648] mb-3">دسترسی سریع</div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setCurrentScreen(item.id as ScreenType)}
-                className="flex flex-col items-center justify-center p-4 rounded-3xl bg-white border border-[#e5dde8] hover:border-[#62205f] hover:shadow-md active:scale-95 transition-all text-center group min-h-[120px]"
-              >
-                <div className={`w-12 h-12 rounded-2xl ${item.bg} flex items-center justify-center mb-2.5 group-hover:scale-110 transition-transform`}>
-                  <Icon className={`w-6 h-6 ${item.color}`} />
-                </div>
-                <span className="text-xs sm:text-sm font-bold text-[#341648] leading-tight">
-                  {item.label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Senior Only Section */}
-      {isSenior && (
-        <div className="pt-2">
-          <div className="text-sm font-bold text-[#62205f] mb-3 flex items-center gap-2" style={{ color: accentColor }}>
-            <span>بخش ویژه مدیریت ارشد مجموعه</span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
-            {seniorExtraItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setCurrentScreen(item.id as ScreenType)}
-                  className="flex flex-col items-center justify-center p-4 rounded-3xl bg-white border border-[#e5dde8] hover:border-[#62205f] hover:shadow-md active:scale-95 transition-all text-center group min-h-[110px]"
-                >
-                  <div className={`w-11 h-11 rounded-2xl ${item.bg} flex items-center justify-center mb-2 group-hover:scale-110 transition-transform`}>
-                    <Icon className={`w-5 h-5 ${item.color}`} />
-                  </div>
-                  <span className="text-xs sm:text-sm font-bold text-[#341648] leading-tight">
-                    {item.label}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
         </div>
       )}
 

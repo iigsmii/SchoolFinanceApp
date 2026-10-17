@@ -18,6 +18,7 @@ import {
   Camera,
   Image,
 } from 'lucide-react';
+import { ReceiptImageUploader } from '../ReceiptImageUploader';
 
 const PAYMENT_METHODS = ['پول نقد', 'کارت به کارت', 'کارت خوان', 'چک'];
 
@@ -164,6 +165,11 @@ export const TuitionScreen: React.FC = () => {
     const amt = Number(latinDigits(formAmount).replace(/[,٬]/g, '').trim());
     if (isNaN(amt) || amt <= 0) {
       setFormError('مبلغ پرداخت را به درستی به ریال وارد کنید.');
+      return;
+    }
+
+    if (!formAttachment || !formAttachment.trim()) {
+      setFormError('ارسال عکس رسید یا فاکتور پرداخت الزامی است. لطفاً با دوربین یا گالری تصویر رسید را الصاق کنید.');
       return;
     }
 
@@ -678,22 +684,13 @@ export const TuitionScreen: React.FC = () => {
               </div>
 
               {/* Receipt Attachment section */}
-              <div className="bg-[#fcfaff] p-3 rounded-2xl border border-[#ede5ef] flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-bold text-[#341648]">تصویر فیش / رسید پرداخت</div>
-                  <div className="text-[10px] text-gray-500">
-                    {formAttachment ? 'تصویر پیوست شد ✓' : 'پیوست مدرک و فیش بانکی'}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleMockAttachment}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#e5dde8] bg-white text-xs font-bold text-[#62205f] hover:bg-gray-50"
-                >
-                  <Camera className="w-4 h-4" />
-                  <span>{formAttachment ? 'تغییر عکس' : 'افزودن عکس'}</span>
-                </button>
-              </div>
+              <ReceiptImageUploader
+                value={formAttachment}
+                onChange={setFormAttachment}
+                required={true}
+                label={formMethod === 'چک' ? 'تصویر برگه چک صیادی' : 'تصویر رسید پرداخت / فیش بانکی'}
+                helperText="ارسال عکس رسید الزامی است؛ عکس‌ها به صورت فشرده با کیفیت بالا و حجم بسیار کم ذخیره می‌شوند."
+              />
 
               <div className="flex items-center gap-3 pt-3">
                 <button

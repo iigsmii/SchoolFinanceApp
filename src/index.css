@@ -12,6 +12,10 @@
   }
 }
 
+.font-neyrizi {
+  font-family: 'Amiri', 'Scheherazade New', 'Vazirmatn', 'Traditional Arabic', serif;
+}
+
 /* Custom scrollbars */
 ::-webkit-scrollbar {
   width: 6px;

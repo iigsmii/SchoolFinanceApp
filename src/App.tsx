@@ -16,6 +16,8 @@ import { SchoolsScreen } from './components/screens/SchoolsScreen';
 import { MessagesScreen } from './components/screens/MessagesScreen';
 import { ActivityScreen } from './components/screens/ActivityScreen';
 import { SettingsScreen } from './components/screens/SettingsScreen';
+import { SmsScreen } from './components/screens/SmsScreen';
+import { StaffScreen } from './components/screens/StaffScreen';
 
 export const App: React.FC = () => {
   const { currentUser, currentScreen } = useApp();
@@ -53,6 +55,10 @@ export const App: React.FC = () => {
       return <MessagesScreen />;
     case 'activity':
       return <ActivityScreen />;
+    case 'sms_reminders':
+      return <SmsScreen />;
+    case 'staff':
+      return <StaffScreen />;
     case 'settings':
     case 'export':
       return <SettingsScreen />;

@@ -17,6 +17,7 @@ import {
   Building,
   User,
 } from 'lucide-react';
+import { ReceiptImageUploader } from '../ReceiptImageUploader';
 
 export const ExpensesScreen: React.FC = () => {
   const {
@@ -99,6 +100,11 @@ export const ExpensesScreen: React.FC = () => {
     }
     if (!formTracking.trim()) {
       setFormError('شماره پیگیری فاکتور یا واریز الزامی است.');
+      return;
+    }
+
+    if (!formAttachment || !formAttachment.trim()) {
+      setFormError('ارسال عکس فاکتور یا رسید هزینه الزامی است. لطفاً با دوربین یا گالری تصویر فاکتور را الصاق فرمایید.');
       return;
     }
 
@@ -378,24 +384,13 @@ export const ExpensesScreen: React.FC = () => {
               </div>
 
               {/* Photo Upload Section */}
-              <div className="bg-[#fcfaff] p-3 rounded-2xl border border-[#ede5ef] flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-bold text-[#341648]">تصویر فاکتور / رسید خرید</div>
-                  <div className="text-[10px] text-gray-500">
-                    {formAttachment ? 'تصویر مدرک پیوست شد ✓' : 'پیوست عکس فاکتور'}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setFormAttachment('https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600&auto=format&fit=crop&q=60')
-                  }
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#e5dde8] bg-white text-xs font-bold text-[#62205f] hover:bg-gray-50"
-                >
-                  <Camera className="w-4 h-4" />
-                  <span>{formAttachment ? 'تغییر عکس' : 'عکس دوربین / گالری'}</span>
-                </button>
-              </div>
+              <ReceiptImageUploader
+                value={formAttachment}
+                onChange={setFormAttachment}
+                required={true}
+                label="تصویر فاکتور / رسید خرید"
+                helperText="ارسال عکس فاکتور الزامی است؛ حجم عکس‌ها به صورت خودکار بدون افت کیفیت فشرده می‌شود."
+              />
 
               <div className="flex items-center gap-3 pt-3">
                 <button

@@ -6,6 +6,7 @@ export interface User {
   school_id?: number;
   school_name?: string;
   active: boolean;
+  password?: string;
 }
 
 export interface School {
@@ -126,6 +127,70 @@ export interface SmsLog {
   status: 'sent' | 'delivered' | 'failed';
 }
 
+export interface SmsConfig {
+  provider: 'kavenegar' | 'faraz' | 'mellipayamak' | 'magfa' | 'custom';
+  apiKey: string;
+  senderNumber: string;
+  apiUrl: string;
+  patternCode: string;
+  enabled: boolean;
+  autoSendOnDebt: boolean;
+  smsTemplate: string;
+}
+
+export interface StaffMember {
+  id: number;
+  school_id: number;
+  school_name?: string;
+  name: string;
+  national_id: string;
+  phone: string;
+  role_title: string; // e.g. 'معلم قرآن', 'آموزگار پایه سوم', 'معاون آموزشی', 'مربی ورزش', 'کادر اداری'
+  contract_type: 'hourly' | 'monthly' | 'session'; // ساعتی، ماهانه، جلسه‌ای
+  hourly_rate: number; // نرخ هر ساعت کارکرد به ریال
+  base_salary: number; // حقوق پایه ماهانه به ریال
+  insurance_employer_share: number; // سهم بیمه کارفرما
+  insurance_employee_share: number; // سهم بیمه کارمند (کسر از حقوق)
+  bank_card_or_sheba?: string;
+  active: boolean;
+  created_at?: string;
+}
+
+export interface StaffWorkLog {
+  id: number;
+  staff_id: number;
+  staff_name: string;
+  school_id: number;
+  school_name?: string;
+  month_name: string; // e.g. 'مهر ۱۴۰۳'
+  work_hours: number; // ساعت کارکرد عادی
+  overtime_hours: number; // ساعات اضافه کار
+  sessions_count?: number; // تعداد جلسات تدریس
+  absent_hours?: number; // ساعات غیبت یا کسر کار
+  recorded_by: string;
+  date: string;
+  notes?: string;
+}
+
+export interface PayrollPayment {
+  id: number;
+  staff_id: number;
+  staff_name: string;
+  school_id: number;
+  school_name?: string;
+  month_name: string;
+  payment_type: 'salary' | 'insurance' | 'bonus' | 'advance'; // پرداخت حقوق، پرداخت بیمه، پاداش، مساعده
+  gross_amount: number; // ناخالص حقوق
+  insurance_deduction: number; // کسر بیمه
+  net_paid_amount: number; // خالص پرداختی
+  payment_date: string; // تاریخ پرداخت
+  tracking_code: string; // شماره پیگیری واریز
+  source: 'bank' | 'own'; // پرداخت از حساب مدرسه یا مدیر
+  attachment_url?: string; // تصویر رسید پرداخت
+  notes?: string;
+  created_at: string;
+}
+
 export type ScreenType =
   | 'dashboard'
   | 'students'
@@ -144,4 +209,6 @@ export type ScreenType =
   | 'schools'
   | 'export'
   | 'messages'
-  | 'sms_reminders';
+  | 'sms_reminders'
+  | 'staff';
+
