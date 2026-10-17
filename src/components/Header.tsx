@@ -17,6 +17,7 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack = true }) => {
     syncStatus,
     syncWithGoogleSheets,
     connectWithGoogle,
+    goBack,
   } = useApp();
 
   const handleSyncClick = async () => {
@@ -33,9 +34,9 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack = true }) => {
         <div className="flex items-center gap-3">
           {showBack && (
             <button
-              onClick={() => setCurrentScreen('dashboard')}
+              onClick={goBack}
               className="p-2 rounded-xl text-[#341648] hover:bg-white/80 active:scale-95 transition-all shadow-sm border border-[#e5dde8]"
-              title="بازگشت به داشبورد"
+              title="بازگشت به صفحه قبل"
             >
               <ArrowRight className="w-5 h-5" />
             </button>

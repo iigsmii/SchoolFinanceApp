@@ -45,6 +45,8 @@ import {
   loadAccountingDataFromGoogleSheets,
   loadDataFromAppsScript,
   appendSheetRow,
+  loadDataFromExcelFile,
+  loadDataFromPublicGoogleSheet,
 } from '../services/googleSheets';
 
 interface AppContextType {
@@ -110,7 +112,15 @@ interface AppContextType {
     payment_method: string;
     tracking_code?: string;
     school_id?: number;
-    cheque_data?: { sayad_id: string; due_date: string; in_favor_school: boolean };
+    cheque_data?: {
+      sayad_id?: string;
+      due_date: string;
+      in_favor_school: boolean;
+      bank_name?: string;
+      cheque_type?: 'sayad' | 'non_sayad' | 'gharzolhasane' | 'guarantee';
+      cheque_number?: string;
+      issuer_name?: string;
+    };
     attachment_url?: string;
   }) => void;
   addBulkDebt: (data: { student_ids: number[]; amount: number; date: string; description: string; school_id: number }) => number;
@@ -135,6 +145,19 @@ interface AppContextType {
 
   // Cheque ops
   reviewCheque: (id: number, action: 'receive' | 'favor' | 'reject') => { success: boolean; status: string; message: string };
+  addDirectCheque: (cheque: Omit<Cheque, 'id'>) => Cheque;
+  deleteCheque: (id: number) => void;
+  updateCheque: (id: number, data: Partial<Cheque>) => void;
+
+  // Offline & Public Sheet import
+  loadOfflineExcel: (file: File) => Promise<boolean>;
+  loadPublicSheet: (spreadsheetId?: string) => Promise<boolean>;
+
+  // Navigation & Hardware Back History
+  screenHistory: ScreenType[];
+  goBack: () => void;
+  showExitModal: boolean;
+  setShowExitModal: (show: boolean) => void;
 
   // Bank reconciliation ops
   reconcileBank: () => { matched: number; unmatched: number };
@@ -227,11 +250,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [themeIndex, setThemeIndexState] = useState<number>(() => loadFromStorage('theme_index', 0));
   const [fontScale, setFontScaleState] = useState<number>(() => loadFromStorage('font_scale', 1));
   const [currentUser, setCurrentUserState] = useState<User | null>(() => loadFromStorage('current_user', INITIAL_USERS[0]));
-  const [currentScreen, setCurrentScreen] = useState<ScreenType>('dashboard');
+  const [currentScreen, setCurrentScreenState] = useState<ScreenType>('dashboard');
+  const [screenHistory, setScreenHistory] = useState<ScreenType[]>([]);
+  const [showExitModal, setShowExitModal] = useState<boolean>(false);
 
-  const [schools, setSchools] = useState<School[]>(() => loadFromStorage('schools', INITIAL_SCHOOLS));
+  const setCurrentScreen = (newScreen: ScreenType) => {
+    setCurrentScreenState((prev) => {
+      if (prev !== newScreen) {
+        setScreenHistory((h) => [...h, prev]);
+        try {
+          window.history.pushState({ screen: newScreen }, '', '');
+        } catch {}
+      }
+      return newScreen;
+    });
+  };
+
+  const goBack = () => {
+    if (screenHistory.length > 0) {
+      const prevScreen = screenHistory[screenHistory.length - 1];
+      setScreenHistory((prev) => prev.slice(0, -1));
+      setCurrentScreenState(prevScreen);
+    } else if (currentScreen !== 'dashboard') {
+      setCurrentScreenState('dashboard');
+    } else {
+      setShowExitModal(true);
+    }
+  };
+
+  const [schools, setSchools] = useState<School[]>(() => {
+    const loaded = loadFromStorage('schools', INITIAL_SCHOOLS);
+    return loaded.map((s: School) => {
+      if (s.id === 10 || s.name.includes('مرکز قرآنی') || s.name.includes('مهد مرکزی قرآنی')) {
+        return { ...s, name: 'مهد برهان', code: 'BORHAN', type: 'مهد و پیش‌دبستانی قرآنی' };
+      }
+      return s;
+    });
+  });
   const [users, setUsers] = useState<User[]>(() => loadFromStorage('users', INITIAL_USERS));
-  const [categories, setCategories] = useState<ExpenseCategory[]>(() => loadFromStorage('categories', INITIAL_CATEGORIES));
+  const [categories, setCategories] = useState<ExpenseCategory[]>(() => {
+    const loaded = loadFromStorage('categories', INITIAL_CATEGORIES);
+    const hasBankFee = loaded.some((c: ExpenseCategory) => c.name === 'کارمزد بانک');
+    if (!hasBankFee) {
+      return [...loaded, { id: '9', name: 'کارمزد بانک', active: true }, { id: '10', name: 'هزینه‌های تن‌خواه مدیر', active: true }];
+    }
+    return loaded;
+  });
   const [students, setStudents] = useState<Student[]>(() => loadFromStorage('students', INITIAL_STUDENTS));
   const [transactions, setTransactions] = useState<Transaction[]>(() => loadFromStorage('transactions', INITIAL_TRANSACTIONS));
   const [cheques, setCheques] = useState<Cheque[]>(() => loadFromStorage('cheques', INITIAL_CHEQUES));
@@ -345,6 +409,72 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActivityLogs((prev) => [newLog, ...prev]);
   };
 
+  const loadOfflineExcel = async (file: File): Promise<boolean> => {
+    setSyncStatus('syncing');
+    setSyncError(null);
+    try {
+      const result = await loadDataFromExcelFile(file);
+      if (result.success) {
+        if (result.students.length > 0) setStudents(result.students);
+        if (result.schools.length > 0) setSchools(result.schools);
+        if (result.transactions.length > 0) setTransactions(result.transactions);
+        if (result.cheques.length > 0) setCheques(result.cheques);
+        if (result.staff && result.staff.length > 0) setStaffMembers(result.staff);
+        setSyncStats(result.stats);
+        saveToStorage('sync_stats', result.stats);
+        const timeStr =
+          jalaliFromGregorian(new Date().toISOString()) +
+          ' ' +
+          new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+        setLastSyncTime(timeStr);
+        saveToStorage('last_sync_time', timeStr);
+        setSyncStatus('synced');
+        logActivity(
+          'ورود فایل اکسل شیت آفلاین',
+          `بارگذاری کامل ${result.students.length} دانش‌آموز، ${result.transactions.length} تراکنش و معلمان`
+        );
+        return true;
+      }
+      return false;
+    } catch (e: any) {
+      setSyncStatus('error');
+      setSyncError(e.message || 'خطا در بارگذاری فایل اکسل');
+      return false;
+    }
+  };
+
+  const loadPublicSheet = async (targetId?: string): Promise<boolean> => {
+    const sId = targetId || spreadsheetId;
+    setSyncStatus('syncing');
+    setSyncError(null);
+    try {
+      const result = await loadDataFromPublicGoogleSheet(sId);
+      if (result.success) {
+        if (result.students.length > 0) setStudents(result.students);
+        if (result.schools.length > 0) setSchools(result.schools);
+        if (result.transactions.length > 0) setTransactions(result.transactions);
+        if (result.cheques.length > 0) setCheques(result.cheques);
+        if (result.staff && result.staff.length > 0) setStaffMembers(result.staff);
+        setSyncStats(result.stats);
+        saveToStorage('sync_stats', result.stats);
+        const timeStr =
+          jalaliFromGregorian(new Date().toISOString()) +
+          ' ' +
+          new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+        setLastSyncTime(timeStr);
+        saveToStorage('last_sync_time', timeStr);
+        setSyncStatus('synced');
+        logActivity('همگام‌سازی گوگل شیت برخط', `دریافت ${result.students.length} دانش‌آموز از شیت عمومی`);
+        return true;
+      }
+      return false;
+    } catch (e: any) {
+      setSyncStatus('error');
+      setSyncError(e.message || 'خطا در اتصال به گوگل شیت');
+      return false;
+    }
+  };
+
   const connectWithGoogle = async (): Promise<boolean> => {
     setSyncStatus('syncing');
     setSyncError(null);
@@ -377,9 +507,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return false;
       }
     } catch (e: any) {
-      console.error('Google connect error:', e);
+      console.warn('Google popup error, trying public sheet fallback:', e);
+      try {
+        const fallbackRes = await loadPublicSheet(spreadsheetId);
+        if (fallbackRes) {
+          return true;
+        }
+      } catch (err) {
+        console.warn('Public sheet fallback failed:', err);
+      }
       setSyncStatus('error');
-      setSyncError(e.message || 'خطا در ورود با حساب گوگل');
+      setSyncError('ورود با حساب گوگل در اپلیکیشن مسدود شده است. لطفاً از دکمه «بارگذاری فایل اکسل شیت» یا اتصال به لینک عمومی استفاده کنید.');
       return false;
     }
   };
@@ -613,7 +751,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     payment_method: string;
     tracking_code?: string;
     school_id?: number;
-    cheque_data?: { sayad_id: string; due_date: string; in_favor_school: boolean };
+    cheque_data?: {
+      sayad_id?: string;
+      due_date: string;
+      in_favor_school: boolean;
+      bank_name?: string;
+      cheque_type?: 'sayad' | 'non_sayad' | 'gharzolhasane' | 'guarantee';
+      cheque_number?: string;
+      issuer_name?: string;
+    };
     attachment_url?: string;
   }) => {
     const student = students.find((s) => s.id === data.student_id);
@@ -622,9 +768,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (data.payment_method === 'چک' && data.cheque_data) {
       const newChequeId = cheques.length > 0 ? Math.max(...cheques.map((c) => c.id)) + 1 : 1;
+      const cType = data.cheque_data.cheque_type || 'sayad';
+      const typeLabel =
+        cType === 'guarantee'
+          ? 'چک ضمانتی'
+          : cType === 'gharzolhasane'
+          ? 'چک قرض‌الحسنه'
+          : cType === 'non_sayad'
+          ? 'چک غیر صیادی'
+          : 'چک صیادی';
+
       const newCheque: Cheque = {
         id: newChequeId,
         sayad_id: data.cheque_data.sayad_id,
+        cheque_number: data.cheque_data.cheque_number,
+        bank_name: data.cheque_data.bank_name,
+        cheque_type: cType,
+        cheque_purpose: cType === 'guarantee' ? 'guarantee' : 'tuition',
+        issuer_name: data.cheque_data.issuer_name || student?.name,
         student_id: data.student_id,
         student_name: student?.name || 'دانش‌آموز',
         school_id: schoolId,
@@ -640,7 +801,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
 
       setCheques((prev) => [newCheque, ...prev]);
-      logActivity('ثبت دریافت چک صیادی', `ثبت چک ${data.cheque_data.sayad_id} به مبلغ ${data.amount.toLocaleString('fa-IR')} ریال`, 'cheque', newChequeId);
+      logActivity(
+        `ثبت دریافت ${typeLabel}`,
+        `ثبت ${typeLabel} به مبلغ ${data.amount.toLocaleString('fa-IR')} ریال (${data.cheque_data.bank_name || 'بدون نام بانک'})`,
+        'cheque',
+        newChequeId
+      );
 
       if (googleAccessToken) {
         appendSheetRow(googleAccessToken, spreadsheetId, 'Cheques', [
@@ -915,6 +1081,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ? 'چک رد شد و از فهرست انتظار خارج گردید.'
           : 'تأیید ثبت شد؛ برای تأیید نهایی باید هر دو شرط تأیید دریافت و در وجه مدرسه احراز شوند.',
     };
+  };
+
+  const addDirectCheque = (chequeData: Omit<Cheque, 'id'>): Cheque => {
+    const newChequeId = cheques.length > 0 ? Math.max(...cheques.map((c) => c.id)) + 1 : 1;
+    const newCheque: Cheque = {
+      ...chequeData,
+      id: newChequeId,
+    };
+    setCheques((prev) => [newCheque, ...prev]);
+    const typeLabel =
+      newCheque.cheque_type === 'guarantee'
+        ? 'چک ضمانتی'
+        : newCheque.cheque_type === 'gharzolhasane'
+        ? 'چک قرض‌الحسنه'
+        : newCheque.cheque_type === 'non_sayad'
+        ? 'چک غیر صیادی'
+        : 'چک صیادی';
+    logActivity('ثبت چک', `ثبت ${typeLabel} به مبلغ ${newCheque.amount.toLocaleString('fa-IR')} ریال`, 'cheque', newChequeId);
+    return newCheque;
+  };
+
+  const deleteCheque = (id: number) => {
+    setCheques((prev) => prev.filter((c) => c.id !== id));
+    logActivity('حذف چک', `حذف چک شناسه ${id}`, 'cheque', id);
+  };
+
+  const updateCheque = (id: number, data: Partial<Cheque>) => {
+    setCheques((prev) => prev.map((c) => (c.id === id ? { ...c, ...data } : c)));
+    logActivity('ویرایش مشخصات چک', `ویرایش چک شناسه ${id}`, 'cheque', id);
   };
 
   const reconcileBank = () => {
@@ -1368,6 +1563,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addCategory,
         toggleCategory,
         reviewCheque,
+        addDirectCheque,
+        deleteCheque,
+        updateCheque,
+        loadOfflineExcel,
+        loadPublicSheet,
+        screenHistory,
+        goBack,
+        showExitModal,
+        setShowExitModal,
         reconcileBank,
         manualReviewTransaction,
         importBankTransactions,

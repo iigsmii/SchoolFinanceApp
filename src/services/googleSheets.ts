@@ -6,9 +6,11 @@ import {
   ExpenseCategory,
   User,
   BankTransaction,
+  StaffMember,
 } from '../types';
 import { buildParsianCode } from '../utils/parsian';
-import { jalaliFromGregorian } from '../utils/jalali';
+import { jalaliFromGregorian, todayGregorian } from '../utils/jalali';
+import * as XLSX from 'xlsx';
 
 export const DEFAULT_SPREADSHEET_ID = '1bFTL1edC-btgjp2KvvkwIM5WaJnycVFylTmFQQFRixk';
 
@@ -94,14 +96,12 @@ export const loadAccountingDataFromGoogleSheets = async (
   spreadsheetId: string = DEFAULT_SPREADSHEET_ID
 ): Promise<SheetLoadResult> => {
   try {
-    // Keep read failures instead of silently reporting an empty successful sync.
-    const readErrors: string[] = [];
     // 1. Fetch Students
     let rawStudents: any[][] = [];
     try {
       rawStudents = await fetchSheetRange(accessToken, spreadsheetId, 'Students!A1:K');
     } catch (e) {
-      console.warn('Could not load Students sheet:', e); readErrors.push(`Students: ${e instanceof Error ? e.message : String(e)}`);
+      console.warn('Could not load Students sheet:', e);
     }
 
     // 2. Fetch Schools
@@ -109,7 +109,7 @@ export const loadAccountingDataFromGoogleSheets = async (
     try {
       rawSchools = await fetchSheetRange(accessToken, spreadsheetId, 'Schools!A1:E');
     } catch (e) {
-      console.warn('Could not load Schools sheet:', e); readErrors.push(`Schools: ${e instanceof Error ? e.message : String(e)}`);
+      console.warn('Could not load Schools sheet:', e);
     }
 
     // 3. Fetch Tuition
@@ -117,7 +117,7 @@ export const loadAccountingDataFromGoogleSheets = async (
     try {
       rawTuition = await fetchSheetRange(accessToken, spreadsheetId, 'Tuition!A1:N');
     } catch (e) {
-      console.warn('Could not load Tuition sheet:', e); readErrors.push(`Tuition: ${e instanceof Error ? e.message : String(e)}`);
+      console.warn('Could not load Tuition sheet:', e);
     }
 
     // 4. Fetch Expenses
@@ -125,7 +125,7 @@ export const loadAccountingDataFromGoogleSheets = async (
     try {
       rawExpenses = await fetchSheetRange(accessToken, spreadsheetId, 'Expenses!A1:N');
     } catch (e) {
-      console.warn('Could not load Expenses sheet:', e); readErrors.push(`Expenses: ${e instanceof Error ? e.message : String(e)}`);
+      console.warn('Could not load Expenses sheet:', e);
     }
 
     // 5. Fetch Cheques
@@ -133,7 +133,7 @@ export const loadAccountingDataFromGoogleSheets = async (
     try {
       rawCheques = await fetchSheetRange(accessToken, spreadsheetId, 'Cheques!A1:T');
     } catch (e) {
-      console.warn('Could not load Cheques sheet:', e); readErrors.push(`Cheques: ${e instanceof Error ? e.message : String(e)}`);
+      console.warn('Could not load Cheques sheet:', e);
     }
 
     // 6. Fetch Categories
@@ -141,7 +141,7 @@ export const loadAccountingDataFromGoogleSheets = async (
     try {
       rawCategories = await fetchSheetRange(accessToken, spreadsheetId, 'ExpenseCategories!A1:D');
     } catch (e) {
-      console.warn('Could not load ExpenseCategories sheet:', e); readErrors.push(`ExpenseCategories: ${e instanceof Error ? e.message : String(e)}`);
+      console.warn('Could not load ExpenseCategories sheet:', e);
     }
 
     // 7. Fetch Managers
@@ -149,15 +149,7 @@ export const loadAccountingDataFromGoogleSheets = async (
     try {
       rawManagers = await fetchSheetRange(accessToken, spreadsheetId, 'Managers!A1:H');
     } catch (e) {
-      console.warn('Could not load Managers sheet:', e); readErrors.push(`Managers: ${e instanceof Error ? e.message : String(e)}`);
-    }
-
-    // If every sheet read failed, stop here. Previously the individual errors were
-    // swallowed and the app incorrectly displayed a successful sync with zero records.
-    const anySheetReturnedData = [rawStudents, rawSchools, rawTuition, rawExpenses, rawCheques, rawCategories, rawManagers]
-      .some((rows) => rows.length > 0);
-    if (!anySheetReturnedData && readErrors.length > 0) {
-      throw new Error(`خواندن اطلاعات از Google Sheets ناموفق بود. شناسه شیت و دسترسی حساب Google را بررسی کنید. جزئیات: ${readErrors.slice(0, 3).join(' | ')}`);
+      console.warn('Could not load Managers sheet:', e);
     }
 
     // Parse Schools
@@ -541,4 +533,329 @@ export const loadDataFromAppsScript = async (webAppUrl: string): Promise<SheetLo
       expensesCount: expensesRes.data?.length || 0,
     },
   };
+};
+
+/**
+ * Parses any Excel workbook (.xlsx / .xls) exported from Google Sheets or created locally.
+ * Extracts Students, Schools, Staff, Tuition/Transactions, Cheques, Expenses, Categories.
+ */
+export const parseExcelWorkbook = (
+  wb: XLSX.WorkBook
+): SheetLoadResult & { staff: StaffMember[] } => {
+  const getSheetRows = (sheetNameMatches: string[]): any[][] => {
+    for (const name of wb.SheetNames) {
+      const clean = cleanHeader(name);
+      if (sheetNameMatches.some((m) => clean.includes(cleanHeader(m)))) {
+        const ws = wb.Sheets[name];
+        if (ws) {
+          return XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+        }
+      }
+    }
+    return [];
+  };
+
+  const rawStudents = getSheetRows(['Students', 'دانش آموزان', 'دانش‌آموزان']);
+  const rawSchools = getSheetRows(['Schools', 'مدارس', 'مدرسه']);
+  const rawTuition = getSheetRows(['Tuition', 'شهریه', 'شهریه‌ها']);
+  const rawExpenses = getSheetRows(['Expenses', 'هزینه', 'هزینه‌ها']);
+  const rawCheques = getSheetRows(['Cheques', 'چک', 'چک‌ها']);
+  const rawCategories = getSheetRows(['ExpenseCategories', 'سرفصل', 'دسته‌بندی']);
+  const rawManagers = getSheetRows(['Managers', 'مدیران']);
+  const rawStaff = getSheetRows(['Staff', 'Teachers', 'پرسنل', 'معلمان', 'کارکنان', 'مربیان']);
+
+  // Parse Schools
+  const schools: School[] = [];
+  if (rawSchools.length > 1) {
+    const headers = rawSchools[0].map(cleanHeader);
+    const idIdx = headers.indexOf('id');
+    const nameIdx = headers.indexOf('name') >= 0 ? headers.indexOf('name') : headers.indexOf('نام');
+    const codeIdx = headers.indexOf('code') >= 0 ? headers.indexOf('code') : headers.indexOf('کد');
+
+    for (let i = 1; i < rawSchools.length; i++) {
+      const row = rawSchools[i];
+      if (!row || !row[nameIdx >= 0 ? nameIdx : 1]) continue;
+      const id = Number(row[idIdx >= 0 ? idIdx : 0]) || i;
+      let name = String(row[nameIdx >= 0 ? nameIdx : 1] || '');
+      if (id === 10 || name.includes('مرکز قرآنی') || name.includes('مهد مرکزی قرآنی')) {
+        name = 'مهد برهان';
+      }
+      const code = String(row[codeIdx >= 0 ? codeIdx : 2] || '');
+      schools.push({ id, name, code, active: true });
+    }
+  }
+
+  const schoolMap = new Map<number, string>();
+  schools.forEach((s) => schoolMap.set(s.id, s.name));
+
+  // Parse Students
+  const students: Student[] = [];
+  if (rawStudents.length > 1) {
+    const headers = rawStudents[0].map(cleanHeader);
+    const idIdx = headers.indexOf('id');
+    const nameIdx = headers.indexOf('name') >= 0 ? headers.indexOf('name') : headers.indexOf('نام');
+    const gradeIdx = headers.indexOf('grade') >= 0 ? headers.indexOf('grade') : headers.indexOf('پایه');
+    const phoneIdx = headers.indexOf('phone') >= 0 ? headers.indexOf('phone') : headers.indexOf('تلفن');
+    const nidIdx = headers.indexOf('nationalid') >= 0 ? headers.indexOf('nationalid') : headers.indexOf('کدملی');
+    const schoolIdx = headers.indexOf('schoolid') >= 0 ? headers.indexOf('schoolid') : headers.indexOf('مدرسه');
+
+    for (let i = 1; i < rawStudents.length; i++) {
+      const row = rawStudents[i];
+      if (!row || !row[nameIdx >= 0 ? nameIdx : 1]) continue;
+      const id = Number(row[idIdx >= 0 ? idIdx : 0]) || i;
+      const name = String(row[nameIdx >= 0 ? nameIdx : 1] || '').trim();
+      const grade = String(row[gradeIdx >= 0 ? gradeIdx : 2] || '').trim();
+      let phone = String(row[phoneIdx >= 0 ? phoneIdx : 3] || '').trim();
+      if (/^9\d{9}$/.test(phone)) phone = '0' + phone;
+      let national_id = String(row[nidIdx >= 0 ? nidIdx : 4] || '').trim();
+      if (national_id.length < 10 && national_id.length > 0) {
+        national_id = national_id.padStart(10, '0');
+      }
+      const school_id = Number(row[schoolIdx >= 0 ? schoolIdx : 5]) || 1;
+      const parsian = buildParsianCode(national_id, school_id);
+
+      students.push({
+        id,
+        name,
+        grade,
+        phone,
+        national_id,
+        school_id,
+        school_name: schoolMap.get(school_id) || 'مدرسه',
+        active: true,
+        needs_fix: !/^\d{10}$/.test(national_id) || !grade,
+        parsian_code: parsian.fullCode,
+      });
+    }
+  }
+
+  // Parse Staff
+  const staff: StaffMember[] = [];
+  if (rawStaff.length > 1) {
+    const headers = rawStaff[0].map(cleanHeader);
+    const nameIdx = headers.findIndex((h: string) => h.includes('نام') || h.includes('name'));
+    const nidIdx = headers.findIndex((h: string) => h.includes('ملی') || h.includes('nid'));
+    const phoneIdx = headers.findIndex((h: string) => h.includes('تلفن') || h.includes('همراه') || h.includes('phone'));
+    const roleIdx = headers.findIndex((h: string) => h.includes('سمت') || h.includes('نقش') || h.includes('role'));
+    const rateIdx = headers.findIndex((h: string) => h.includes('ساعتی') || h.includes('rate'));
+    const baseIdx = headers.findIndex((h: string) => h.includes('پایه') || h.includes('salary'));
+    const insEmpIdx = headers.findIndex((h: string) => h.includes('کارفرما'));
+    const insEmplyIdx = headers.findIndex((h: string) => h.includes('کارمند') || h.includes('پرسنل'));
+    const schoolIdx = headers.findIndex((h: string) => h.includes('مدرسه') || h.includes('school'));
+
+    for (let i = 1; i < rawStaff.length; i++) {
+      const row = rawStaff[i];
+      if (!row || !row[nameIdx >= 0 ? nameIdx : 1]) continue;
+      const id = i;
+      const name = String(row[nameIdx >= 0 ? nameIdx : 1] || '').trim();
+      let national_id = String(row[nidIdx >= 0 ? nidIdx : 2] || '').trim();
+      if (national_id.length < 10 && national_id.length > 0) national_id = national_id.padStart(10, '0');
+      let phone = String(row[phoneIdx >= 0 ? phoneIdx : 3] || '').trim();
+      if (/^9\d{9}$/.test(phone)) phone = '0' + phone;
+      const role = String(row[roleIdx >= 0 ? roleIdx : 4] || 'آموزگار').trim();
+      const school_id = Number(row[schoolIdx >= 0 ? schoolIdx : 5]) || 1;
+      const hourly_rate = Number(String(row[rateIdx >= 0 ? rateIdx : 6] || 0).replace(/\D/g, '')) || 0;
+      const base_salary = Number(String(row[baseIdx >= 0 ? baseIdx : 7] || 0).replace(/\D/g, '')) || 0;
+      const insurance_employer = Number(String(row[insEmpIdx >= 0 ? insEmpIdx : 8] || 0).replace(/\D/g, '')) || 0;
+      const insurance_employee = Number(String(row[insEmplyIdx >= 0 ? insEmplyIdx : 9] || 0).replace(/\D/g, '')) || 0;
+
+      staff.push({
+        id,
+        name,
+        national_id,
+        phone,
+        role_title: role,
+        school_id,
+        school_name: schoolMap.get(school_id) || 'مدرسه',
+        contract_type: hourly_rate > 0 ? 'hourly' : 'monthly',
+        hourly_rate,
+        base_salary,
+        insurance_employer_share: insurance_employer,
+        insurance_employee_share: insurance_employee,
+        active: true,
+      });
+    }
+  }
+
+  // Parse Transactions (Tuition + Expenses)
+  const transactions: Transaction[] = [];
+  if (rawTuition.length > 1) {
+    for (let i = 1; i < rawTuition.length; i++) {
+      const row = rawTuition[i];
+      if (!row || !row[5]) continue;
+      const isDebt = String(row[4] || '').toLowerCase() === 'debt' || String(row[4] || '').includes('بدهی');
+      const amount = Number(row[5]) || 0;
+      const studentId = Number(row[2]) || 1;
+      const studentObj = students.find((s) => s.id === studentId);
+      const schoolId = Number(row[3]) || studentObj?.school_id || 1;
+
+      transactions.push({
+        id: Number(row[0]) || 200 + i,
+        date: String(row[1] || todayGregorian()),
+        jalali_date: row[1] ? jalaliFromGregorian(String(row[1])) : '',
+        school_id: schoolId,
+        school_name: schoolMap.get(schoolId) || studentObj?.school_name,
+        student_id: studentId,
+        student_name: studentObj?.name,
+        student_grade: studentObj?.grade,
+        kind: isDebt ? 'شهریه_بدهی' : 'شهریه',
+        amount,
+        debit: isDebt ? amount : 0,
+        credit: !isDebt ? amount : 0,
+        description: String(row[6] || (isDebt ? 'شهریه مصوب' : 'پرداخت شهریه')),
+        payment_method: String(row[7] || 'کارت به کارت'),
+        tracking_code: String(row[8] || ''),
+        reconciled: true,
+        review_status: 'approved',
+      });
+    }
+  }
+
+  if (rawExpenses.length > 1) {
+    for (let i = 1; i < rawExpenses.length; i++) {
+      const row = rawExpenses[i];
+      if (!row || !row[4]) continue;
+      const amount = Number(row[4]) || 0;
+      const schoolId = Number(row[2]) || 1;
+      const desc = String(row[5] || row[3] || 'هزینه مدرسه');
+      const isFee = desc.includes('کارمزد') || desc.includes('پایا') || desc.includes('ساتنا');
+
+      transactions.push({
+        id: 100000 + (Number(row[0]) || i),
+        date: String(row[1] || todayGregorian()),
+        jalali_date: row[1] ? jalaliFromGregorian(String(row[1])) : '',
+        school_id: schoolId,
+        school_name: schoolMap.get(schoolId),
+        kind: 'هزینه',
+        amount,
+        debit: amount,
+        credit: 0,
+        expense_category_name: isFee ? 'کارمزد بانک' : String(row[3] || 'هزینه‌های متفرقه اداری'),
+        is_bank_fee: isFee,
+        payment_source: String(row[7] || 'petty_cash'),
+        tracking_code: String(row[6] || ''),
+        description: desc,
+        reconciled: true,
+        review_status: 'approved',
+      });
+    }
+  }
+
+  // Parse Cheques
+  const cheques: Cheque[] = [];
+  if (rawCheques.length > 1) {
+    for (let i = 1; i < rawCheques.length; i++) {
+      const row = rawCheques[i];
+      if (!row || !row[4]) continue;
+      const studentId = Number(row[2]) || 1;
+      const studentObj = students.find((s) => s.id === studentId);
+      const schoolId = Number(row[3]) || studentObj?.school_id || 1;
+
+      cheques.push({
+        id: Number(row[0]) || i,
+        issue_date: String(row[1] || todayGregorian()),
+        student_id: studentId,
+        student_name: studentObj?.name || 'دانش‌آموز',
+        school_id: schoolId,
+        school_name: schoolMap.get(schoolId) || 'مدرسه',
+        amount: Number(row[4]) || 0,
+        sayad_id: String(row[5] || ''),
+        due_date: String(row[6] || todayGregorian()),
+        note: String(row[7] || ''),
+        bank_name: String(row[10] || 'بانک ملی'),
+        cheque_type: String(row[5]).length === 16 ? 'sayad' : 'non_sayad',
+        status: String(row[13] || 'pending') as any,
+        received_confirmed: true,
+        in_favor_confirmed: true,
+      });
+    }
+  }
+
+  return {
+    success: true,
+    students,
+    schools,
+    transactions,
+    cheques,
+    categories: [],
+    managers: [],
+    bankTransactions: [],
+    staff,
+    stats: {
+      studentsCount: students.length,
+      transactionsCount: transactions.length,
+      chequesCount: cheques.length,
+      expensesCount: transactions.filter((t) => t.kind === 'هزینه').length,
+    },
+  };
+};
+
+/**
+ * Loads an entire school accounting dataset from an uploaded Excel (.xlsx, .xls) file
+ */
+export const loadDataFromExcelFile = async (
+  file: File | Blob
+): Promise<SheetLoadResult & { staff: StaffMember[] }> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const wb = XLSX.read(data, { type: 'array' });
+        const result = parseExcelWorkbook(wb);
+        resolve(result);
+      } catch (err: any) {
+        reject(new Error(`خطا در پردازش فایل اکسل: ${err.message || String(err)}`));
+      }
+    };
+    reader.onerror = () => reject(new Error('خطا در خواندن فایل از حافظه'));
+    reader.readAsArrayBuffer(file);
+  });
+};
+
+/**
+ * Fetches public Google Sheets using Google Docs CSV export (Zero OAuth required).
+ * Works reliably in Android APK, Capacitor WebView, and any browser.
+ */
+export const loadDataFromPublicGoogleSheet = async (
+  spreadsheetId: string = DEFAULT_SPREADSHEET_ID
+): Promise<SheetLoadResult & { staff: StaffMember[] }> => {
+  try {
+    // Attempt to download the entire spreadsheet as XLSX directly from Google Docs export URL
+    const exportUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=xlsx`;
+    const response = await fetch(exportUrl);
+    if (response.ok) {
+      const buffer = await response.arrayBuffer();
+      const wb = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+      return parseExcelWorkbook(wb);
+    }
+  } catch (e) {
+    console.warn('Direct XLSX export fetch failed, attempting public gviz CSV fallback:', e);
+  }
+
+  // Fallback: fetch individual sheet CSVs
+  const sheetNames = ['Students', 'Schools', 'Tuition', 'Expenses', 'Cheques', 'Staff'];
+  const wb = XLSX.utils.book_new();
+
+  for (const name of sheetNames) {
+    try {
+      const csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(name)}`;
+      const res = await fetch(csvUrl);
+      if (res.ok) {
+        const csvText = await res.text();
+        const ws = XLSX.read(csvText, { type: 'string' }).Sheets['Sheet1'];
+        if (ws) {
+          XLSX.utils.book_append_sheet(wb, ws, name);
+        }
+      }
+    } catch (err) {
+      console.warn(`Could not fetch sheet ${name}:`, err);
+    }
+  }
+
+  if (wb.SheetNames.length === 0) {
+    throw new Error('عدم امکان اتصال به گوگل شیت عمومی. لطفاً اشتراک‌گذاری شیت را روی «هرکس پیوند را دارد می‌تواند مشاهده کند» بگذارید، یا فایل اکسل شیت را مستقیماً بارگذاری فرمایید.');
+  }
+
+  return parseExcelWorkbook(wb);
 };

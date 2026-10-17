@@ -56,6 +56,9 @@ export const TuitionScreen: React.FC = () => {
 
   // Sayad Cheque state for Payment modal
   const [sayadId, setSayadId] = useState('');
+  const [chequeType, setChequeType] = useState<'sayad' | 'non_sayad' | 'gharzolhasane' | 'guarantee'>('sayad');
+  const [chequeBankName, setChequeBankName] = useState('بانک ملی ایران');
+  const [chequeNumber, setChequeNumber] = useState('');
   const [chequeDueDate, setChequeDueDate] = useState(todayJalali());
   const [inFavorSchool, setInFavorSchool] = useState(false);
 
@@ -175,28 +178,43 @@ export const TuitionScreen: React.FC = () => {
 
     if (formMethod === 'چک') {
       const cleanSayad = sayadId.replace(/\D/g, '').trim();
-      if (!/^\d{16}$/.test(cleanSayad)) {
-        setFormError('شناسه صیاد چک باید دقیقاً ۱۶ رقمی باشد.');
-        return;
-      }
-      if (!inFavorSchool) {
-        setFormError('برای ثبت چک، باید تیک «ثبت چک در وجه مدرسه القرآن» را فعال کنید.');
-        return;
+      if (chequeType === 'sayad') {
+        if (!/^\d{16}$/.test(cleanSayad)) {
+          setFormError('شناسه صیاد چک صیادی باید دقیقاً ۱۶ رقمی باشد.');
+          return;
+        }
+        if (!inFavorSchool) {
+          setFormError('برای ثبت چک صیادی، باید تیک «ثبت چک در وجه مدرسه القرآن» را فعال کنید.');
+          return;
+        }
       }
       try {
         const isoIssue = jalaliToIso(formJalaliDate);
         const isoDue = jalaliToIso(chequeDueDate);
+        const typeTitle =
+          chequeType === 'guarantee'
+            ? 'چک ضمانتی'
+            : chequeType === 'gharzolhasane'
+            ? 'چک قرض‌الحسنه'
+            : chequeType === 'non_sayad'
+            ? 'چک غیر صیادی'
+            : 'چک صیادی';
+
         addTuitionPayment({
           student_id: selectedStudent!.id,
           amount: amt,
           date: isoIssue,
-          description: formDesc.trim() || 'ثبت چک صیادی',
+          description: formDesc.trim() || `ثبت ${typeTitle} (${chequeBankName})`,
           payment_method: 'چک',
           school_id: selectedStudent!.school_id,
           cheque_data: {
-            sayad_id: cleanSayad,
+            sayad_id: chequeType === 'sayad' ? cleanSayad : undefined,
             due_date: isoDue,
-            in_favor_school: true,
+            in_favor_school: inFavorSchool,
+            bank_name: chequeBankName,
+            cheque_type: chequeType,
+            cheque_number: chequeNumber.trim() || undefined,
+            issuer_name: selectedStudent!.name,
           },
           attachment_url: formAttachment,
         });
@@ -611,25 +629,102 @@ export const TuitionScreen: React.FC = () => {
               {/* Cheque specific fields */}
               {formMethod === 'چک' ? (
                 <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-4 space-y-3">
-                  <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                    <FileCheck2 className="w-4 h-4 text-amber-600" />
-                    <span>مشخصات چک صیادی</span>
+                  <div className="text-xs font-bold text-amber-900 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <FileCheck2 className="w-4 h-4 text-amber-600" />
+                      <span>مشخصات چک دریافتی</span>
+                    </div>
+                    <span className="text-[11px] text-amber-800">
+                      پشتیبانی از صیادی، غیر صیادی، قرض‌الحسنه و ضمانتی
+                    </span>
                   </div>
 
+                  {/* Cheque Type Selection */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                    {[
+                      { id: 'sayad', label: 'چک صیادی' },
+                      { id: 'non_sayad', label: 'غیر صیادی' },
+                      { id: 'gharzolhasane', label: 'قرض‌الحسنه' },
+                      { id: 'guarantee', label: 'چک ضمانت' },
+                    ].map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setChequeType(t.id as any)}
+                        className={`p-2 rounded-xl text-xs font-bold transition-all text-center border ${
+                          chequeType === t.id
+                            ? 'bg-[#341648] text-white border-[#341648] shadow-xs'
+                            : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Bank Issuer */}
                   <div>
                     <label className="block text-xs font-bold text-gray-700 mb-1">
-                      شناسه ۱۶ رقمی صیاد <span className="text-rose-500">*</span>
+                      بانک صادرکننده چک <span className="text-rose-500">*</span>
                     </label>
-                    <input
-                      type="text"
-                      maxLength={16}
-                      value={sayadId}
-                      onChange={(e) => setSayadId(e.target.value.replace(/\D/g, ''))}
-                      placeholder="دقیقاً ۱۶ رقم صیادی"
-                      className="w-full px-4 py-2.5 bg-white rounded-xl border border-amber-200 text-sm font-mono text-left focus:outline-hidden"
-                      dir="ltr"
-                    />
+                    <select
+                      value={chequeBankName}
+                      onChange={(e) => setChequeBankName(e.target.value)}
+                      className="w-full px-3 py-2 bg-white rounded-xl border border-amber-200 text-xs font-bold text-[#341648]"
+                    >
+                      <option value="بانک ملی ایران">بانک ملی ایران</option>
+                      <option value="بانک صادرات ایران">بانک صادرات ایران</option>
+                      <option value="بانک ملت">بانک ملت</option>
+                      <option value="بانک تجارت">بانک تجارت</option>
+                      <option value="بانک سپه">بانک سپه</option>
+                      <option value="قرض‌الحسنه رسالت">قرض‌الحسنه رسالت</option>
+                      <option value="قرض‌الحسنه مهر ایران">قرض‌الحسنه مهر ایران</option>
+                      <option value="بانک مسکن">بانک مسکن</option>
+                      <option value="بانک کشاورزی">بانک کشاورزی</option>
+                      <option value="بانک رفاه کارگران">بانک رفاه کارگران</option>
+                      <option value="بانک پاسارگاد">بانک پاسارگاد</option>
+                      <option value="بانک پارسیان">بانک پارسیان</option>
+                      <option value="بانک سامان">بانک سامان</option>
+                      <option value="بانک شهر">بانک شهر</option>
+                      <option value="بانک سینا">بانک سینا</option>
+                      <option value="بانک آینده">بانک آینده</option>
+                      <option value="سایر بانک‌ها و صندوق‌ها">سایر بانک‌ها و صندوق‌ها</option>
+                    </select>
                   </div>
+
+                  {chequeType === 'sayad' ? (
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">
+                        شناسه ۱۶ رقمی صیاد <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={16}
+                        value={sayadId}
+                        onChange={(e) => setSayadId(e.target.value.replace(/\D/g, ''))}
+                        placeholder="دقیقاً ۱۶ رقم صیادی"
+                        className="w-full px-4 py-2 bg-white rounded-xl border border-amber-200 text-sm font-mono text-left focus:outline-hidden"
+                        dir="ltr"
+                      />
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">
+                        شماره سریال برگه چک / شماره حساب قرض‌الحسنه
+                      </label>
+                      <input
+                        type="text"
+                        value={chequeNumber}
+                        onChange={(e) => setChequeNumber(e.target.value)}
+                        placeholder="مثال: ۸۹۰/۴۴۲ یا شماره چک عادی"
+                        className="w-full px-4 py-2 bg-white rounded-xl border border-amber-200 text-sm font-mono text-left focus:outline-hidden"
+                        dir="ltr"
+                      />
+                      <span className="text-[11px] text-gray-500 mt-1 block">
+                        چک‌های غیر صیادی و قرض‌الحسنه نیاز به ثبت شماره ۱۶ رقمی صیادی ندارند.
+                      </span>
+                    </div>
+                  )}
 
                   <JalaliDatePicker
                     label="تاریخ سررسید چک"
@@ -638,21 +733,19 @@ export const TuitionScreen: React.FC = () => {
                     required
                   />
 
-                  <label className="flex items-start gap-2 cursor-pointer pt-1">
-                    <input
-                      type="checkbox"
-                      checked={inFavorSchool}
-                      onChange={(e) => setInFavorSchool(e.target.checked)}
-                      className="mt-1 rounded text-[#62205f] focus:ring-[#62205f]"
-                    />
-                    <span className="text-xs font-bold text-gray-800">
-                      ثبت چک در وجه مدرسه القرآن الکریم در سامانه صیاد انجام شده است. <span className="text-rose-500">*</span>
-                    </span>
-                  </label>
-
-                  <div className="text-[11px] font-bold text-rose-600 bg-rose-50 p-2.5 rounded-xl border border-rose-200">
-                    ⚠️ مدیر محترم: چک ثبت نشده در سامانه صیاد بانک مرکزی فاقد ارزش مالی و قانونی می‌باشد.
-                  </div>
+                  {chequeType === 'sayad' && (
+                    <label className="flex items-start gap-2 cursor-pointer pt-1">
+                      <input
+                        type="checkbox"
+                        checked={inFavorSchool}
+                        onChange={(e) => setInFavorSchool(e.target.checked)}
+                        className="mt-1 rounded text-[#62205f] focus:ring-[#62205f]"
+                      />
+                      <span className="text-xs font-bold text-gray-800">
+                        ثبت چک در وجه مدرسه القرآن الکریم در سامانه صیاد انجام شده است. <span className="text-rose-500">*</span>
+                      </span>
+                    </label>
+                  )}
                 </div>
               ) : (
                 formMethod !== 'پول نقد' && (

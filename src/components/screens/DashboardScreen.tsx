@@ -32,6 +32,8 @@ import {
   CheckCircle2,
   MessageSquare,
   GraduationCap,
+  Upload,
+  X,
 } from 'lucide-react';
 import { ScreenType, Student } from '../../types';
 import { formatRial, jalaliFromGregorian } from '../../utils/jalali';
@@ -49,11 +51,26 @@ export const DashboardScreen: React.FC = () => {
     isConnectedToGoogleSheets,
     spreadsheetId,
     syncStatus,
+    syncError,
     lastSyncTime,
     syncWithGoogleSheets,
     connectWithGoogle,
+    loadOfflineExcel,
+    loadPublicSheet,
     syncStats,
   } = useApp();
+
+  const [offlineSuccessNotice, setOfflineSuccessNotice] = useState<string | null>(null);
+
+  const handleOfflineExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ok = await loadOfflineExcel(file);
+    if (ok) {
+      setOfflineSuccessNotice('اطلاعات شیت با موفقیت از فایل اکسل در نرم‌افزار بارگذاری و همگام گردید.');
+    }
+    e.target.value = '';
+  };
 
   const [isQuickInvoiceOpen, setIsQuickInvoiceOpen] = useState(false);
   const [invoiceStudent, setInvoiceStudent] = useState<Student | null>(null);
@@ -143,7 +160,7 @@ export const DashboardScreen: React.FC = () => {
         <div className="relative z-10 space-y-2">
           <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-400/20 border border-amber-300/40 text-amber-200 text-xs font-bold shadow-2xs">
             <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            <span>بسم الله الرحمن الرحیم • شهرضا</span>
+            <span>بسم الله الرحمن الرحیم</span>
           </div>
           <h1 className="text-xl sm:text-2xl md:text-3xl font-black font-neyrizi text-amber-100 tracking-wide leading-relaxed drop-shadow-md">
             سیستم‌ جامع امور مالی و حسابداری مدرسه القرآن الکریم شهرضا
@@ -214,7 +231,19 @@ export const DashboardScreen: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            {/* Offline Excel File Input */}
+            <label className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl bg-white/90 hover:bg-white text-[#341648] border border-purple-200 hover:border-purple-300 text-xs font-bold flex items-center justify-center gap-2 shadow-2xs transition-all active:scale-95 cursor-pointer">
+              <Upload className="w-3.5 h-3.5 text-emerald-600" />
+              <span>بارگذاری فایل اکسل شیت</span>
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleOfflineExcelUpload}
+                className="hidden"
+              />
+            </label>
+
             {isConnectedToGoogleSheets ? (
               <button
                 type="button"
@@ -246,6 +275,32 @@ export const DashboardScreen: React.FC = () => {
             </button>
           </div>
         </div>
+
+        {syncError && (
+          <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 text-xs font-semibold flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <div className="flex-1">
+              <div>{syncError}</div>
+              <div className="text-[11px] text-rose-600 mt-1 font-normal">
+                راهکار در نرم‌افزار گوشی: شیت را از گوگل درایو با فرمت اکسل (.xlsx) دانلود کرده و دکمه «بارگذاری فایل اکسل شیت» را بزنید.
+              </div>
+            </div>
+          </div>
+        )}
+        {offlineSuccessNotice && (
+          <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-800 text-xs font-semibold flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{offlineSuccessNotice}</span>
+            </div>
+            <button
+              onClick={() => setOfflineSuccessNotice(null)}
+              className="text-emerald-700 hover:text-emerald-900 text-xs p-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Quick Access Grid placed above Financial Overview */}

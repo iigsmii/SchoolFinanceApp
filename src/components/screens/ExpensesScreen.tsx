@@ -16,6 +16,8 @@ import {
   Image as ImageIcon,
   Building,
   User,
+  Landmark,
+  CreditCard,
 } from 'lucide-react';
 import { ReceiptImageUploader } from '../ReceiptImageUploader';
 
@@ -44,7 +46,7 @@ export const ExpensesScreen: React.FC = () => {
   const [formAmount, setFormAmount] = useState('');
   const [formJalaliDate, setFormJalaliDate] = useState(todayJalali());
   const [formTracking, setFormTracking] = useState('');
-  const [formSource, setFormSource] = useState<'bank' | 'own'>('own');
+  const [formSource, setFormSource] = useState<'petty_cash' | 'bank' | 'own'>('petty_cash');
   const [formComment, setFormComment] = useState('');
   const [formSchoolId, setFormSchoolId] = useState<number>(
     isSenior ? schools[0]?.id || 1 : currentUser?.school_id || 1
@@ -67,9 +69,24 @@ export const ExpensesScreen: React.FC = () => {
     setFormAmount('');
     setFormJalaliDate(todayJalali());
     setFormTracking('');
-    setFormSource('own');
+    setFormSource('petty_cash');
     setFormComment('');
     setFormAttachment('');
+    setFormSchoolId(isSenior ? schools[0]?.id || 1 : currentUser?.school_id || 1);
+    setFormError('');
+    setIsModalOpen(true);
+  };
+
+  const handleQuickBankFee = () => {
+    setEditingExpense(null);
+    const bankFeeCat = categories.find((c) => c.name === 'کارمزد بانک');
+    if (bankFeeCat) setFormCategoryId(bankFeeCat.id);
+    setFormAmount('7,200');
+    setFormJalaliDate(todayJalali());
+    setFormTracking('FEE-' + Math.floor(100000 + Math.random() * 900000));
+    setFormSource('petty_cash');
+    setFormComment('کارمزد انتقال وجه بانکی (پایا)');
+    setFormAttachment('bank_fee_auto_receipt');
     setFormSchoolId(isSenior ? schools[0]?.id || 1 : currentUser?.school_id || 1);
     setFormError('');
     setIsModalOpen(true);
@@ -81,7 +98,7 @@ export const ExpensesScreen: React.FC = () => {
     setFormAmount(Number(t.amount).toLocaleString('en-US'));
     setFormJalaliDate(jalaliFromGregorian(t.date));
     setFormTracking(t.tracking_code || '');
-    setFormSource((t.payment_source as 'bank' | 'own') || 'own');
+    setFormSource((t.payment_source as any) || 'petty_cash');
     setFormComment(t.description || t.comment || '');
     setFormAttachment(t.attachment_url || '');
     setFormSchoolId(t.school_id);
@@ -170,6 +187,14 @@ export const ExpensesScreen: React.FC = () => {
           >
             <PlusCircle className="w-5 h-5" />
             ثبت هزینه جدید
+          </button>
+
+          <button
+            onClick={handleQuickBankFee}
+            className="py-3.5 px-4 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"
+          >
+            <Landmark className="w-5 h-5" />
+            <span>ثبت سریع کارمزد بانک</span>
           </button>
 
           {isSenior && (
@@ -332,12 +357,27 @@ export const ExpensesScreen: React.FC = () => {
                   </label>
                   <select
                     value={formSource}
-                    onChange={(e) => setFormSource(e.target.value as 'bank' | 'own')}
+                    onChange={(e) => setFormSource(e.target.value as any)}
                     className="w-full px-3 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735]"
                   >
-                    <option value="bank">حساب بانکی مدرسه</option>
+                    <option value="petty_cash">کارت تن‌خواه مدیر مدرسه</option>
+                    <option value="bank">حساب بانکی / جاری مدرسه</option>
                     <option value="own">از حساب خودم (طلب من از مدرسه)</option>
                   </select>
+
+                  {formSource === 'petty_cash' && (
+                    <div className="mt-1.5 p-2 bg-purple-50 rounded-lg border border-purple-200 text-[11px] font-bold text-[#62205f] flex items-center gap-1.5">
+                      <CreditCard className="w-3.5 h-3.5 text-purple-700 shrink-0" />
+                      <span>
+                        کارت تن‌خواه:{' '}
+                        <span className="font-mono">
+                          {currentUser?.petty_cash_card ||
+                            schools.find((s) => s.id === formSchoolId)?.petty_cash_card ||
+                            '۶۰۳۷-۹۹۷۵-۱۱۲۲-۳۳۴۴'}
+                        </span>
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -373,14 +413,26 @@ export const ExpensesScreen: React.FC = () => {
               )}
 
               <div>
-                <label className="block text-xs font-bold text-[#341648] mb-1.5">شرح و توضیحات هزینه</label>
+                <label className="block text-xs font-bold text-[#341648] mb-1.5">
+                  شرح و توضیحات هزینه
+                </label>
                 <input
                   type="text"
                   value={formComment}
-                  onChange={(e) => setFormComment(e.target.value)}
-                  placeholder="مثال: خرید ماژیک وایت‌برد و اقلام مصرفی"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setFormComment(val);
+                    if (val.includes('کارمزد') || val.includes('پایا') || val.includes('ساتنا')) {
+                      const feeCat = categories.find((c) => c.name === 'کارمزد بانک');
+                      if (feeCat) setFormCategoryId(feeCat.id);
+                    }
+                  }}
+                  placeholder="مثال: خرید ماژیک وایت‌برد یا کارمزد انتقال بانکی"
                   className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm text-[#302735] focus:outline-hidden"
                 />
+                <span className="text-[11px] text-gray-400 mt-1 block">
+                  💡 با نوشتن کلمه «کارمزد» یا «پایا»، سرفصل «کارمزد بانک» به‌صورت خودکار انتخاب می‌شود.
+                </span>
               </div>
 
               {/* Photo Upload Section */}

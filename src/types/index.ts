@@ -7,6 +7,11 @@ export interface User {
   school_name?: string;
   active: boolean;
   password?: string;
+  petty_cash_card?: string; // شماره ۱۶ رقمی کارت تن‌خواه مدیر
+  petty_cash_bank?: string; // نام بانک کارت تن‌خواه
+  petty_cash_shaba?: string; // شماره شبای کارت تن‌خواه
+  petty_cash_limit?: number; // سقف مجاز تن‌خواه به ریال
+  petty_cash_balance?: number; // مانده تخمینی تن‌خواه به ریال
 }
 
 export interface School {
@@ -16,6 +21,7 @@ export interface School {
   type?: string;
   active: boolean;
   moeen_code?: number;
+  petty_cash_card?: string;
 }
 
 export interface Student {
@@ -45,8 +51,10 @@ export interface Transaction {
   amount: number;
   debit: number;
   credit: number;
-  payment_method?: string; // 'پول نقد' | 'کارت به کارت' | 'کارت خوان' | 'چک'
-  payment_source?: string; // 'bank' | 'own' | string
+  payment_method?: string; // 'پول نقد' | 'کارت به کارت' | 'کارت خوان' | 'چک' | 'کارت تن‌خواه'
+  payment_source?: 'bank' | 'own' | 'petty_cash' | string; // 'petty_cash' = کارت تن‌خواه مدیر
+  petty_cash_card?: string;
+  is_bank_fee?: boolean; // کارمزد بانکی
   tracking_code?: string;
   comment?: string;
   description?: string;
@@ -60,9 +68,14 @@ export interface Transaction {
 
 export interface Cheque {
   id: number;
-  sayad_id: string; // 16 digits
-  student_id: number;
-  student_name: string;
+  sayad_id?: string; // 16 digits (اختیاری در چک غیر صیادی و قرض‌الحسنه)
+  cheque_number?: string; // شماره سریال برگه چک
+  bank_name?: string; // بانک صادرکننده چک (ملی، ملت، صادرات، رسالت و...)
+  cheque_type?: 'sayad' | 'non_sayad' | 'gharzolhasane' | 'guarantee'; // نوع چک: صیادی، غیر صیادی، قرض‌الحسنه، ضمانتی
+  cheque_purpose?: 'tuition' | 'guarantee' | 'staff_guarantee' | 'general'; // بابت: شهریه، ضمانت و...
+  issuer_name?: string; // نام صادرکننده یا صاحب حساب
+  student_id?: number;
+  student_name?: string;
   school_id: number;
   school_name: string;
   amount: number;

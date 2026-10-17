@@ -15,16 +15,16 @@ import {
 } from '../types';
 
 export const INITIAL_SCHOOLS: School[] = [
-  { id: 1, name: 'دبستان نور ۱', code: 'NOOR1', type: 'دبستان پسرانه', active: true, moeen_code: 3 },
-  { id: 2, name: 'دبستان نور ۲', code: 'NOOR2', type: 'دبستان پسرانه', active: true, moeen_code: 4 },
-  { id: 3, name: 'دبستان تبیان ۱', code: 'TEBYAN1', type: 'دبستان دخترانه', active: true, moeen_code: 1 },
-  { id: 4, name: 'دبستان تبیان ۲', code: 'TEBYAN2', type: 'دبستان دخترانه', active: true, moeen_code: 2 },
-  { id: 5, name: 'مهد مرکزی صبح', code: 'MAHD_S', type: 'مهد و پیش‌دبستانی', active: true, moeen_code: 10 },
-  { id: 6, name: 'مهد مرکزی عصر', code: 'MAHD_E', type: 'مهد و پیش‌دبستانی', active: true, moeen_code: 11 },
-  { id: 7, name: 'مهد ابراهیم خلیل', code: 'MAHD_IK', type: 'مهد و پیش‌دبستانی', active: true, moeen_code: 12 },
-  { id: 8, name: 'مهد منظریه', code: 'MAHD_MN', type: 'مهد و پیش‌دبستانی', active: true, moeen_code: 14 },
-  { id: 9, name: 'مهد سروستان', code: 'MAHD_SR', type: 'مهد و پیش‌دبستانی', active: true, moeen_code: 9 },
-  { id: 10, name: 'مرکز قرآنی مرکزی', code: 'MARKAZ', type: 'مرکز فرهنگی و قرآنی', active: true, moeen_code: 13 },
+  { id: 1, name: 'دبستان نور ۱', code: 'NOOR1', type: 'دبستان پسرانه', active: true, moeen_code: 3, petty_cash_card: '۶۰۳۷-۹۹۷۵-۱۱۲۲-۳۳۴۴' },
+  { id: 2, name: 'دبستان نور ۲', code: 'NOOR2', type: 'دبستان پسرانه', active: true, moeen_code: 4, petty_cash_card: '۶۰۳۷-۹۹۷۵-۵۵۶۶-۷۷۸۸' },
+  { id: 3, name: 'دبستان تبیان ۱', code: 'TEBYAN1', type: 'دبستان دخترانه', active: true, moeen_code: 1, petty_cash_card: '۵۸۹۲-۱۰۱۲-۴۴۵۵-۶۶۷۷' },
+  { id: 4, name: 'دبستان تبیان ۲', code: 'TEBYAN2', type: 'دبستان دخترانه', active: true, moeen_code: 2, petty_cash_card: '۵۸۹۲-۱۰۱۲-۸۸۹۹-۱۱۲۲' },
+  { id: 5, name: 'مهد مرکزی صبح', code: 'MAHD_S', type: 'مهد و پیش‌دبستانی', active: true, moeen_code: 10, petty_cash_card: '۶۲۷۳-۸۱۱۱-۵۵۶۶-۷۷۸۸' },
+  { id: 6, name: 'مهد مرکزی عصر', code: 'MAHD_E', type: 'مهد و پیش‌دبستانی', active: true, moeen_code: 11, petty_cash_card: '۶۲۷۳-۸۱۱۱-۹۹۰۰-۱۱۲۲' },
+  { id: 7, name: 'مهد ابراهیم خلیل', code: 'MAHD_IK', type: 'مهد و پیش‌دبستانی', active: true, moeen_code: 12, petty_cash_card: '۶۰۳۷-۶۹۱۹-۳۳۴۴-۵۵۶۶' },
+  { id: 8, name: 'مهد منظریه', code: 'MAHD_MN', type: 'مهد و پیش‌دبستانی', active: true, moeen_code: 14, petty_cash_card: '۶۰۳۷-۶۹۱۹-۷۷۸۸-۹۹۰۰' },
+  { id: 9, name: 'مهد سروستان', code: 'MAHD_SR', type: 'مهد و پیش‌دبستانی', active: true, moeen_code: 9, petty_cash_card: '۵۰۲۲-۲۹۱۰-۲۲۳۳-۴۴۵۵' },
+  { id: 10, name: 'مهد برهان', code: 'BORHAN', type: 'مهد و پیش‌دبستانی قرآنی', active: true, moeen_code: 13, petty_cash_card: '۵۰۲۲-۲۹۱۰-۶۶۷۷-۸۸۹۹' },
 ];
 
 export const INITIAL_USERS: User[] = [
@@ -43,6 +43,11 @@ export const INITIAL_USERS: User[] = [
     school_id: 1,
     school_name: 'دبستان نور ۱',
     active: true,
+    petty_cash_card: '۶۰۳۷-۹۹۷۵-۱۱۲۲-۳۳۴۴',
+    petty_cash_bank: 'بانک ملی',
+    petty_cash_shaba: 'IR890170000000109283746501',
+    petty_cash_limit: 150000000,
+    petty_cash_balance: 42500000,
   },
   {
     id: 3,
@@ -52,6 +57,11 @@ export const INITIAL_USERS: User[] = [
     school_id: 3,
     school_name: 'دبستان تبیان ۱',
     active: true,
+    petty_cash_card: '۵۸۹۲-۱۰۱۲-۴۴۵۵-۶۶۷۷',
+    petty_cash_bank: 'بانک سپه',
+    petty_cash_shaba: 'IR450150000000208172635402',
+    petty_cash_limit: 150000000,
+    petty_cash_balance: 68000000,
   },
   {
     id: 4,
@@ -61,6 +71,11 @@ export const INITIAL_USERS: User[] = [
     school_id: 5,
     school_name: 'مهد مرکزی صبح',
     active: true,
+    petty_cash_card: '۶۲۷۳-۸۱۱۱-۵۵۶۶-۷۷۸۸',
+    petty_cash_bank: 'بانک انصار / سپه',
+    petty_cash_shaba: 'IR120150000000307261548303',
+    petty_cash_limit: 100000000,
+    petty_cash_balance: 31000000,
   },
 ];
 
@@ -73,6 +88,8 @@ export const INITIAL_CATEGORIES: ExpenseCategory[] = [
   { id: '6', name: 'هزینه اردو، مسابقات و جوایز قرآنی', active: true },
   { id: '7', name: 'مواد بهداشتی، شوینده و نظافت', active: true },
   { id: '8', name: 'هزینه‌های متفرقه اداری', active: true },
+  { id: '9', name: 'کارمزد بانک', active: true },
+  { id: '10', name: 'هزینه‌های تن‌خواه مدیر', active: true },
 ];
 
 export const INITIAL_STUDENTS: Student[] = [

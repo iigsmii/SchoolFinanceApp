@@ -32,7 +32,9 @@ import {
   Banknote,
   Receipt,
   UserCheck,
+  FileSpreadsheet,
 } from 'lucide-react';
+import { StaffExcelModal } from '../StaffExcelModal';
 
 const MONTH_NAMES = [
   'مهر ۱۴۰۵',
@@ -87,6 +89,7 @@ export const StaffScreen: React.FC = () => {
 
   // Staff Modal
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
+  const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
   const [staffName, setStaffName] = useState('');
   const [staffNationalId, setStaffNationalId] = useState('');
@@ -162,6 +165,15 @@ export const StaffScreen: React.FC = () => {
     if (selectedMonth && p.month_name !== selectedMonth) return false;
     return true;
   });
+
+  const handleImportStaff = (imported: Omit<StaffMember, 'id'>[]) => {
+    let count = 0;
+    imported.forEach((st) => {
+      addStaffMember(st);
+      count++;
+    });
+    alert(`${count} نفر از کادر و معلمان با موفقیت از اکسل وارد سامانه شدند.`);
+  };
 
   // Open add staff modal
   const handleOpenAddStaff = () => {
@@ -433,6 +445,15 @@ export const StaffScreen: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap items-center gap-2 self-stretch sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setIsExcelModalOpen(true)}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-2xl bg-white/95 hover:bg-white text-[#341648] font-bold text-xs shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5 border border-amber-300/60"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                <span>ورود هوشمند از فایل اکسل</span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleOpenAddStaff}
@@ -1645,6 +1666,16 @@ export const StaffScreen: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Smart Staff Excel Importer Modal */}
+      <StaffExcelModal
+        isOpen={isExcelModalOpen}
+        onClose={() => setIsExcelModalOpen(false)}
+        schools={schools}
+        defaultSchoolId={selectedSchoolId !== 0 ? selectedSchoolId : schools[0]?.id || 1}
+        onImport={handleImportStaff}
+        accentColor={accentColor}
+      />
     </div>
   );
 };
