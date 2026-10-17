@@ -94,12 +94,14 @@ export const loadAccountingDataFromGoogleSheets = async (
   spreadsheetId: string = DEFAULT_SPREADSHEET_ID
 ): Promise<SheetLoadResult> => {
   try {
+    // Keep read failures instead of silently reporting an empty successful sync.
+    const readErrors: string[] = [];
     // 1. Fetch Students
     let rawStudents: any[][] = [];
     try {
       rawStudents = await fetchSheetRange(accessToken, spreadsheetId, 'Students!A1:K');
     } catch (e) {
-      console.warn('Could not load Students sheet:', e);
+      console.warn('Could not load Students sheet:', e); readErrors.push(`Students: ${e instanceof Error ? e.message : String(e)}`);
     }
 
     // 2. Fetch Schools
@@ -107,7 +109,7 @@ export const loadAccountingDataFromGoogleSheets = async (
     try {
       rawSchools = await fetchSheetRange(accessToken, spreadsheetId, 'Schools!A1:E');
     } catch (e) {
-      console.warn('Could not load Schools sheet:', e);
+      console.warn('Could not load Schools sheet:', e); readErrors.push(`Schools: ${e instanceof Error ? e.message : String(e)}`);
     }
 
     // 3. Fetch Tuition
@@ -115,7 +117,7 @@ export const loadAccountingDataFromGoogleSheets = async (
     try {
       rawTuition = await fetchSheetRange(accessToken, spreadsheetId, 'Tuition!A1:N');
     } catch (e) {
-      console.warn('Could not load Tuition sheet:', e);
+      console.warn('Could not load Tuition sheet:', e); readErrors.push(`Tuition: ${e instanceof Error ? e.message : String(e)}`);
     }
 
     // 4. Fetch Expenses
@@ -123,7 +125,7 @@ export const loadAccountingDataFromGoogleSheets = async (
     try {
       rawExpenses = await fetchSheetRange(accessToken, spreadsheetId, 'Expenses!A1:N');
     } catch (e) {
-      console.warn('Could not load Expenses sheet:', e);
+      console.warn('Could not load Expenses sheet:', e); readErrors.push(`Expenses: ${e instanceof Error ? e.message : String(e)}`);
     }
 
     // 5. Fetch Cheques
@@ -131,7 +133,7 @@ export const loadAccountingDataFromGoogleSheets = async (
     try {
       rawCheques = await fetchSheetRange(accessToken, spreadsheetId, 'Cheques!A1:T');
     } catch (e) {
-      console.warn('Could not load Cheques sheet:', e);
+      console.warn('Could not load Cheques sheet:', e); readErrors.push(`Cheques: ${e instanceof Error ? e.message : String(e)}`);
     }
 
     // 6. Fetch Categories
@@ -139,7 +141,7 @@ export const loadAccountingDataFromGoogleSheets = async (
     try {
       rawCategories = await fetchSheetRange(accessToken, spreadsheetId, 'ExpenseCategories!A1:D');
     } catch (e) {
-      console.warn('Could not load ExpenseCategories sheet:', e);
+      console.warn('Could not load ExpenseCategories sheet:', e); readErrors.push(`ExpenseCategories: ${e instanceof Error ? e.message : String(e)}`);
     }
 
     // 7. Fetch Managers
@@ -147,7 +149,15 @@ export const loadAccountingDataFromGoogleSheets = async (
     try {
       rawManagers = await fetchSheetRange(accessToken, spreadsheetId, 'Managers!A1:H');
     } catch (e) {
-      console.warn('Could not load Managers sheet:', e);
+      console.warn('Could not load Managers sheet:', e); readErrors.push(`Managers: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
+    // If every sheet read failed, stop here. Previously the individual errors were
+    // swallowed and the app incorrectly displayed a successful sync with zero records.
+    const anySheetReturnedData = [rawStudents, rawSchools, rawTuition, rawExpenses, rawCheques, rawCategories, rawManagers]
+      .some((rows) => rows.length > 0);
+    if (!anySheetReturnedData && readErrors.length > 0) {
+      throw new Error(`خواندن اطلاعات از Google Sheets ناموفق بود. شناسه شیت و دسترسی حساب Google را بررسی کنید. جزئیات: ${readErrors.slice(0, 3).join(' | ')}`);
     }
 
     // Parse Schools

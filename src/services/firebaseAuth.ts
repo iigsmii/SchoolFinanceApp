@@ -53,6 +53,12 @@ export const googleSignIn = async (): Promise<{ user: FirebaseUser; accessToken:
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
     console.error('Google Sign-in error:', error);
+    if (error?.code === 'auth/unauthorized-domain') {
+      throw new Error('دامنه اجرای برنامه در Firebase مجاز نیست. در Firebase Console به Authentication > Settings > Authorized domains بروید و دامنه‌ای را که برنامه از آن اجرا می‌شود اضافه کنید. اگر برنامه داخل APK اجرا می‌شود، ورود Google با پنجره وب ممکن است در WebView پشتیبانی نشود؛ برای رفع کامل باید روش ورود اندروید نیز تنظیم شود.');
+    }
+    if (error?.code === 'auth/popup-blocked') {
+      throw new Error('پنجره ورود گوگل مسدود شده است. برنامه را در مرورگر پشتیبانی‌شده باز کنید و دوباره تلاش کنید.');
+    }
     throw error;
   } finally {
     isSigningIn = false;
