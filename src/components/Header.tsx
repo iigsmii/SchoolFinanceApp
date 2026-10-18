@@ -1,6 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { ArrowRight, UserCircle, Settings, Cloud, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ArrowRight, UserCircle, Settings, Cloud, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
 import { ScreenType } from '../types';
 
@@ -42,8 +42,13 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack = true }) => {
               <ArrowRight className="w-5 h-5" />
             </button>
           )}
+          {/*
+            IMPORTANT: use the public asset path (/app-logo.jpg) instead of the
+            dev-only /src/assets/... path. The dev path 404s in the production
+            build, which is why the logo appeared on web but not on mobile/PWA.
+          */}
           <img
-            src="/src/assets/images/quran_school_finance_logo_1792312844966.jpg"
+            src="/app-logo.jpg"
             alt="لوگوی سیستم مالی مدرسة القرآن"
             referrerPolicy="no-referrer"
             className="w-10 h-10 rounded-xl object-cover shadow-2xs border border-amber-300/60 shrink-0"
