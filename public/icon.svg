@@ -1,0 +1,29 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'>
+  <defs>
+    <linearGradient id='bgGrad' x1='0%' y1='0%' x2='100%' y2='100%'>
+      <stop offset='0%' stop-color='#380e3d'/>
+      <stop offset='50%' stop-color='#62205f'/>
+      <stop offset='100%' stop-color='#200724'/>
+    </linearGradient>
+    <linearGradient id='goldGrad' x1='0%' y1='0%' x2='100%' y2='100%'>
+      <stop offset='0%' stop-color='#ffe082'/>
+      <stop offset='50%' stop-color='#ffca28'/>
+      <stop offset='100%' stop-color='#ff8f00'/>
+    </linearGradient>
+  </defs>
+  <rect width='512' height='512' rx='128' fill='url(#bgGrad)'/>
+  <circle cx='256' cy='256' r='236' stroke='url(#goldGrad)' stroke-width='6' fill='none' opacity='0.7'/>
+  <!-- Open Quran Book -->
+  <path d='M256 160 C210 130 140 135 96 150 L96 340 C140 325 210 320 256 350 C302 320 372 325 416 340 L416 150 C372 135 302 130 256 160 Z' fill='none' stroke='url(#goldGrad)' stroke-width='14' stroke-linejoin='round'/>
+  <line x1='256' y1='160' x2='256' y2='350' stroke='url(#goldGrad)' stroke-width='14'/>
+  <!-- Book Ribbons / Quran pages lines -->
+  <path d='M120 185 C160 175 215 175 245 195' stroke='#ffe082' stroke-width='6' fill='none' stroke-linecap='round' opacity='0.9'/>
+  <path d='M120 220 C160 210 215 210 245 230' stroke='#ffe082' stroke-width='6' fill='none' stroke-linecap='round' opacity='0.9'/>
+  <path d='M120 255 C160 245 215 245 245 265' stroke='#ffe082' stroke-width='6' fill='none' stroke-linecap='round' opacity='0.9'/>
+  <path d='M392 185 C352 175 297 175 267 195' stroke='#ffe082' stroke-width='6' fill='none' stroke-linecap='round' opacity='0.9'/>
+  <path d='M392 220 C352 210 297 210 267 230' stroke='#ffe082' stroke-width='6' fill='none' stroke-linecap='round' opacity='0.9'/>
+  <path d='M392 255 C352 245 297 245 267 265' stroke='#ffe082' stroke-width='6' fill='none' stroke-linecap='round' opacity='0.9'/>
+  <!-- Golden Coin / Finance Symbol at bottom -->
+  <circle cx='256' cy='390' r='48' fill='#200724' stroke='url(#goldGrad)' stroke-width='10'/>
+  <text x='256' y='404' font-family='Vazirmatn, Arial' font-size='42' font-weight='bold' fill='#ffe082' text-anchor='middle'>ریال</text>
+</svg>

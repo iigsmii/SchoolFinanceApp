@@ -1,6 +1,6 @@
 {
   "name": "سیستم مالی مدرسه القرآن",
-  "description": "سامانه مدیریت مالی مدرسه القرآن الکریم شهرضا",
+  "description": "سیستم جامع مدیریت مالی، شهریه و حسابداری مدارس و مهدالرضاهای مجموعه مدرسة القرآن الکریم شهرضا",
   "permissions": [],
   "capabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

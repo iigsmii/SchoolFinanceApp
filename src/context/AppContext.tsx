@@ -48,8 +48,23 @@ import {
   loadDataFromExcelFile,
   loadDataFromPublicGoogleSheet,
 } from '../services/googleSheets';
+import {
+  playSuccessSound,
+  playTransactionSound,
+  playAlertSound,
+  isSoundEnabled,
+  setSoundEnabled as persistSoundEnabled,
+} from '../utils/soundEffects';
 
 interface AppContextType {
+  // Official Signature
+  managerSignature: string | null;
+  setManagerSignature: (sig: string | null) => void;
+
+  // Sound effects
+  soundEnabled: boolean;
+  setSoundEnabled: (en: boolean) => void;
+
   currentUser: User | null;
   setCurrentUser: (u: User | null) => void;
   currentScreen: ScreenType;
@@ -249,10 +264,62 @@ function saveToStorage<T>(key: string, value: T) {
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [themeIndex, setThemeIndexState] = useState<number>(() => loadFromStorage('theme_index', 0));
   const [fontScale, setFontScaleState] = useState<number>(() => loadFromStorage('font_scale', 1));
-  const [currentUser, setCurrentUserState] = useState<User | null>(() => loadFromStorage('current_user', INITIAL_USERS[0]));
+
+  // Signature state
+  const [managerSignature, setManagerSignatureState] = useState<string | null>(() =>
+    loadFromStorage('signature', null)
+  );
+  const setManagerSignature = (sig: string | null) => {
+    setManagerSignatureState(sig);
+    saveToStorage('signature', sig);
+  };
+
+  // Sound effects state
+  const [soundEnabled, setSoundEnabledState] = useState<boolean>(() => isSoundEnabled());
+  const setSoundEnabled = (en: boolean) => {
+    setSoundEnabledState(en);
+    persistSoundEnabled(en);
+  };
+
+  const normalizeSchoolName = (name: string): string => {
+    if (!name) return name;
+    let s = name;
+    if (s.includes('دبستان') && !s.includes('غیر دولتی')) {
+      s = s.replace(/دبستان\s*/g, 'دبستان غیر دولتی ');
+    }
+    if (s.startsWith('مهد ') && !s.includes('مهدالرضا')) {
+      s = s.replace(/مهد\s*/g, 'مهدالرضا(علیه‌السلام) شعبه‌ی ');
+    }
+    return s.trim();
+  };
+
+  const normalizeUserName = (name: string): string => {
+    if (!name) return name;
+    return name.replace(/حاج‌آقا\s*مهدی\s*گلزاری|حاجاقامهدی\s*گلزاری/g, 'سیدمهدی گلزاری');
+  };
+
+  const [currentUser, setCurrentUserState] = useState<User | null>(() => {
+    const u = loadFromStorage('current_user', INITIAL_USERS[0]);
+    if (u) {
+      return {
+        ...u,
+        name: normalizeUserName(u.name),
+        school_name: u.school_name ? normalizeSchoolName(u.school_name) : undefined,
+      };
+    }
+    return INITIAL_USERS[0];
+  });
+
   const [currentScreen, setCurrentScreenState] = useState<ScreenType>('dashboard');
   const [screenHistory, setScreenHistory] = useState<ScreenType[]>([]);
   const [showExitModal, setShowExitModal] = useState<boolean>(false);
+
+  // Initialize browser history trap on mount so hardware back button does not abruptly exit
+  useEffect(() => {
+    try {
+      window.history.replaceState({ screen: 'dashboard', root: true }, '', '');
+    } catch {}
+  }, []);
 
   const setCurrentScreen = (newScreen: ScreenType) => {
     setCurrentScreenState((prev) => {
@@ -275,19 +342,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCurrentScreenState('dashboard');
     } else {
       setShowExitModal(true);
+      try {
+        window.history.pushState({ screen: 'dashboard', root: true }, '', '');
+      } catch {}
     }
   };
 
   const [schools, setSchools] = useState<School[]>(() => {
     const loaded = loadFromStorage('schools', INITIAL_SCHOOLS);
-    return loaded.map((s: School) => {
-      if (s.id === 10 || s.name.includes('مرکز قرآنی') || s.name.includes('مهد مرکزی قرآنی')) {
-        return { ...s, name: 'مهد برهان', code: 'BORHAN', type: 'مهد و پیش‌دبستانی قرآنی' };
-      }
-      return s;
-    });
+    return loaded.map((s: School) => ({
+      ...s,
+      name: normalizeSchoolName(s.name),
+    }));
   });
-  const [users, setUsers] = useState<User[]>(() => loadFromStorage('users', INITIAL_USERS));
+
+  const [users, setUsers] = useState<User[]>(() => {
+    const loaded = loadFromStorage('users', INITIAL_USERS);
+    return loaded.map((u: User) => ({
+      ...u,
+      name: normalizeUserName(u.name),
+      school_name: u.school_name ? normalizeSchoolName(u.school_name) : undefined,
+    }));
+  });
+
   const [categories, setCategories] = useState<ExpenseCategory[]>(() => {
     const loaded = loadFromStorage('categories', INITIAL_CATEGORIES);
     const hasBankFee = loaded.some((c: ExpenseCategory) => c.name === 'کارمزد بانک');
@@ -296,7 +373,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     return loaded;
   });
-  const [students, setStudents] = useState<Student[]>(() => loadFromStorage('students', INITIAL_STUDENTS));
+
+  const [students, setStudents] = useState<Student[]>(() => {
+    const loaded = loadFromStorage('students', INITIAL_STUDENTS);
+    return loaded.map((st: Student) => ({
+      ...st,
+      school_name: st.school_name ? normalizeSchoolName(st.school_name) : undefined,
+      grade: st.grade === 'مهد' ? 'پیش یک' : st.grade,
+      father_phone: st.father_phone || st.phone,
+      mother_phone: st.mother_phone || '',
+    }));
+  });
   const [transactions, setTransactions] = useState<Transaction[]>(() => loadFromStorage('transactions', INITIAL_TRANSACTIONS));
   const [cheques, setCheques] = useState<Cheque[]>(() => loadFromStorage('cheques', INITIAL_CHEQUES));
   const [bankTransactions, setBankTransactions] = useState<BankTransaction[]>(() => loadFromStorage('bank_txs', INITIAL_BANK_TRANSACTIONS));
@@ -719,6 +806,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setTransactions((prev) => [newTx, ...prev]);
+    playTransactionSound();
     logActivity('ثبت بدهی شهریه', `ثبت ${data.amount.toLocaleString('fa-IR')} ریال برای ${student?.name}`, 'transaction', newId);
 
     if (googleAccessToken) {
@@ -877,6 +965,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setTransactions((prev) => [newTx, ...prev]);
+    playTransactionSound();
     logActivity('ثبت دریافت شهریه', `دریافت ${data.amount.toLocaleString('fa-IR')} ریال از ${student?.name}`, 'transaction', newTxId);
 
     if (googleAccessToken) {
@@ -978,6 +1067,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setTransactions((prev) => [newTx, ...prev]);
+    playTransactionSound();
     logActivity('ثبت هزینه', `ثبت هزینه ${cat?.name} به مبلغ ${data.amount.toLocaleString('fa-IR')} ریال`, 'transaction', newId);
 
     if (googleAccessToken) {
@@ -1506,6 +1596,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider
       value={{
+        managerSignature,
+        setManagerSignature,
+        soundEnabled,
+        setSoundEnabled,
         currentUser,
         setCurrentUser,
         currentScreen,

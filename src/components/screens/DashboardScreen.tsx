@@ -1,232 +1,803 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { DashboardClock } from '../DashboardClock';
 import { TuitionMonthlyChart } from '../TuitionMonthlyChart';
 import { QuickInvoiceModal } from '../QuickInvoiceModal';
 import { InvoicePrintModal } from '../InvoicePrintModal';
 import {
-  Users, CreditCard, Receipt, ArrowLeftRight, BookOpen, Wallet, BarChart3,
-  ClipboardList, Settings, Building2, UserCog, FileSpreadsheet, Megaphone,
-  Landmark, AlertTriangle, ChevronLeft, AlertCircle, PhoneCall, FileText,
-  Sparkles, Cloud, Database, RefreshCw, CheckCircle2, MessageSquare,
-  GraduationCap, Upload, X, ArrowUpDown,
+  Users,
+  CreditCard,
+  FileCheck,
+  Receipt,
+  ArrowLeftRight,
+  BookOpen,
+  Wallet,
+  BarChart3,
+  ClipboardList,
+  Settings,
+  Building2,
+  UserCog,
+  FileSpreadsheet,
+  Megaphone,
+  Landmark,
+  ChevronLeft,
+  AlertCircle,
+  PhoneCall,
+  FileText,
+  Sparkles,
+  Cloud,
+  Database,
+  RefreshCw,
+  CheckCircle2,
+  MessageSquare,
+  GraduationCap,
+  Upload,
+  X,
+  Search,
+  ArrowUpDown,
+  TrendingUp,
+  PieChart as PieChartIcon,
+  Send,
+  Phone,
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Cell,
+  PieChart,
+  Pie,
+} from 'recharts';
 import { ScreenType, Student } from '../../types';
-import { formatRial, jalaliFromGregorian } from '../../utils/jalali';
+import { formatRial, latinDigits } from '../../utils/jalali';
+import { playClickSound } from '../../utils/soundEffects';
+
+const CHART_COLORS = ['#62205f', '#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6', '#f43f5e'];
 
 export const DashboardScreen: React.FC = () => {
   const {
-    currentUser, setCurrentScreen, accentColor, students, transactions, cheques,
-    schools, seniorMessages, getStudentBalance, isConnectedToGoogleSheets,
-    spreadsheetId, syncStatus, syncError, lastSyncTime, syncWithGoogleSheets,
-    connectWithGoogle, loadOfflineExcel,
+    currentUser,
+    setCurrentScreen,
+    accentColor,
+    schools,
+    students,
+    transactions,
+    cheques,
+    categories,
+    getStudentBalance,
+    isConnectedToGoogleSheets,
+    spreadsheetId,
+    syncStatus,
+    syncError,
+    lastSyncTime,
+    syncWithGoogleSheets,
+    connectWithGoogle,
+    loadOfflineExcel,
   } = useApp();
-  const [offlineSuccessNotice, setOfflineSuccessNotice] = useState<string | null>(null);
-  const [isQuickInvoiceOpen, setIsQuickInvoiceOpen] = useState(false);
-  const [invoiceStudent, setInvoiceStudent] = useState<Student | null>(null);
-  const [debtorSort, setDebtorSort] = useState<'debt' | 'name'>('debt');
 
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
-  const userStudents = isSenior ? students : students.filter((s) => s.school_id === currentUser?.school_id);
-  const relevantTxs = isSenior
-    ? transactions
-    : transactions.filter((t) => t.school_id === currentUser?.school_id);
-  const activeStudentsCount = userStudents.filter((s) => s.active).length;
-  const totalDebt = relevantTxs.filter((t) => t.kind === 'شهریه_بدهی').reduce((sum, t) => sum + (t.debit || 0), 0);
-  const totalPaid = relevantTxs.filter((t) => t.kind === 'شهریه').reduce((sum, t) => sum + (t.credit || 0), 0);
-  const netOutstandingDebt = Math.max(0, totalDebt - totalPaid);
-  const expenseTransactions = relevantTxs.filter((t) => t.kind === 'هزینه');
-  const totalExpenses = expenseTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
 
-  const debtors = userStudents
-    .map((student) => ({ student, debt: getStudentBalance(student.id).balance }))
-    .filter((item) => item.debt > 0)
-    .sort((a, b) => debtorSort === 'name'
-      ? a.student.name.localeCompare(b.student.name, 'fa')
-      : b.debt - a.debt);
+  // State for offline excel feedback
+  const [offlineSuccessNotice, setOfflineSuccessNotice] = useState<string | null>(null);
 
-  const schoolFinancialSummaries = isSenior ? schools.map((school) => {
-    const schoolTxs = transactions.filter((t) => t.school_id === school.id);
-    const billed = schoolTxs.filter((t) => t.kind === 'شهریه_بدهی').reduce((sum, t) => sum + (t.debit || 0), 0);
-    const paid = schoolTxs.filter((t) => t.kind === 'شهریه').reduce((sum, t) => sum + (t.credit || 0), 0);
-    const expenses = schoolTxs.filter((t) => t.kind === 'هزینه').reduce((sum, t) => sum + (t.amount || 0), 0);
-    return { school, debt: Math.max(0, billed - paid), expenses, hasData: billed > 0 || paid > 0 || expenses > 0 };
-  }).filter((item) => item.hasData) : [];
+  // Quick invoice modal state
+  const [isQuickInvoiceOpen, setIsQuickInvoiceOpen] = useState(false);
+  const [invoiceStudent, setInvoiceStudent] = useState<Student | null>(null);
 
-  const pendingCheques = cheques.filter((c) => c.status === 'pending');
-  const now = new Date();
-  const nextWeek = new Date();
-  nextWeek.setDate(now.getDate() + 10);
-  const dueSoonCheques = cheques.filter((c) => {
-    if (c.status !== 'approved') return false;
-    const dueDate = new Date(c.due_date);
-    return dueDate >= now && dueDate <= nextWeek;
-  });
+  // Financial Status Box School Filter
+  // Senior can select 0 (all schools) or any specific school. Manager is restricted to their own school.
+  const [selectedFinancialSchoolId, setSelectedFinancialSchoolId] = useState<number>(
+    isSenior ? 0 : currentUser?.school_id || 1
+  );
+
+  // Debtors sorting & filtering state
+  const [debtorSearchQuery, setDebtorSearchQuery] = useState('');
+  const [debtorSortBy, setDebtorSortBy] = useState<'debt_desc' | 'debt_asc' | 'name' | 'grade' | 'school'>('debt_desc');
+  const [showAllDebtors, setShowAllDebtors] = useState(false);
 
   const handleOfflineExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const ok = await loadOfflineExcel(file);
-    if (ok) setOfflineSuccessNotice('اطلاعات با موفقیت از فایل اکسل بارگذاری شد.');
+    if (ok) {
+      setOfflineSuccessNotice('اطلاعات شیت با موفقیت از فایل اکسل در نرم‌افزار بارگذاری شد.');
+    }
     e.target.value = '';
   };
+
+  // Base scope for student data
+  const baseStudents = useMemo(() => {
+    if (isSenior) return students;
+    return students.filter((s) => s.school_id === currentUser?.school_id);
+  }, [students, isSenior, currentUser]);
+
+  // Financial Box scoped data based on selectedFinancialSchoolId
+  const financialStudents = useMemo(() => {
+    if (selectedFinancialSchoolId === 0) return baseStudents;
+    return baseStudents.filter((s) => s.school_id === selectedFinancialSchoolId);
+  }, [baseStudents, selectedFinancialSchoolId]);
+
+  const financialStudentIds = useMemo(() => new Set(financialStudents.map((s) => s.id)), [financialStudents]);
+
+  const financialTxs = useMemo(() => {
+    if (selectedFinancialSchoolId === 0) {
+      return isSenior
+        ? transactions
+        : transactions.filter((t) => t.school_id === currentUser?.school_id || (t.student_id && financialStudentIds.has(t.student_id)));
+    }
+    return transactions.filter(
+      (t) => t.school_id === selectedFinancialSchoolId || (t.student_id && financialStudentIds.has(t.student_id))
+    );
+  }, [transactions, selectedFinancialSchoolId, isSenior, currentUser, financialStudentIds]);
+
+  // Aggregate metrics for Financial Status Box
+  const financialMetrics = useMemo(() => {
+    let totalTuitionAssigned = 0;
+    let totalTuitionCollected = 0;
+    let totalExpenses = 0;
+    const expenseByCategory: Record<string, number> = {};
+
+    financialTxs.forEach((t) => {
+      if (t.kind === 'شهریه_بدهی') {
+        totalTuitionAssigned += t.debit || 0;
+      } else if (t.kind === 'شهریه') {
+        totalTuitionCollected += t.credit || 0;
+      } else if (t.kind === 'هزینه') {
+        const amt = t.debit || t.amount || 0;
+        totalExpenses += amt;
+        const catName = t.expense_category_name || 'سایر هزینه‌ها';
+        expenseByCategory[catName] = (expenseByCategory[catName] || 0) + amt;
+      }
+    });
+
+    const totalOutstandingDebt = Math.max(0, totalTuitionAssigned - totalTuitionCollected);
+    const collectionRate = totalTuitionAssigned > 0
+      ? Math.min(100, Math.round((totalTuitionCollected / totalTuitionAssigned) * 100))
+      : 100;
+
+    const expenseCategoryData = Object.entries(expenseByCategory).map(([name, value]) => ({
+      name,
+      value,
+      formatted: formatRial(value),
+    }));
+
+    // Bar comparison data
+    const comparisonData = [
+      { name: 'شهریه مصوب', amount: Math.round(totalTuitionAssigned / 1000000), color: '#3b82f6' },
+      { name: 'وصولی', amount: Math.round(totalTuitionCollected / 1000000), color: '#10b981' },
+      { name: 'مانده بدهی', amount: Math.round(totalOutstandingDebt / 1000000), color: '#f43f5e' },
+      { name: 'کل هزینه‌ها', amount: Math.round(totalExpenses / 1000000), color: '#f59e0b' },
+    ];
+
+    return {
+      totalTuitionAssigned,
+      totalTuitionCollected,
+      totalOutstandingDebt,
+      totalExpenses,
+      collectionRate,
+      expenseCategoryData,
+      comparisonData,
+    };
+  }, [financialTxs]);
+
+  // Full Debtors calculation
+  const debtorsList = useMemo(() => {
+    const list = baseStudents
+      .map((student) => {
+        const balanceInfo = getStudentBalance(student.id);
+        return {
+          student,
+          debt: balanceInfo.balance,
+          paid: balanceInfo.credit,
+          totalAssigned: balanceInfo.debt,
+        };
+      })
+      .filter((item) => item.debt > 0);
+
+    // Apply search
+    const filtered = list.filter((item) => {
+      if (!debtorSearchQuery.trim()) return true;
+      const q = debtorSearchQuery.toLowerCase().trim();
+      const matchName = item.student.name.toLowerCase().includes(q);
+      const matchNid = item.student.national_id.includes(q);
+      const matchPhone =
+        (item.student.phone && item.student.phone.includes(q)) ||
+        (item.student.father_phone && item.student.father_phone.includes(q)) ||
+        (item.student.mother_phone && item.student.mother_phone.includes(q));
+      const matchSchool = (item.student.school_name || '').toLowerCase().includes(q);
+      return matchName || matchNid || matchPhone || matchSchool;
+    });
+
+    // Apply sort
+    filtered.sort((a, b) => {
+      switch (debtorSortBy) {
+        case 'debt_desc':
+          return b.debt - a.debt;
+        case 'debt_asc':
+          return a.debt - b.debt;
+        case 'name':
+          return a.student.name.localeCompare(b.student.name, 'fa');
+        case 'grade':
+          return a.student.grade.localeCompare(b.student.grade, 'fa');
+        case 'school':
+          return (a.student.school_name || '').localeCompare(b.student.school_name || '', 'fa');
+        default:
+          return b.debt - a.debt;
+      }
+    });
+
+    return filtered;
+  }, [baseStudents, getStudentBalance, debtorSearchQuery, debtorSortBy]);
+
+  const displayedDebtors = showAllDebtors ? debtorsList : debtorsList.slice(0, 5);
 
   const menuItems = [
     { id: 'students', label: 'دانش‌آموزان', icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
     { id: 'tuition', label: 'دریافت شهریه', icon: CreditCard, color: 'text-emerald-600', bg: 'bg-emerald-50' },
     { id: 'staff', label: 'معلمان و پرسنل', icon: GraduationCap, color: 'text-amber-600', bg: 'bg-amber-50' },
     { id: 'sms_reminders', label: 'سامانه پیامک', icon: MessageSquare, color: 'text-purple-600', bg: 'bg-purple-50' },
-    { id: 'cheque_list', label: 'لیست چک‌ها', icon: Receipt, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { id: 'cheque_list', label: 'لیست چک‌ها', icon: FileCheck, color: 'text-amber-600', bg: 'bg-amber-50' },
     { id: 'expenses', label: 'هزینه‌ها', icon: Receipt, color: 'text-purple-600', bg: 'bg-purple-50' },
     { id: 'transactions', label: 'تراکنش‌ها', icon: ArrowLeftRight, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-    { id: 'statement', label: 'ریز گردش حساب', icon: BookOpen, color: 'text-teal-600', bg: 'bg-teal-50' },
-    { id: 'claim', label: 'طلب من از مدرسه', icon: Wallet, color: 'text-rose-600', bg: 'bg-rose-50' },
+    { id: 'statement', label: 'گردش حساب', icon: BookOpen, color: 'text-teal-600', bg: 'bg-teal-50' },
+    { id: 'claim', label: 'طلب تن‌خواه', icon: Wallet, color: 'text-rose-600', bg: 'bg-rose-50' },
     { id: 'report', label: 'گزارش مالی', icon: BarChart3, color: 'text-cyan-600', bg: 'bg-cyan-50' },
-    { id: 'activity', label: 'گزارش فعالیت', icon: ClipboardList, color: 'text-slate-600', bg: 'bg-slate-50' },
+    { id: 'activity', label: 'فعالیت‌ها', icon: ClipboardList, color: 'text-slate-600', bg: 'bg-slate-50' },
     { id: 'settings', label: 'تنظیمات', icon: Settings, color: 'text-gray-600', bg: 'bg-gray-100' },
   ];
+
   const seniorExtraItems = [
-    { id: 'staff', label: 'حقوق و بیمه معلمان', icon: GraduationCap, color: 'text-purple-600', bg: 'bg-purple-50' },
-    { id: 'cheques', label: 'چک صیادی (تأیید)', icon: Receipt, color: 'text-rose-600', bg: 'bg-rose-50' },
+    { id: 'staff', label: 'حقوق و بیمه', icon: GraduationCap, color: 'text-purple-600', bg: 'bg-purple-50' },
+    { id: 'cheques', label: 'تأیید چک صیادی', icon: FileCheck, color: 'text-rose-600', bg: 'bg-rose-50' },
     { id: 'bank', label: 'تطبیق بانک', icon: Landmark, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { id: 'managers', label: 'مدیران', icon: UserCog, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-    { id: 'schools', label: 'مدارس', icon: Building2, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { id: 'managers', label: 'مدیران مدارس', icon: UserCog, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { id: 'schools', label: 'واحدهای آموزشی', icon: Building2, color: 'text-amber-600', bg: 'bg-amber-50' },
     { id: 'export', label: 'خروجی پارسیان', icon: FileSpreadsheet, color: 'text-teal-600', bg: 'bg-teal-50' },
-    { id: 'messages', label: 'پیام به مدیران', icon: Megaphone, color: 'text-purple-600', bg: 'bg-purple-50' },
+    { id: 'messages', label: 'ارسال بخشنامه', icon: Megaphone, color: 'text-purple-600', bg: 'bg-purple-50' },
   ];
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-4 space-y-4">
-      <section className="rounded-2xl px-4 py-3 text-white shadow-md border border-amber-400/30" style={{ background: 'linear-gradient(135deg, #2a0b33 0%, #4a1550 55%, #200827 100%)' }}>
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <Sparkles className="w-4 h-4 shrink-0 text-amber-300" />
-            <h1 className="text-sm sm:text-base font-black text-amber-100 whitespace-nowrap">مدرسة القرآن الکریم شهرضا</h1>
-            <span className="hidden sm:inline text-xs text-purple-200">| سیستم مالی</span>
+    <div className="max-w-4xl mx-auto px-3 sm:px-4 py-3 sm:py-4 space-y-3.5 sm:space-y-4">
+      {/* 1. Header Banner: Exactly on ONE single line */}
+      <div
+        className="rounded-2xl px-4 py-3 text-white shadow-md relative overflow-hidden border border-amber-400/30 flex items-center justify-between gap-3"
+        style={{
+          background: 'linear-gradient(135deg, #2a0b33 0%, #4a1550 50%, #200827 100%)',
+        }}
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          <img
+            src="/src/assets/images/quran_school_finance_logo_1792312844966.jpg"
+            alt="لوگو"
+            referrerPolicy="no-referrer"
+            className="w-8 h-8 rounded-lg object-cover border border-amber-300/40 shrink-0 shadow-xs"
+          />
+          <h1 className="text-sm sm:text-base md:text-lg font-black font-neyrizi text-amber-100 tracking-wide truncate">
+            مدرسة القرآن الکریم شهرضا
+          </h1>
+        </div>
+
+        <div className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-400/20 border border-amber-300/30 text-amber-200 text-[11px] font-bold">
+          <Sparkles className="w-3 h-3 text-amber-300" />
+          <span>سیستم مالی</span>
+        </div>
+      </div>
+
+      {/* 2. Compact Single-Line Greeting & Clock Bar */}
+      <div
+        className="rounded-2xl px-3.5 py-2 text-white shadow-sm flex flex-wrap items-center justify-between gap-2 text-xs"
+        style={{
+          background: `linear-gradient(135deg, ${accentColor} 0%, #341648 100%)`,
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <span className="font-bold">
+            خوش آمدید، {currentUser?.name || 'مدیر محترم'}
+          </span>
+          <span className="opacity-60 text-[10px]">|</span>
+          <span className="text-[11px] text-purple-200">
+            {currentUser?.school_name || (isSenior ? 'مدیریت ارشد مجموعه' : 'مدیر مرکز')}
+          </span>
+        </div>
+        <DashboardClock />
+      </div>
+
+      {/* 3. Compact Google Sheets & Excel Connection Bar */}
+      <div className={`rounded-2xl px-3.5 py-2.5 border shadow-2xs transition-all flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 ${
+        isConnectedToGoogleSheets
+          ? 'bg-emerald-500/10 border-emerald-300/50'
+          : 'bg-purple-500/5 border-purple-200/80'
+      }`}>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+            isConnectedToGoogleSheets ? 'bg-emerald-600 text-white' : 'bg-purple-700 text-white'
+          }`}>
+            <Database className="w-3.5 h-3.5" />
           </div>
-          <button type="button" onClick={() => setCurrentScreen('settings')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/20" title="تنظیمات">
-            <Settings className="w-4 h-4" />
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-[#341648]">
+              <span className="truncate">
+                {isConnectedToGoogleSheets ? 'پایگاه داده Google Sheets' : 'اتصال به Google Sheets / اکسل'}
+              </span>
+              <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold ${
+                isConnectedToGoogleSheets ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+              }`}>
+                {isConnectedToGoogleSheets ? 'متصل' : 'آفلاین'}
+              </span>
+            </div>
+            {lastSyncTime && (
+              <div className="text-[10px] text-gray-500">آخرین همگام‌سازی: {lastSyncTime}</div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0">
+          {/* Upload Excel Button */}
+          <label className="px-2.5 py-1 rounded-lg bg-white hover:bg-gray-50 text-[#341648] border border-purple-200 text-[11px] font-bold flex items-center gap-1 shadow-2xs cursor-pointer active:scale-95 transition-all">
+            <Upload className="w-3 h-3 text-emerald-600" />
+            <span>بارگذاری اکسل</span>
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={handleOfflineExcelUpload}
+              className="hidden"
+            />
+          </label>
+
+          {isConnectedToGoogleSheets ? (
+            <button
+              type="button"
+              onClick={() => syncWithGoogleSheets()}
+              disabled={syncStatus === 'syncing'}
+              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs active:scale-95 transition-all"
+            >
+              <RefreshCw className={`w-3 h-3 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+              <span>همگام‌سازی</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => connectWithGoogle()}
+              disabled={syncStatus === 'syncing'}
+              className="px-2.5 py-1 rounded-lg bg-purple-700 hover:bg-purple-800 text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs active:scale-95 transition-all"
+            >
+              <Cloud className="w-3 h-3" />
+              <span>اتصال ابری</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setCurrentScreen('settings')}
+            className="p-1 rounded-lg bg-white/80 hover:bg-white text-gray-700 text-xs border border-gray-200"
+            title="تنظیمات"
+          >
+            <Settings className="w-3.5 h-3.5 text-gray-600" />
           </button>
         </div>
-      </section>
+      </div>
 
-      <section className="rounded-2xl px-4 py-3 text-white shadow-md" style={{ background: `linear-gradient(135deg, ${accentColor} 0%, #341648 100%)` }}>
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <div className="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0">
-            <h2 className="text-base sm:text-lg font-black">خوش آمدید، {currentUser?.name || 'مدیر محترم'}</h2>
-            {!isSenior && currentUser?.school_name && <span className="text-[11px] text-purple-100">{currentUser.school_name}</span>}
-            <span className="text-[10px] text-purple-100/80">{isSenior ? 'کاربر ارشد' : 'مدیر مدرسه'}</span>
+      {offlineSuccessNotice && (
+        <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{offlineSuccessNotice}</span>
           </div>
-          <DashboardClock />
+          <button onClick={() => setOfflineSuccessNotice(null)} className="text-emerald-700 p-1">
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
-      </section>
+      )}
 
-      <section className={`rounded-2xl px-3 py-2.5 border shadow-xs ${isConnectedToGoogleSheets ? 'bg-emerald-50/70 border-emerald-200' : 'bg-purple-50/70 border-purple-200'}`}>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0 ${isConnectedToGoogleSheets ? 'bg-emerald-600' : 'bg-purple-700'}`}>
-              {isConnectedToGoogleSheets ? <CheckCircle2 className="w-4 h-4" /> : <Database className="w-4 h-4" />}
+      {/* 4. Compact Quick Access Menu Grid (Less Scrolling) */}
+      <div>
+        <div className="text-xs font-bold text-[#341648] mb-2 flex items-center justify-between">
+          <span>دسترسی سریع</span>
+          <span className="text-[11px] text-gray-400 font-normal">بخش‌های پرکاربرد</span>
+        </div>
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 sm:gap-2.5">
+          {menuItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  playClickSound();
+                  setCurrentScreen(item.id as ScreenType);
+                }}
+                className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white border border-[#e5dde8] hover:border-[#62205f] hover:shadow-xs active:scale-95 transition-all text-center min-h-[78px] group"
+              >
+                <div className={`w-8 h-8 rounded-xl ${item.bg} flex items-center justify-center mb-1 group-hover:scale-105 transition-transform`}>
+                  <Icon className={`w-4 h-4 ${item.color}`} />
+                </div>
+                <span className="text-[11px] font-bold text-[#341648] leading-tight line-clamp-1">
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 5. Dedicated Comprehensive School Financial Status Box */}
+      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-[#e5dde8] shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#f2eaf3] gap-2">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-purple-100 flex items-center justify-center text-[#62205f]">
+              <TrendingUp className="w-4 h-4" />
             </div>
-            <div className="min-w-0">
-              <div className="text-xs font-bold text-[#341648] truncate">{isConnectedToGoogleSheets ? 'متصل به Google Sheets' : 'اتصال به Google Sheets'}</div>
-              <div className="text-[10px] text-gray-500 truncate">
-                {isConnectedToGoogleSheets
-                  ? `شیت ${spreadsheetId.substring(0, 10)}…${lastSyncTime ? ` | آخرین همگام‌سازی ${lastSyncTime}` : ''}`
-                  : 'وضعیت اتصال و ورود داده'}
-              </div>
+            <div>
+              <h3 className="text-sm sm:text-base font-black text-[#341648]">
+                صورت وضعیت مالی و عملکرد {isSenior && selectedFinancialSchoolId === 0 ? 'کل مجموعه مدارس' : ''}
+              </h3>
+              <p className="text-[11px] text-gray-400">
+                گزارش تفکیکی درآمدها، وصولی‌ها، بدهی‌ها و هزینه‌های عملیاتی
+              </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <label className="px-2.5 py-2 rounded-lg bg-white text-[#341648] border border-purple-200 text-[11px] font-bold flex items-center gap-1.5 cursor-pointer hover:bg-purple-50">
-              <Upload className="w-3.5 h-3.5 text-emerald-600" /> بارگذاری Excel
-              <input type="file" accept=".xlsx,.xls,.csv" onChange={handleOfflineExcelUpload} className="hidden" />
-            </label>
-            <button type="button" onClick={() => isConnectedToGoogleSheets ? syncWithGoogleSheets() : connectWithGoogle()} disabled={syncStatus === 'syncing'} className="px-2.5 py-2 rounded-lg bg-purple-700 hover:bg-purple-800 text-white text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-60">
-              {syncStatus === 'syncing' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : isConnectedToGoogleSheets ? <RefreshCw className="w-3.5 h-3.5" /> : <Cloud className="w-3.5 h-3.5" />}
-              {syncStatus === 'syncing' ? 'در حال اتصال' : isConnectedToGoogleSheets ? 'همگام‌سازی' : 'اتصال گوگل'}
+
+          {/* Senior School Selector / Filter */}
+          {isSenior ? (
+            <div className="flex items-center gap-1.5 self-start sm:self-auto">
+              <span className="text-xs text-gray-500 font-bold shrink-0">مرکز:</span>
+              <select
+                value={selectedFinancialSchoolId}
+                onChange={(e) => setSelectedFinancialSchoolId(Number(e.target.value))}
+                className="px-2.5 py-1.5 rounded-xl border border-gray-200 bg-[#fcfaff] text-xs font-bold text-[#341648] focus:border-[#62205f] outline-hidden"
+              >
+                <option value={0}>همه مراکز و مهدها (کل مجموعه)</option>
+                {schools.map((sc) => (
+                  <option key={sc.id} value={sc.id}>
+                    {sc.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="text-xs px-2.5 py-1 bg-purple-50 text-[#62205f] rounded-lg font-bold border border-purple-200">
+              {currentUser?.school_name}
+            </div>
+          )}
+        </div>
+
+        {/* 4 Financial Metric Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+          <div className="bg-[#fcfaff] p-3 rounded-2xl border border-[#ede5ef]">
+            <div className="text-[11px] text-gray-500 font-medium">شهریه مصوب</div>
+            <div className="text-sm sm:text-base font-black text-[#341648] mt-0.5 font-mono">
+              {formatRial(financialMetrics.totalTuitionAssigned)}
+            </div>
+            <div className="text-[10px] text-gray-400 mt-0.5">ریال</div>
+          </div>
+
+          <div className="bg-emerald-50/60 p-3 rounded-2xl border border-emerald-200/60">
+            <div className="text-[11px] text-emerald-800 font-medium">وصولی کل شهریه</div>
+            <div className="text-sm sm:text-base font-black text-emerald-700 mt-0.5 font-mono">
+              {formatRial(financialMetrics.totalTuitionCollected)}
+            </div>
+            <div className="text-[10px] text-emerald-600 mt-0.5">
+              {financialMetrics.collectionRate}٪ وصول شده
+            </div>
+          </div>
+
+          <div className="bg-rose-50/60 p-3 rounded-2xl border border-rose-200/60">
+            <div className="text-[11px] text-rose-800 font-medium">مانده بدهی معوقه</div>
+            <div className="text-sm sm:text-base font-black text-rose-700 mt-0.5 font-mono">
+              {formatRial(financialMetrics.totalOutstandingDebt)}
+            </div>
+            <div className="text-[10px] text-rose-600 mt-0.5">مطالبات از اولیا</div>
+          </div>
+
+          <div className="bg-amber-50/60 p-3 rounded-2xl border border-amber-200/60">
+            <div className="text-[11px] text-amber-900 font-medium">جمع کل هزینه‌ها</div>
+            <div className="text-sm sm:text-base font-black text-amber-800 mt-0.5 font-mono">
+              {formatRial(financialMetrics.totalExpenses)}
+            </div>
+            <div className="text-[10px] text-amber-700 mt-0.5">عملیاتی و تن‌خواه</div>
+          </div>
+        </div>
+
+        {/* Collection Rate Progress Bar */}
+        <div className="space-y-1">
+          <div className="flex justify-between text-xs text-gray-600 font-medium">
+            <span>درصد وصول شهریه‌های مصوب:</span>
+            <span className="font-mono font-bold text-emerald-700">{financialMetrics.collectionRate}٪</span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+            <div
+              className="bg-emerald-600 h-2.5 rounded-full transition-all duration-500"
+              style={{ width: `${financialMetrics.collectionRate}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Charts & Expense Breakdown Sub-grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+          {/* Comparison Bar Chart */}
+          <div className="bg-[#fcfaff] p-3 rounded-2xl border border-[#ede5ef] space-y-2">
+            <div className="text-xs font-bold text-[#341648] flex items-center justify-between">
+              <span>مقایسه وضعیت مالی (میلیون ریال)</span>
+            </div>
+            <div className="h-44 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={financialMetrics.comparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip
+                    formatter={(val: any) => [`${formatRial(Number(val) * 1000000)} ریال`, 'مبلغ']}
+                    contentStyle={{ borderRadius: '12px', fontSize: '11px', textAlign: 'right', direction: 'rtl' }}
+                  />
+                  <Bar dataKey="amount" radius={[6, 6, 0, 0]}>
+                    {financialMetrics.comparisonData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Expense Categories Breakdown */}
+          <div className="bg-[#fcfaff] p-3 rounded-2xl border border-[#ede5ef] space-y-2 flex flex-col justify-between">
+            <div className="text-xs font-bold text-[#341648] flex items-center justify-between">
+              <span>تفکیک هزینه‌ها به سرفصل‌ها</span>
+              <span className="text-[11px] text-gray-400 font-normal">
+                {financialMetrics.expenseCategoryData.length} سرفصل هزینه
+              </span>
+            </div>
+
+            {financialMetrics.expenseCategoryData.length === 0 ? (
+              <div className="p-6 text-center text-xs text-gray-400">
+                هزینه‌ای برای این مرکز ثبت نشده است.
+              </div>
+            ) : (
+              <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                {financialMetrics.expenseCategoryData.map((cat, idx) => {
+                  const percent = financialMetrics.totalExpenses > 0
+                    ? Math.round((cat.value / financialMetrics.totalExpenses) * 100)
+                    : 0;
+                  return (
+                    <div key={idx} className="flex items-center justify-between p-1.5 rounded-lg bg-white border border-gray-100 text-[11px]">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }}
+                        />
+                        <span className="truncate text-gray-800 font-medium">{cat.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0 font-mono">
+                        <span className="text-gray-500 text-[10px]">({percent}٪)</span>
+                        <span className="font-bold text-amber-900">{cat.formatted}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 6. Sortable Full Debtors List Section */}
+      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-[#e5dde8] shadow-xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-[#f2eaf3] gap-2">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-rose-50 flex items-center justify-center text-rose-600">
+              <AlertCircle className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm sm:text-base font-black text-[#341648]">لیست بدهکاران شهریه</h3>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold">
+                  {debtorsList.length} دانش‌آموز بدهکار
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-400">
+                پیگیری مطالبات اولیا، تفکیک شماره پدر و مادر و صدور سریع فاکتور
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Sort Selector */}
+            <div className="flex items-center gap-1 bg-[#fcfaff] px-2 py-1 rounded-xl border border-gray-200 text-xs">
+              <ArrowUpDown className="w-3.5 h-3.5 text-gray-500" />
+              <select
+                value={debtorSortBy}
+                onChange={(e) => setDebtorSortBy(e.target.value as any)}
+                className="bg-transparent text-xs font-bold text-[#341648] outline-hidden cursor-pointer"
+              >
+                <option value="debt_desc">بیشترین بدهی (پیش‌فرض)</option>
+                <option value="debt_asc">کمترین بدهی</option>
+                <option value="name">نام دانش‌آموز (الفبا)</option>
+                <option value="grade">پایه تحصیلی</option>
+                <option value="school">نام مدرسه</option>
+              </select>
+            </div>
+
+            <button
+              onClick={() => setShowAllDebtors(!showAllDebtors)}
+              className="text-xs font-bold text-[#62205f] hover:underline px-2 py-1"
+              style={{ color: accentColor }}
+            >
+              {showAllDebtors ? 'نمایش خلاصه (۵ نفر)' : `مشاهده همه (${debtorsList.length} نفر)`}
             </button>
           </div>
         </div>
-        {syncError && <div className="mt-2 px-2.5 py-2 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 text-[11px] flex items-center gap-2"><AlertCircle className="w-4 h-4 shrink-0" />{syncError}</div>}
-        {offlineSuccessNotice && <div className="mt-2 px-2.5 py-2 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] flex items-center justify-between gap-2"><span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4" />{offlineSuccessNotice}</span><button onClick={() => setOfflineSuccessNotice(null)} aria-label="بستن"><X className="w-4 h-4" /></button></div>}
-      </section>
 
-      <section>
-        <div className="flex items-center justify-between mb-2"><h3 className="text-sm font-bold text-[#341648]">دسترسی سریع</h3><span className="text-[11px] text-gray-400">بخش‌های پرکاربرد</span></div>
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            return <button key={item.id} onClick={() => setCurrentScreen(item.id as ScreenType)} className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white border border-[#e5dde8] hover:border-[#62205f] hover:shadow-sm active:scale-95 transition-all text-center group min-h-[82px]">
-              <span className={`w-9 h-9 rounded-xl ${item.bg} flex items-center justify-center mb-1.5`}><Icon className={`w-5 h-5 ${item.color}`} /></span>
-              <span className="text-[10px] sm:text-[11px] font-bold text-[#341648] leading-tight">{item.label}</span>
-            </button>;
-          })}
+        {/* Search input */}
+        <div className="relative">
+          <Search className="w-4 h-4 text-gray-400 absolute right-3 top-2.5" />
+          <input
+            type="text"
+            value={debtorSearchQuery}
+            onChange={(e) => setDebtorSearchQuery(e.target.value)}
+            placeholder="جستجوی نام دانش‌آموز، کد ملی، نام مدرسه یا شماره تماس اولیا..."
+            className="w-full pr-9 pl-3 py-1.5 rounded-xl border border-gray-200 text-xs bg-[#fdfcfd] focus:border-[#62205f] outline-hidden"
+          />
         </div>
-      </section>
 
-      {isSenior && <section>
-        <h3 className="text-sm font-bold text-[#62205f] mb-2" style={{ color: accentColor }}>بخش ویژه مدیریت ارشد مجموعه</h3>
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-2">
-          {seniorExtraItems.map((item) => {
-            const Icon = item.icon;
-            return <button key={item.id} onClick={() => setCurrentScreen(item.id as ScreenType)} className="flex flex-col items-center justify-center p-2 rounded-2xl bg-white border border-[#e5dde8] hover:border-[#62205f] hover:shadow-sm active:scale-95 transition-all text-center min-h-[76px]">
-              <span className={`w-8 h-8 rounded-xl ${item.bg} flex items-center justify-center mb-1`}><Icon className={`w-4 h-4 ${item.color}`} /></span>
-              <span className="text-[10px] font-bold text-[#341648] leading-tight">{item.label}</span>
-            </button>;
-          })}
+        {displayedDebtors.length === 0 ? (
+          <div className="p-5 text-center text-xs text-gray-400 bg-[#fcfaff] rounded-2xl border border-[#ede5ef]">
+            هیچ دانش‌آموزی با شرایط انتخابی دارای بدهی معوقه نیست.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {displayedDebtors.map((item, idx) => (
+              <div
+                key={item.student.id}
+                className="p-3 rounded-2xl border border-[#ede5ef] bg-[#fcfaff] hover:border-[#62205f]/40 hover:bg-white transition-all flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2.5 text-xs"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-6 h-6 rounded-lg bg-rose-100 text-rose-700 font-bold font-mono text-xs flex items-center justify-center shrink-0">
+                    {idx + 1}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-[#341648] text-xs sm:text-sm">{item.student.name}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f2eaf3] text-[#62205f] font-semibold">
+                        پایه {item.student.grade}
+                      </span>
+                      {isSenior && item.student.school_name && (
+                        <span className="text-[10px] text-gray-400">({item.student.school_name})</span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-gray-500 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      {item.student.father_phone && (
+                        <span className="inline-flex items-center gap-1">
+                          <span>پدر:</span>
+                          <a href={`tel:${item.student.father_phone}`} className="font-mono text-blue-600 hover:underline">
+                            {item.student.father_phone}
+                          </a>
+                        </span>
+                      )}
+                      {item.student.mother_phone && (
+                        <span className="inline-flex items-center gap-1">
+                          <span>مادر:</span>
+                          <a href={`tel:${item.student.mother_phone}`} className="font-mono text-purple-600 hover:underline">
+                            {item.student.mother_phone}
+                          </a>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
+                  <div className="text-right sm:text-left">
+                    <div className="text-[10px] text-gray-400">مانده بدهی:</div>
+                    <div className="font-mono font-black text-rose-700 text-xs sm:text-sm">
+                      {formatRial(item.debt)} ریال
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setInvoiceStudent(item.student)}
+                      className="px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-[#62205f] font-bold text-[11px] flex items-center gap-1 border border-purple-200 transition-all active:scale-95"
+                      title="فاکتور رسمی"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>فاکتور</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setCurrentScreen('sms_reminders');
+                      }}
+                      className="p-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white shadow-2xs active:scale-95 transition-all"
+                      title="ارسال پیامک یادآوری بدهی"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 7. Quick Invoice Action Card */}
+      <div className="bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-indigo-500/10 border border-amber-300/40 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+        <div className="flex items-center gap-2.5">
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-xs shrink-0"
+            style={{ backgroundColor: accentColor }}
+          >
+            <Sparkles className="w-4 h-4 text-amber-300" />
+          </div>
+          <div>
+            <h4 className="text-xs sm:text-sm font-bold text-[#341648]">صدور سریع فاکتور شهریه دانش‌آموز</h4>
+            <p className="text-[11px] text-gray-500">انتخاب آنی دانش‌آموز، مبلغ و صدور سند چاپی رسمی</p>
+          </div>
         </div>
-      </section>}
+        <button
+          onClick={() => setIsQuickInvoiceOpen(true)}
+          className="w-full sm:w-auto px-4 py-2 rounded-xl text-white font-bold text-xs shadow-xs active:scale-95 transition-all flex items-center justify-center gap-1.5 shrink-0"
+          style={{ backgroundColor: accentColor }}
+        >
+          <FileText className="w-3.5 h-3.5 text-amber-300" />
+          <span>صدور فاکتور شهریه</span>
+        </button>
+      </div>
 
-      <section className="bg-white rounded-2xl p-3 sm:p-4 border border-[#e5dde8] shadow-xs">
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <h3 className="text-xs font-bold text-gray-600">وضعیت مالی</h3>
-          <button onClick={() => setCurrentScreen('report')} className="text-[11px] font-bold text-[#62205f] hover:underline" style={{ color: accentColor }}>مشاهده گزارش مالی</button>
+      {/* 8. Senior Only Section: Tuition Trend Chart + Management tools */}
+      {isSenior && (
+        <div className="pt-2 space-y-3">
+          <div className="text-xs font-bold text-[#62205f] flex items-center gap-1.5" style={{ color: accentColor }}>
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>بخش ویژه مدیریت ارشد مجموعه (سیدمهدی گلزاری)</span>
+          </div>
+
+          {/* Tuition Trend Bar Chart moved to Senior Only feature */}
+          <TuitionMonthlyChart transactions={financialTxs} accentColor={accentColor} />
+
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-2">
+            {seniorExtraItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    playClickSound();
+                    setCurrentScreen(item.id as ScreenType);
+                  }}
+                  className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white border border-[#e5dde8] hover:border-[#62205f] hover:shadow-xs active:scale-95 transition-all text-center min-h-[75px] group"
+                >
+                  <div className={`w-8 h-8 rounded-xl ${item.bg} flex items-center justify-center mb-1 group-hover:scale-105 transition-transform`}>
+                    <Icon className={`w-4 h-4 ${item.color}`} />
+                  </div>
+                  <span className="text-[10px] sm:text-[11px] font-bold text-[#341648] leading-tight line-clamp-1">
+                    {item.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          <div className="bg-[#fcfaff] p-3 rounded-xl border border-[#ede5ef] flex items-center justify-between"><div><div className="text-[11px] text-gray-500">دانش‌آموزان فعال</div><div className="text-lg font-black text-[#341648] mt-0.5">{activeStudentsCount} <span className="text-[10px] font-normal text-gray-500">نفر</span></div></div><Users className="w-5 h-5 text-[#62205f]" style={{ color: accentColor }} /></div>
-          <div className="bg-rose-50/60 p-3 rounded-xl border border-rose-100 flex items-center justify-between"><div><div className="text-[11px] text-gray-500">بدهی باقی‌مانده شهریه</div><div className="text-base font-black text-rose-700 mt-0.5">{formatRial(netOutstandingDebt)} <span className="text-[10px] font-normal">ریال</span></div></div><CreditCard className="w-5 h-5 text-rose-600" /></div>
-          <div className="bg-purple-50/60 p-3 rounded-xl border border-purple-100 flex items-center justify-between"><div><div className="text-[11px] text-gray-500">جمع هزینه‌های ثبت‌شده</div><div className="text-base font-black text-purple-900 mt-0.5">{formatRial(totalExpenses)} <span className="text-[10px] font-normal">ریال</span></div></div><Receipt className="w-5 h-5 text-purple-600" /></div>
-        </div>
-      </section>
+      )}
 
-      {isSenior && schoolFinancialSummaries.length > 0 && <section className="bg-white rounded-2xl p-3 sm:p-4 border border-[#e5dde8] shadow-xs">
-        <h3 className="text-xs font-bold text-[#341648] mb-3">صورت‌وضعیت مدارس، به تفکیک</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {schoolFinancialSummaries.map(({ school, debt, expenses }) => <button key={school.id} onClick={() => setCurrentScreen('report')} className="text-right p-3 rounded-xl bg-[#fcfaff] border border-[#ede5ef] hover:border-purple-300">
-            <span className="block text-xs font-bold text-[#341648] truncate">{school.name}</span>
-            <span className="mt-1 flex flex-wrap gap-x-3 text-[10px] text-gray-500"><span>بدهی: <b className="text-rose-700">{formatRial(debt)} ریال</b></span><span>هزینه: <b className="text-purple-800">{formatRial(expenses)} ریال</b></span></span>
-          </button>)}
-        </div>
-      </section>}
+      {/* Quick Invoice Modal */}
+      <QuickInvoiceModal
+        isOpen={isQuickInvoiceOpen}
+        onClose={() => setIsQuickInvoiceOpen(false)}
+        students={baseStudents}
+        accentColor={accentColor}
+      />
 
-      <section className="bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-indigo-500/10 border border-amber-300/50 rounded-2xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5"><span className="w-9 h-9 rounded-xl flex items-center justify-center text-white" style={{ backgroundColor: accentColor }}><Sparkles className="w-5 h-5 text-amber-300" /></span><div><h3 className="text-sm font-black text-[#341648]">صدور سریع فاکتور شهریه</h3><p className="text-[10px] text-gray-500">انتخاب دانش‌آموز و چاپ فاکتور</p></div></div>
-        <button onClick={() => setIsQuickInvoiceOpen(true)} className="w-full sm:w-auto px-4 py-2 rounded-xl text-white font-bold text-xs flex items-center justify-center gap-2" style={{ backgroundColor: accentColor }}><FileText className="w-4 h-4" />صدور فاکتور</button>
-      </section>
-
-      {isSenior && <TuitionMonthlyChart transactions={relevantTxs} accentColor={accentColor} />}
-
-      <section className="bg-white rounded-2xl p-3 sm:p-4 border border-[#e5dde8] shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-2 mb-2 border-b border-[#f2eaf3]">
-          <div className="flex items-center gap-2"><AlertCircle className="w-5 h-5 text-rose-600" /><div><h3 className="text-sm font-bold text-[#341648]">فهرست بدهکاران ({debtors.length})</h3><p className="text-[10px] text-gray-400">مرتب‌سازی و پیگیری بدهی شهریه</p></div></div>
-          <label className="flex items-center gap-1.5 text-[10px] text-gray-500"><ArrowUpDown className="w-3.5 h-3.5" />مرتب‌سازی<select value={debtorSort} onChange={(e) => setDebtorSort(e.target.value as 'debt' | 'name')} className="px-2 py-1 rounded-lg border border-gray-200 bg-white text-[10px] font-bold text-[#341648]"><option value="debt">بیشترین بدهی</option><option value="name">نام دانش‌آموز</option></select></label>
-        </div>
-        {debtors.length === 0 ? <div className="p-5 text-center text-xs text-gray-400 bg-[#fcfaff] rounded-xl">دانش‌آموز بدهکار ثبت نشده است.</div> : <div className="max-h-96 overflow-y-auto divide-y divide-gray-100">
-          {debtors.map((item, idx) => <div key={item.student.id} className="py-2.5 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0"><span className="w-6 h-6 rounded-lg bg-rose-50 text-rose-700 flex items-center justify-center text-[10px] font-bold shrink-0">{idx + 1}</span><div className="min-w-0"><div className="flex flex-wrap items-center gap-x-2"><span className="text-xs font-bold text-[#341648]">{item.student.name}</span><span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f2eaf3] text-[#62205f]">پایه {item.student.grade}</span>{isSenior && <span className="text-[10px] text-gray-400">{item.student.school_name}</span>}</div><div className="text-[10px] text-gray-400 flex flex-wrap gap-x-3 mt-0.5"><span>کد ملی: {item.student.national_id}</span><a href={`tel:${item.student.phone}`} className="text-blue-600 flex items-center gap-1" dir="ltr"><PhoneCall className="w-3 h-3" />{item.student.phone}</a></div></div></div>
-            <div className="flex items-center gap-2"><span className="text-[11px] font-black text-rose-700">{formatRial(item.debt)} ریال</span><button onClick={() => setInvoiceStudent(item.student)} className="px-2 py-1 rounded-lg border border-purple-200 bg-purple-50 text-[10px] font-bold text-[#62205f]">فاکتور</button><button onClick={() => setCurrentScreen('tuition')} className="px-2 py-1 rounded-lg border border-[#e5dde8] bg-white text-[10px] font-bold text-[#62205f]">ثبت واریز</button></div>
-          </div>)}
-        </div>}
-      </section>
-
-      {(isSenior && pendingCheques.length > 0 || dueSoonCheques.length > 0 || seniorMessages.length > 0) && <section className="space-y-2">
-        {isSenior && pendingCheques.length > 0 && <button onClick={() => setCurrentScreen('cheques')} className="w-full bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center justify-between text-amber-900 text-xs font-bold"><span className="flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-amber-600" />{pendingCheques.length} چک در انتظار بررسی</span><ChevronLeft className="w-4 h-4" /></button>}
-        {dueSoonCheques.length > 0 && <button onClick={() => setCurrentScreen('cheque_list')} className="w-full bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center justify-between text-blue-900 text-xs font-bold"><span>{dueSoonCheques.length} چک تأییدشده در ۱۰ روز آینده سررسید می‌شود</span><ChevronLeft className="w-4 h-4" /></button>}
-        {seniorMessages.length > 0 && <div className="bg-white border border-[#e5dde8] rounded-xl p-3"><div className="text-xs font-bold text-[#62205f] flex items-center gap-1.5 mb-2" style={{ color: accentColor }}><Megaphone className="w-4 h-4" />پیام‌های مدیریت ارشد</div><div className="space-y-2">{seniorMessages.slice(0, 2).map((msg) => <div key={msg.id} className="bg-[#fcfaff] p-2.5 rounded-lg border border-[#f0e8f2] text-[11px]"><p className="font-semibold text-[#302735] leading-relaxed">{msg.message}</p><div className="text-[10px] text-gray-400 mt-1 flex justify-between"><span>{msg.author_name}</span><span>{jalaliFromGregorian(msg.created_at)}</span></div></div>)}</div></div>}
-      </section>}
-
-      <QuickInvoiceModal isOpen={isQuickInvoiceOpen} onClose={() => setIsQuickInvoiceOpen(false)} onIssueInvoice={(st) => setInvoiceStudent(st)} />
-      {invoiceStudent && <InvoicePrintModal student={invoiceStudent} transactions={transactions} balance={getStudentBalance(invoiceStudent.id).balance} onClose={() => setInvoiceStudent(null)} />}
+      {/* Full Official Invoice Print Modal */}
+      {invoiceStudent && (
+        <InvoicePrintModal
+          student={invoiceStudent}
+          transactions={transactions}
+          balance={getStudentBalance(invoiceStudent.id).balance}
+          onClose={() => setInvoiceStudent(null)}
+        />
+      )}
     </div>
   );
 };

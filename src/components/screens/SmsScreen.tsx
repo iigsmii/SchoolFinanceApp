@@ -52,9 +52,12 @@ export const SmsScreen: React.FC = () => {
   );
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'high_debt' | 'overdue'>('all');
+  const [targetRecipient, setTargetRecipient] = useState<'all' | 'mothers' | 'fathers'>('all');
+  const [targetGrade, setTargetGrade] = useState<string>('all');
 
   // Preview & Edit State
   const [previewStudent, setPreviewStudent] = useState<Student | null>(null);
+  const [previewTargetPhone, setPreviewTargetPhone] = useState<string>('');
   const [editableMessage, setEditableMessage] = useState('');
   const [copiedNotice, setCopiedNotice] = useState(false);
 
@@ -80,10 +83,17 @@ export const SmsScreen: React.FC = () => {
   const filteredStudents = students.filter((s) => {
     if (!s.active) return false;
     if (selectedSchoolId !== 0 && s.school_id !== selectedSchoolId) return false;
+    if (targetGrade !== 'all' && s.grade !== targetGrade) return false;
+    if (targetRecipient === 'mothers' && !s.mother_phone) return false;
+    if (targetRecipient === 'fathers' && !s.father_phone) return false;
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       const matchName = s.name.toLowerCase().includes(q);
-      const matchPhone = s.phone.includes(q);
+      const matchPhone =
+        s.phone.includes(q) ||
+        (s.father_phone && s.father_phone.includes(q)) ||
+        (s.mother_phone && s.mother_phone.includes(q));
       const matchNid = s.national_id.includes(q);
       if (!matchName && !matchPhone && !matchNid) return false;
     }
@@ -111,16 +121,17 @@ export const SmsScreen: React.FC = () => {
       .replace('{days}', String(overdue.overdueDays));
   };
 
-  const handleOpenPreview = (student: Student) => {
+  const handleOpenPreview = (student: Student, specificPhone?: string) => {
     setPreviewStudent(student);
+    setPreviewTargetPhone(specificPhone || student.mother_phone || student.father_phone || student.phone);
     setEditableMessage(getFormattedMessage(student));
   };
 
-  const handleSendFromPhone = (student: Student, customText?: string) => {
+  const handleSendFromPhone = (student: Student, customText?: string, specificPhone?: string) => {
     const textToSend = customText || editableMessage || getFormattedMessage(student);
-    const phone = student.phone?.trim();
+    const phone = (specificPhone || previewTargetPhone || student.father_phone || student.phone || student.mother_phone)?.trim();
     if (!phone || !/^0\d{10}$/.test(phone)) {
-      alert('شماره تلفن همراه دانش‌آموز نامعتبر است.');
+      alert('شماره تلفن همراه انتخاب‌شده نامعتبر است.');
       return;
     }
 
@@ -274,17 +285,49 @@ export const SmsScreen: React.FC = () => {
           <div className="space-y-4">
             {/* Filters Box */}
             <div className="bg-white rounded-3xl p-5 border border-[#e5dde8] shadow-xs space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
                 {/* Search */}
                 <div className="relative">
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="جستجوی نام دانش‌آموز، تلفن یا کد ملی..."
-                    className="w-full pl-3 pr-10 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-medium focus:outline-hidden focus:border-purple-600"
+                    placeholder="جستجوی نام، تلفن، کدملی..."
+                    className="w-full pl-3 pr-9 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-medium focus:outline-hidden focus:border-purple-600"
                   />
-                  <Search className="w-4 h-4 text-gray-400 absolute right-3.5 top-3" />
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute right-3 top-3" />
+                </div>
+
+                {/* Recipient Target: All, Mothers Only, Fathers Only */}
+                <div>
+                  <select
+                    value={targetRecipient}
+                    onChange={(e) => setTargetRecipient(e.target.value as any)}
+                    className="w-full py-2.5 px-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735] focus:outline-hidden"
+                  >
+                    <option value="all">مخاطب: همه اولیا</option>
+                    <option value="mothers">فقط مادران (شماره مادر)</option>
+                    <option value="fathers">فقط پدران (شماره پدر)</option>
+                  </select>
+                </div>
+
+                {/* Grade Target */}
+                <div>
+                  <select
+                    value={targetGrade}
+                    onChange={(e) => setTargetGrade(e.target.value)}
+                    className="w-full py-2.5 px-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735] focus:outline-hidden"
+                  >
+                    <option value="all">پایه: همه پایه‌ها</option>
+                    <option value="پیش یک">پیش یک</option>
+                    <option value="پیش دو">پیش دو</option>
+                    <option value="اول">کلاس اول</option>
+                    <option value="دوم">کلاس دوم</option>
+                    <option value="سوم">کلاس سوم</option>
+                    <option value="چهارم">کلاس چهارم</option>
+                    <option value="پنجم">کلاس پنجم</option>
+                    <option value="ششم">کلاس ششم</option>
+                  </select>
                 </div>
 
                 {/* School Selector (for Senior Admin) */}
@@ -294,7 +337,7 @@ export const SmsScreen: React.FC = () => {
                     onChange={(e) => setSelectedSchoolId(Number(e.target.value))}
                     className="py-2.5 px-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735]"
                   >
-                    <option value={0}>همه مدارس مجموعه مدرسة القرآن</option>
+                    <option value={0}>همه مراکز آموزشی</option>
                     {schools.map((sc) => (
                       <option key={sc.id} value={sc.id}>
                         {sc.name}
@@ -302,8 +345,8 @@ export const SmsScreen: React.FC = () => {
                     ))}
                   </select>
                 ) : (
-                  <div className="py-2.5 px-3 bg-gray-50 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 flex items-center">
-                    {currentUser?.school_name || 'مدرسه شما'}
+                  <div className="py-2.5 px-3 bg-gray-50 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 flex items-center truncate">
+                    {currentUser?.school_name || 'مرکز شما'}
                   </div>
                 )}
 
@@ -314,15 +357,26 @@ export const SmsScreen: React.FC = () => {
                   className="py-2.5 px-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735]"
                 >
                   <option value="all">همه مبالغ بدهی</option>
-                  <option value="high_debt">بدهی بیش از ۵۰ میلیون ریال</option>
-                  <option value="overdue">تاخیر بیش از ۱۵ روز</option>
+                  <option value="high_debt">بدهی بالای ۵ میلیون تومان</option>
+                  <option value="overdue">تاخیر بالای ۱۵ روز</option>
                 </select>
               </div>
 
               {/* Stat Chips */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-gray-100 text-xs">
-                <div className="text-gray-500 font-medium">
-                  دانش‌آموزان بدهکار یافت‌شده: <span className="font-bold text-gray-800">{totalDebtorsCount} نفر</span>
+                <div className="text-gray-500 font-medium flex items-center gap-2">
+                  <span>مخاطبین واجد شرایط:</span>
+                  <span className="font-bold text-[#341648] bg-purple-100 px-2 py-0.5 rounded-md font-mono">{totalDebtorsCount} نفر</span>
+                  {targetRecipient !== 'all' && (
+                    <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded-md">
+                      {targetRecipient === 'mothers' ? 'فقط مادران' : 'فقط پدران'}
+                    </span>
+                  )}
+                  {targetGrade !== 'all' && (
+                    <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-md">
+                      پایه {targetGrade}
+                    </span>
+                  )}
                 </div>
                 <div className="text-gray-500 font-medium">
                   مجموع مطالبات فیلترشده: <span className="font-bold text-rose-700 font-mono">{formatRial(totalDebtSum)} ریال</span>
@@ -343,7 +397,8 @@ export const SmsScreen: React.FC = () => {
                   {filteredStudents.map((st) => {
                     const balance = getStudentBalance(st.id);
                     const overdue = calculateStudentOverdue(st, transactions);
-                    const hasValidPhone = st.phone && /^0\d{10}$/.test(st.phone);
+                    const fatherPhone = st.father_phone || st.phone;
+                    const motherPhone = st.mother_phone;
 
                     return (
                       <div
@@ -351,24 +406,26 @@ export const SmsScreen: React.FC = () => {
                         className="p-4 hover:bg-[#fcfaff] transition-colors flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
                       >
                         <div className="space-y-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-bold text-[#341648]">{st.name}</span>
                             <span className="text-[10px] bg-purple-100 text-purple-900 font-semibold px-2 py-0.5 rounded-md">
                               {st.school_name || 'مدرسه'} - پایه {st.grade}
                             </span>
-                            {!hasValidPhone && (
-                              <span className="text-[10px] bg-rose-100 text-rose-800 font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
-                                <AlertTriangle className="w-3 h-3" />
-                                <span>شماره نامعتبر</span>
-                              </span>
-                            )}
                           </div>
 
                           <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
-                            <span className="flex items-center gap-1">
-                              <Phone className="w-3 h-3 text-gray-400" />
-                              <span className="font-mono">{st.phone || 'بدون شماره'}</span>
-                            </span>
+                            {fatherPhone && (
+                              <span className="flex items-center gap-1 font-mono text-blue-700 bg-blue-50/70 px-1.5 py-0.5 rounded">
+                                <span className="font-sans text-[10px] text-blue-900 font-bold">پدر:</span>
+                                <span>{fatherPhone}</span>
+                              </span>
+                            )}
+                            {motherPhone && (
+                              <span className="flex items-center gap-1 font-mono text-purple-700 bg-purple-50/70 px-1.5 py-0.5 rounded">
+                                <span className="font-sans text-[10px] text-purple-900 font-bold">مادر:</span>
+                                <span>{motherPhone}</span>
+                              </span>
+                            )}
                             <span>•</span>
                             <span>
                               مانده بدهی: <strong className="text-rose-700 font-mono font-bold">{formatRial(balance.debt)} ریال</strong>
@@ -385,34 +442,48 @@ export const SmsScreen: React.FC = () => {
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto self-end sm:self-auto justify-end">
-                          <button
-                            type="button"
-                            onClick={() => handleSendFromPhone(st)}
-                            disabled={!hasValidPhone}
-                            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                            title="ارسال با سیم‌کارت گوشی خود مدیر یا مدیر ارشد"
-                          >
-                            <Smartphone className="w-3.5 h-3.5" />
-                            <span>ارسال با گوشی من</span>
-                          </button>
+                          {/* Send to Mother button */}
+                          {motherPhone && (
+                            <button
+                              type="button"
+                              onClick={() => handleSendFromPhone(st, undefined, motherPhone)}
+                              className="px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 text-xs font-bold transition-all shadow-2xs flex items-center gap-1"
+                              title={`ارسال پیامک با گوشی به مادر (${motherPhone})`}
+                            >
+                              <Smartphone className="w-3 h-3 text-purple-600" />
+                              <span>پیام به مادر</span>
+                            </button>
+                          )}
+
+                          {/* Send to Father button */}
+                          {fatherPhone && (
+                            <button
+                              type="button"
+                              onClick={() => handleSendFromPhone(st, undefined, fatherPhone)}
+                              className="px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-xs font-bold transition-all shadow-2xs flex items-center gap-1"
+                              title={`ارسال پیامک با گوشی به پدر (${fatherPhone})`}
+                            >
+                              <Smartphone className="w-3 h-3 text-blue-600" />
+                              <span>پیام به پدر</span>
+                            </button>
+                          )}
 
                           <button
                             type="button"
                             onClick={() => handleOpenPreview(st)}
-                            className="px-3 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs"
+                            className="px-3 py-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs"
                             title="ویرایش متن پیامک قبل از ارسال"
                           >
                             <Edit3 className="w-3.5 h-3.5 text-purple-700" />
-                            <span>ویرایش و پیش‌نمایش</span>
+                            <span>پیش‌نمایش</span>
                           </button>
 
                           {smsConfig.enabled && (
                             <button
                               type="button"
                               onClick={() => handleSendSingle(st.id)}
-                              disabled={!hasValidPhone}
-                              className="p-2 rounded-xl border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-800 text-xs font-bold transition-all"
-                              title="ارسال از طریق وب‌سرویس پیامکی (API)"
+                              className="p-1.5 rounded-xl border border-purple-200 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition-all shadow-2xs"
+                              title="ارسال خودکار از طریق وب‌سرویس پیامکی"
                             >
                               <Send className="w-3.5 h-3.5" />
                             </button>

@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APK (Release & Debug)
 
 on:
   workflow_dispatch:
@@ -32,7 +32,7 @@ jobs:
       - name: Create Android project
         run: |
           if [ ! -f capacitor.config.json ] && [ ! -f capacitor.config.ts ]; then
-            npx cap init "SchoolFinanceApp" "com.iigsmii.schoolfinance" --web-dir dist
+            npx cap init "سیستم مالی مدرسه القرآن" "com.iigsmii.schoolfinance" --web-dir dist
           fi
           if [ ! -d android ]; then
             npx cap add android
@@ -45,16 +45,65 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Build debug APK
+      - name: Update Android Version Code & Name
+        shell: bash
+        run: |
+          APP_VERSION=$(node -p "require('./package.json').version || '2.16.0'")
+          BUILD_NUM=${{ github.run_number }}
+          VERSION_CODE=$((21600 + BUILD_NUM))
+          echo "Setting VersionName=$APP_VERSION, VersionCode=$VERSION_CODE"
+
+          GRADLE_FILE="android/app/build.gradle"
+          if [ -f "$GRADLE_FILE" ]; then
+            sed -i "s/versionCode [0-9]*/versionCode $VERSION_CODE/g" "$GRADLE_FILE"
+            sed -i "s/versionName \".*\"/versionName \"$APP_VERSION\"/g" "$GRADLE_FILE"
+          fi
+
+      - name: Build release APK
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Sign & Align APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYSTORE_PATH="$RUNNER_TEMP/school-finance-release.jks"
+          keytool -genkeypair -v \
+            -keystore "$KEYSTORE_PATH" \
+            -alias "schoolfinance" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass "SchoolFinance2026SecureKey" \
+            -keypass "SchoolFinance2026SecureKey" \
+            -dname "CN=MadresatAlQuran, OU=Finance, O=QuranSchool, L=Shahreza, ST=Isfahan, C=IR"
+
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          BUILD_TOOLS="$(find "$SDK_ROOT/build-tools" -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)"
+
+          UNSIGNED_APK="$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)"
+          ALIGNED_APK="$RUNNER_TEMP/app-aligned.apk"
+          SIGNED_APK="SchoolFinanceApp-v2.16.0-release.apk"
+
+          "$BUILD_TOOLS/zipalign" -v -p 4 "$UNSIGNED_APK" "$ALIGNED_APK" || cp "$UNSIGNED_APK" "$ALIGNED_APK"
+
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$KEYSTORE_PATH" \
+            --ks-key-alias "schoolfinance" \
+            --ks-pass "pass:SchoolFinance2026SecureKey" \
+            --key-pass "pass:SchoolFinance2026SecureKey" \
+            --out "$SIGNED_APK" \
+            "$ALIGNED_APK"
+
+          "$BUILD_TOOLS/apksigner" verify --verbose "$SIGNED_APK"
+          echo "FINAL_APK=$SIGNED_APK" >> "$GITHUB_ENV"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SchoolFinanceApp-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: SchoolFinanceApp-Release-APK
+          path: ${{ env.FINAL_APK }}
           if-no-files-found: error
           retention-days: 30

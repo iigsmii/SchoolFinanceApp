@@ -17,13 +17,17 @@ import {
 interface QuickInvoiceModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onIssueInvoice: (student: Student) => void;
+  onIssueInvoice?: (student: Student) => void;
+  students?: Student[];
+  accentColor?: string;
 }
 
 export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
   isOpen,
   onClose,
   onIssueInvoice,
+  students: propStudents,
+  accentColor: propAccentColor,
 }) => {
   const {
     students,
@@ -104,7 +108,9 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
       }
 
       // Trigger invoice modal
-      onIssueInvoice(selectedStudent);
+      if (onIssueInvoice) {
+        onIssueInvoice(selectedStudent);
+      }
       onClose();
     } catch (err) {
       setError(String(err));

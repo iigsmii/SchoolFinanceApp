@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Student, Transaction } from '../types';
 import { jalaliFromGregorian, todayJalali, formatRial } from '../utils/jalali';
-import { Printer, Download, X } from 'lucide-react';
+import { Printer, Download, X, Sparkles, PenTool } from 'lucide-react';
+import { useApp } from '../context/AppContext';
+import { SignatureUploader } from './SignatureUploader';
 
 interface InvoicePrintModalProps {
   student: Student;
@@ -16,6 +18,9 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
   balance,
   onClose,
 }) => {
+  const { managerSignature, setManagerSignature, accentColor } = useApp();
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+
   const handlePrint = () => {
     window.print();
   };
@@ -34,11 +39,19 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setShowSignatureModal(!showSignatureModal)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-purple-50 hover:bg-purple-100 text-[#62205f] border border-purple-200 rounded-xl font-bold text-xs transition-all"
+            >
+              <PenTool className="w-3.5 h-3.5 text-[#62205f]" />
+              <span>{managerSignature ? 'ویرایش امضای فاکتور' : 'افزودن امضای رسمی'}</span>
+            </button>
+            <button
               onClick={handlePrint}
               className="flex items-center gap-2 px-4 py-2 bg-[#62205f] text-white rounded-xl font-bold text-sm hover:opacity-90 active:scale-95 transition-all shadow-sm"
+              style={{ backgroundColor: accentColor }}
             >
               <Printer className="w-4 h-4" />
-              چاپ یا ذخیره PDF
+              <span>چاپ یا ذخیره PDF</span>
             </button>
             <button
               onClick={onClose}
@@ -49,13 +62,36 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
           </div>
         </div>
 
+        {/* Signature Uploader Drawer if opened */}
+        {showSignatureModal && (
+          <div className="no-print p-4 bg-purple-50/50 border-b border-purple-200 animate-in fade-in duration-150">
+            <SignatureUploader
+              currentSignature={managerSignature}
+              onSave={(sig) => {
+                setManagerSignature(sig);
+                setShowSignatureModal(false);
+              }}
+              title="بارگذاری و تنظیم امضای رسمی فاکتور"
+              accentColor={accentColor}
+            />
+          </div>
+        )}
+
         {/* Invoice Printable Area */}
         <div id="printable-invoice" className="p-6 sm:p-10 overflow-y-auto font-['Vazirmatn',sans-serif] bg-white text-[#232d3a] flex-1">
-          {/* Header Banner matching Android PdfDocument */}
+          {/* Header Banner */}
           <div className="bg-[#1b365d] text-white p-6 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 shadow-md">
-            <div>
-              <div className="text-xl sm:text-2xl font-black">{student.school_name || 'مجموعه مدارس مدرسة القرآن'}</div>
-              <div className="text-sm sm:text-base font-semibold opacity-90 mt-1">فاکتور و ریز گردش حساب دانش‌آموز</div>
+            <div className="flex items-center gap-3">
+              <img
+                src="/src/assets/images/quran_school_finance_logo_1792312844966.jpg"
+                alt="لوگوی سیستم مالی مدرسة القرآن"
+                referrerPolicy="no-referrer"
+                className="w-12 h-12 rounded-xl object-cover border border-amber-300/40 shrink-0 shadow-xs"
+              />
+              <div>
+                <div className="text-xl sm:text-2xl font-black">{student.school_name || 'مدرسة القرآن الکریم شهرضا'}</div>
+                <div className="text-sm sm:text-base font-semibold opacity-90 mt-0.5">فاکتور و ریز گردش حساب مالی دانش‌آموز</div>
+              </div>
             </div>
             <div className="text-xs sm:text-sm font-medium text-right sm:text-left bg-white/10 px-4 py-2 rounded-xl backdrop-blur-xs">
               <div>تاریخ صدور: {todayJalali()}</div>
@@ -73,20 +109,24 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                 <span className="font-bold text-[#1b365d]">{student.name}</span>
               </div>
               <div className="flex">
-                <span className="font-semibold text-gray-500 w-28">مدرسه:</span>
-                <span className="font-bold">{student.school_name || 'دبستان'}</span>
+                <span className="font-semibold text-gray-500 w-28">مرکز آموزشی:</span>
+                <span className="font-bold">{student.school_name || 'مدرسه القرآن'}</span>
               </div>
               <div className="flex">
                 <span className="font-semibold text-gray-500 w-32">کد ملی:</span>
                 <span className="font-mono font-bold">{student.national_id}</span>
               </div>
               <div className="flex">
-                <span className="font-semibold text-gray-500 w-28">شماره تماس:</span>
-                <span className="font-mono">{student.phone}</span>
+                <span className="font-semibold text-gray-500 w-28">پایه تحصیلی:</span>
+                <span className="font-bold">{student.grade}</span>
               </div>
               <div className="flex">
-                <span className="font-semibold text-gray-500 w-32">پایه تحصیلی:</span>
-                <span className="font-bold">{student.grade}</span>
+                <span className="font-semibold text-gray-500 w-32">شماره پدر:</span>
+                <span className="font-mono">{student.father_phone || student.phone}</span>
+              </div>
+              <div className="flex">
+                <span className="font-semibold text-gray-500 w-28">شماره مادر:</span>
+                <span className="font-mono">{student.mother_phone || '—'}</span>
               </div>
             </div>
           </div>
@@ -99,32 +139,32 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                 {balance > 0 ? `${formatRial(balance)} ریال` : '۰ ریال'}
               </div>
             </div>
-            <div className={`p-4 rounded-2xl border ${balance < 0 ? 'bg-teal-50 border-teal-200 text-teal-900' : 'bg-gray-50 border-gray-200'}`}>
-              <div className="text-xs font-semibold text-gray-500 mb-1">مانده بستانکاری</div>
-              <div className="text-base sm:text-xl font-black font-mono text-teal-700">
-                {balance < 0 ? `${formatRial(Math.abs(balance))} ریال` : '۰ ریال (تسویه)'}
+            <div className="p-4 rounded-2xl border bg-emerald-50 border-emerald-200 text-emerald-900">
+              <div className="text-xs font-semibold text-gray-500 mb-1">مجموع پرداختی‌های ثبت‌شده</div>
+              <div className="text-base sm:text-xl font-black font-mono">
+                {formatRial(totalCredit)} ریال
               </div>
             </div>
           </div>
 
-          {/* Table Header and Rows matching Android PDF */}
-          <div className="overflow-x-auto rounded-xl border border-[#ccd8e2] mb-6 shadow-xs">
-            <table className="w-full text-right text-xs sm:text-sm">
-              <thead className="bg-[#167d7d] text-white">
+          {/* Transactions Table */}
+          <div className="border border-[#ccd8e2] rounded-2xl overflow-hidden mb-6">
+            <table className="w-full text-right text-xs">
+              <thead className="bg-[#1b365d] text-white">
                 <tr>
-                  <th className="p-3 font-bold text-center w-12">ردیف</th>
-                  <th className="p-3 font-bold w-28">تاریخ</th>
-                  <th className="p-3 font-bold">شرح و توضیحات</th>
-                  <th className="p-3 font-bold w-24 text-center">نوع سند</th>
-                  <th className="p-3 font-bold w-32 text-left">بدهکار (ریال)</th>
-                  <th className="p-3 font-bold w-32 text-left">بستانکار (ریال)</th>
+                  <th className="p-3 text-center">ردیف</th>
+                  <th className="p-3">تاریخ</th>
+                  <th className="p-3">شرح تراکنش</th>
+                  <th className="p-3 text-center">نوع</th>
+                  <th className="p-3 text-left">بدهکار (ریال)</th>
+                  <th className="p-3 text-left">بستانکار (ریال)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#ccd8e2]">
+              <tbody className="divide-y divide-[#e1ebf2]">
                 {studentTxs.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="p-6 text-center text-gray-500 font-medium">
-                      هنوز گردشی برای این دانش‌آموز ثبت نشده است.
+                    <td colSpan={6} className="p-6 text-center text-gray-400">
+                      هیچ تراکنشی برای این دانش‌آموز ثبت نشده است.
                     </td>
                   </tr>
                 ) : (
@@ -179,8 +219,18 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
               <div className="mt-1 font-mono text-[10px]">کد امنیتی یکتا: SF-{student.id}-{Date.now().toString(36)}</div>
             </div>
             <div className="text-center pl-8">
-              <div className="font-bold text-[#1b365d] text-sm mb-8">مهر و امضای امور مالی مدرسه</div>
-              <div className="text-[11px] text-gray-400">..................................</div>
+              <div className="font-bold text-[#1b365d] text-sm mb-2">مهر و امضای امور مالی مدرسه</div>
+              {managerSignature ? (
+                <div className="h-16 flex items-center justify-center">
+                  <img
+                    src={managerSignature}
+                    alt="امضای رسمی"
+                    className="max-h-16 max-w-[180px] object-contain drop-shadow-xs"
+                  />
+                </div>
+              ) : (
+                <div className="text-[11px] text-gray-400 mt-6">..................................</div>
+              )}
             </div>
           </div>
         </div>

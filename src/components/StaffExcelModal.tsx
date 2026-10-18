@@ -40,6 +40,9 @@ interface ParsedStaffRow {
   insurance_employee: number;
   bank_account?: string;
   bank_name?: string;
+  kol_code?: string;
+  moeen_code?: string;
+  tafsili_code?: string;
   valid: boolean;
   notes: string[];
 }
@@ -112,6 +115,9 @@ export const StaffExcelModal: React.FC<StaffExcelModalProps> = ({
       const insEmplyIdx = findIdx(['بیمه پرسنل', 'بیمه کارمند', 'سهم کارمند', 'پرسنل بیمه']);
       const bankIdx = findIdx(['شماره حساب', 'شماره کارت', 'شماره شبا', 'شبا', 'کارت', 'bank', 'card']);
       const bankNameIdx = findIdx(['نام بانک', 'بانک', 'bank_name']);
+      const kolIdx = findIdx(['کد کل', 'کل', 'kol', 'kol_code']);
+      const moeenIdx = findIdx(['کد معین', 'معین', 'moeen', 'moeen_code']);
+      const tafsiliIdx = findIdx(['کد تفصیلی', 'تفصیلی', 'تفصیل', 'tafsili', 'tafsili_code']);
 
       if (nameIdx === -1 && nidIdx === -1) {
         throw new Error('ستون‌های کلیدی (نام یا کد ملی) در فایل اکسل شناسایی نشدند.');
@@ -173,6 +179,9 @@ export const StaffExcelModal: React.FC<StaffExcelModalProps> = ({
 
         const bank_account = bankIdx >= 0 ? String(row[bankIdx] || '').trim() : undefined;
         const bank_name = bankNameIdx >= 0 ? String(row[bankNameIdx] || '').trim() : undefined;
+        const kol_code = kolIdx >= 0 ? String(row[kolIdx] || '').trim() : undefined;
+        const moeen_code = moeenIdx >= 0 ? String(row[moeenIdx] || '').trim() : undefined;
+        const tafsili_code = tafsiliIdx >= 0 ? String(row[tafsiliIdx] || '').trim() : undefined;
 
         const notes: string[] = [];
         if (!nid || nid.length !== 10) notes.push('کد ملی نامعتبر یا ناقص');
@@ -192,6 +201,9 @@ export const StaffExcelModal: React.FC<StaffExcelModalProps> = ({
           insurance_employee,
           bank_account,
           bank_name,
+          kol_code,
+          moeen_code,
+          tafsili_code,
           valid: !!name,
           notes,
         });
@@ -257,6 +269,9 @@ export const StaffExcelModal: React.FC<StaffExcelModalProps> = ({
         'حق بیمه سهم پرسنل': 4500000,
         'شماره حساب یا شبا': 'IR890170000000109283746501',
         'نام بانک': 'بانک ملی',
+        'کد کل': '801',
+        'کد معین': '12',
+        'کد تفصیلی': '104',
       },
       {
         'نام و نام خانوادگی': 'مریم السادات کمالی',
@@ -271,6 +286,9 @@ export const StaffExcelModal: React.FC<StaffExcelModalProps> = ({
         'حق بیمه سهم پرسنل': 7000000,
         'شماره حساب یا شبا': 'IR450150000000208172635402',
         'نام بانک': 'بانک سپه',
+        'کد کل': '801',
+        'کد معین': '12',
+        'کد تفصیلی': '108',
       },
     ];
 
@@ -296,6 +314,9 @@ export const StaffExcelModal: React.FC<StaffExcelModalProps> = ({
       bank_card_or_sheba: r.bank_account
         ? (r.bank_name ? `${r.bank_account} (${r.bank_name})` : r.bank_account)
         : undefined,
+      kol_code: r.kol_code,
+      moeen_code: r.moeen_code,
+      tafsili_code: r.tafsili_code,
       active: true,
     }));
 
@@ -433,6 +454,7 @@ export const StaffExcelModal: React.FC<StaffExcelModalProps> = ({
                         <th className="p-3">تلفن همراه</th>
                         <th className="p-3">سمت / نقش</th>
                         <th className="p-3">مدرسه</th>
+                        <th className="p-3">کدهای پارسیان</th>
                         <th className="p-3">نوع قرارداد</th>
                         <th className="p-3">نرخ ساعتی / پایه</th>
                         <th className="p-3">وضعیت</th>
@@ -451,6 +473,15 @@ export const StaffExcelModal: React.FC<StaffExcelModalProps> = ({
                             </span>
                           </td>
                           <td className="p-3 text-gray-700">{r.school_name}</td>
+                          <td className="p-3">
+                            {r.kol_code || r.moeen_code || r.tafsili_code ? (
+                              <span className="font-mono text-[11px] bg-amber-50 text-amber-900 px-1.5 py-0.5 rounded border border-amber-200">
+                                {r.kol_code || '-'}/{r.moeen_code || '-'}/{r.tafsili_code || '-'}
+                              </span>
+                            ) : (
+                              <span className="text-gray-300">—</span>
+                            )}
+                          </td>
                           <td className="p-3">
                             <span
                               className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${

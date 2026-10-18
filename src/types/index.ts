@@ -29,6 +29,8 @@ export interface Student {
   name: string;
   grade: string;
   phone: string;
+  father_phone?: string;
+  mother_phone?: string;
   national_id: string;
   school_id: number;
   school_name?: string;
@@ -165,6 +167,9 @@ export interface StaffMember {
   insurance_employer_share: number; // سهم بیمه کارفرما
   insurance_employee_share: number; // سهم بیمه کارمند (کسر از حقوق)
   bank_card_or_sheba?: string;
+  kol_code?: string; // کد کل حسابداری پارسیان
+  moeen_code?: string; // کد معین حسابداری پارسیان
+  tafsili_code?: string; // کد تفصیلی حسابداری پارسیان
   active: boolean;
   created_at?: string;
 }

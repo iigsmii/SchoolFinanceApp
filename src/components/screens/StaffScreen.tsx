@@ -33,8 +33,10 @@ import {
   Receipt,
   UserCheck,
   FileSpreadsheet,
+  PenTool,
 } from 'lucide-react';
 import { StaffExcelModal } from '../StaffExcelModal';
+import { SignatureUploader } from '../SignatureUploader';
 
 const MONTH_NAMES = [
   'مهر ۱۴۰۵',
@@ -76,6 +78,8 @@ export const StaffScreen: React.FC = () => {
     addPayrollPayment,
     deletePayrollPayment,
     calculateStaffPayroll,
+    managerSignature,
+    setManagerSignature,
   } = useApp();
 
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
@@ -102,7 +106,11 @@ export const StaffScreen: React.FC = () => {
   const [staffEmployerIns, setStaffEmployerIns] = useState('');
   const [staffEmployeeIns, setStaffEmployeeIns] = useState('');
   const [staffBankCard, setStaffBankCard] = useState('');
+  const [staffKolCode, setStaffKolCode] = useState('');
+  const [staffMoeenCode, setStaffMoeenCode] = useState('');
+  const [staffTafsiliCode, setStaffTafsiliCode] = useState('');
   const [staffError, setStaffError] = useState('');
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
 
   // Work Log Modal
   const [isWorkLogModalOpen, setIsWorkLogModalOpen] = useState(false);
@@ -189,6 +197,9 @@ export const StaffScreen: React.FC = () => {
     setStaffEmployerIns('0');
     setStaffEmployeeIns('0');
     setStaffBankCard('');
+    setStaffKolCode('');
+    setStaffMoeenCode('');
+    setStaffTafsiliCode('');
     setStaffError('');
     setIsStaffModalOpen(true);
   };
@@ -207,6 +218,9 @@ export const StaffScreen: React.FC = () => {
     setStaffEmployerIns(st.insurance_employer_share ? Number(st.insurance_employer_share).toLocaleString('en-US') : '');
     setStaffEmployeeIns(st.insurance_employee_share ? Number(st.insurance_employee_share).toLocaleString('en-US') : '');
     setStaffBankCard(st.bank_card_or_sheba || '');
+    setStaffKolCode(st.kol_code || '');
+    setStaffMoeenCode(st.moeen_code || '');
+    setStaffTafsiliCode(st.tafsili_code || '');
     setStaffError('');
     setIsStaffModalOpen(true);
   };
@@ -245,6 +259,9 @@ export const StaffScreen: React.FC = () => {
         insurance_employer_share: insEmp,
         insurance_employee_share: insUser,
         bank_card_or_sheba: staffBankCard.trim(),
+        kol_code: staffKolCode.trim() || undefined,
+        moeen_code: staffMoeenCode.trim() || undefined,
+        tafsili_code: staffTafsiliCode.trim() || undefined,
       });
     } else {
       addStaffMember({
@@ -260,6 +277,9 @@ export const StaffScreen: React.FC = () => {
         insurance_employer_share: insEmp,
         insurance_employee_share: insUser,
         bank_card_or_sheba: staffBankCard.trim(),
+        kol_code: staffKolCode.trim() || undefined,
+        moeen_code: staffMoeenCode.trim() || undefined,
+        tafsili_code: staffTafsiliCode.trim() || undefined,
         active: true,
         created_at: todayJalali(),
       });
@@ -642,6 +662,14 @@ export const StaffScreen: React.FC = () => {
                               {st.base_salary ? formatRial(st.base_salary) : 'ساعتی'}
                             </span>
                           </div>
+                          {(st.kol_code || st.moeen_code || st.tafsili_code) && (
+                            <div className="col-span-2 bg-amber-50/80 px-2 py-1 rounded-lg border border-amber-200 flex items-center justify-between text-[11px]">
+                              <span className="text-amber-900 font-bold">کدهای حسابداری پارسیان:</span>
+                              <span className="font-mono font-bold text-amber-950" dir="ltr">
+                                کل: {st.kol_code || '-'} | معین: {st.moeen_code || '-'} | تفصیلی: {st.tafsili_code || '-'}
+                              </span>
+                            </div>
+                          )}
                         </div>
 
                         {/* Current Month Work Log Badge */}
@@ -1158,6 +1186,49 @@ export const StaffScreen: React.FC = () => {
                 </div>
               </div>
 
+              {/* Parsian Accounting Codes */}
+              <div className="bg-amber-50/50 p-3.5 rounded-2xl border border-amber-200/80 space-y-2.5">
+                <div className="text-xs font-bold text-amber-950 flex items-center justify-between">
+                  <span>کدهای حسابداری پارسیان (معلم / پرسنل)</span>
+                  <span className="text-[10px] text-amber-800 font-normal">کل • معین • تفصیلی</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-700 mb-1">کد کل</label>
+                    <input
+                      type="text"
+                      value={staffKolCode}
+                      onChange={(e) => setStaffKolCode(e.target.value)}
+                      placeholder="مثال: ۸۰۱"
+                      className="w-full px-2.5 py-2 bg-white rounded-xl border border-amber-200 text-xs font-mono text-center focus:outline-hidden"
+                      dir="ltr"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-700 mb-1">کد معین</label>
+                    <input
+                      type="text"
+                      value={staffMoeenCode}
+                      onChange={(e) => setStaffMoeenCode(e.target.value)}
+                      placeholder="مثال: ۱۲"
+                      className="w-full px-2.5 py-2 bg-white rounded-xl border border-amber-200 text-xs font-mono text-center focus:outline-hidden"
+                      dir="ltr"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-700 mb-1">کد تفصیلی</label>
+                    <input
+                      type="text"
+                      value={staffTafsiliCode}
+                      onChange={(e) => setStaffTafsiliCode(e.target.value)}
+                      placeholder="مثال: ۱۰۴"
+                      className="w-full px-2.5 py-2 bg-white rounded-xl border border-amber-200 text-xs font-mono text-center focus:outline-hidden"
+                      dir="ltr"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-[#341648] mb-1">شماره شبا یا کارت بانکی</label>
                 <input
@@ -1520,6 +1591,14 @@ export const StaffScreen: React.FC = () => {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={() => setShowSignatureModal(true)}
+                  className="px-3 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-[#62205f] border border-purple-200 text-xs font-bold flex items-center gap-1.5 transition-all"
+                >
+                  <PenTool className="w-3.5 h-3.5 text-[#62205f]" />
+                  <span>{managerSignature ? 'ویرایش امضای فیش' : 'افزودن امضای مدیر'}</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => window.print()}
                   className="px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs"
                 >
@@ -1654,11 +1733,22 @@ export const StaffScreen: React.FC = () => {
                 <div className="flex items-center gap-12 text-center text-gray-700 pt-6">
                   <div>
                     <div className="text-[11px] text-gray-400">امضای امور مالی:</div>
-                    <div className="font-bold mt-3">حاج‌آقا مهدی گلزاری</div>
+                    {managerSignature ? (
+                      <div className="h-16 flex items-center justify-center">
+                        <img
+                          src={managerSignature}
+                          alt="امضای رسمی امور مالی"
+                          className="max-h-16 max-w-[170px] object-contain drop-shadow-xs"
+                        />
+                      </div>
+                    ) : (
+                      <div className="font-bold mt-3 text-purple-950">سیدمهدی گلزاری</div>
+                    )}
+                    <div className="text-[10px] text-gray-500 font-bold mt-1">سیدمهدی گلزاری</div>
                   </div>
                   <div>
                     <div className="text-[11px] text-gray-400">مهر و امضای مدرسه:</div>
-                    <div className="font-bold mt-3">مدرسه القرآن الکریم شهرضا</div>
+                    <div className="font-bold mt-3 text-purple-950">مدرسه القرآن الکریم شهرضا</div>
                   </div>
                 </div>
               </div>
@@ -1676,6 +1766,29 @@ export const StaffScreen: React.FC = () => {
         onImport={handleImportStaff}
         accentColor={accentColor}
       />
+
+      {/* Signature Uploader Modal */}
+      {showSignatureModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="max-w-md w-full relative">
+            <button
+              onClick={() => setShowSignatureModal(false)}
+              className="absolute -top-3 -right-3 z-10 p-2 rounded-full bg-white text-gray-700 shadow-lg border border-gray-200 hover:bg-gray-100"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <SignatureUploader
+              currentSignature={managerSignature}
+              onSave={(sig) => {
+                setManagerSignature(sig);
+                setShowSignatureModal(false);
+              }}
+              title="امضای رسمی امور مالی (سیدمهدی گلزاری)"
+              accentColor={accentColor}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

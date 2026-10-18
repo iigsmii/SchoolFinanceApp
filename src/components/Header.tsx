@@ -1,6 +1,7 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
 import { ArrowRight, UserCircle, Settings, Cloud, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import { PWAInstallButton } from './PWAInstallButton';
 import { ScreenType } from '../types';
 
 interface HeaderProps {
@@ -41,17 +42,26 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack = true }) => {
               <ArrowRight className="w-5 h-5" />
             </button>
           )}
+          <img
+            src="/src/assets/images/quran_school_finance_logo_1792312844966.jpg"
+            alt="لوگوی سیستم مالی مدرسة القرآن"
+            referrerPolicy="no-referrer"
+            className="w-10 h-10 rounded-xl object-cover shadow-2xs border border-amber-300/60 shrink-0"
+          />
           <div>
             <div className="text-xs font-semibold text-[#62205f] flex items-center gap-1.5" style={{ color: accentColor }}>
               <span>مدرسة القرآن الکریم شهرضا</span>
               <span className="text-[#a98ea0]">/</span>
-              <span>امور مالی</span>
+              <span>سیستم مالی</span>
             </div>
-            <h1 className="text-xl font-black text-[#341648] leading-tight">{title}</h1>
+            <h1 className="text-lg sm:text-xl font-black text-[#341648] leading-tight">{title}</h1>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* PWA Install Button */}
+          <PWAInstallButton variant="header" />
+
           {/* Cloud Sync Status Badge */}
           <button
             onClick={handleSyncClick}
