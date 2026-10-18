@@ -11,8 +11,11 @@ export interface OverdueStudentInfo {
   formattedMessage: string;
 }
 
+// NOTE: placeholders here MUST stay in sync with the renderer used by
+// AppContext.sendSmsReminder() and SmsScreen.getFormattedMessage(), which
+// replace the tokens {name} {school} {amount} {days}.
 export const DEFAULT_SMS_TEMPLATE =
-  'اولیا محترم دانش‌آموز {نام_دانش‌آموز}، با سلام. مانده شهریه معوقه به مبلغ {مبلغ} ریال بیش از {تعداد_روز} روز است که از سررسید گذشته است. خواهشمند است جهت تسویه حساب به امور مالی {نام_مدرسه} مراجعه فرمایید.';
+  'اولیا محترم دانش‌آموز {name}، با سلام. مانده شهریه معوقه به مبلغ {amount} ریال بیش از {days} روز است که از سررسید گذشته است. خواهشمند است جهت تسویه حساب به امور مالی {school} مراجعه فرمایید.';
 
 export function calculateStudentOverdue(
   student: Student,
@@ -67,10 +70,10 @@ export function calculateStudentOverdue(
 
   const tmpl = template || DEFAULT_SMS_TEMPLATE;
   const formattedMessage = tmpl
-    .replace(/{نام_دانش‌آموز}/g, student.name)
-    .replace(/{مبلغ}/g, formatRial(balance))
-    .replace(/{تعداد_روز}/g, overdueDays.toLocaleString('fa-IR'))
-    .replace(/{نام_مدرسه}/g, student.school_name || 'مدرسه');
+    .replace(/{name}/g, student.name)
+    .replace(/{amount}/g, formatRial(balance))
+    .replace(/{days}/g, overdueDays.toLocaleString('fa-IR'))
+    .replace(/{school}/g, student.school_name || 'مدرسه');
 
   return {
     student,
