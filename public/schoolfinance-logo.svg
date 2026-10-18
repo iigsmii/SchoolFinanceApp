@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">لوگوی سیستم مالی مدرسه القرآن</title>
+  <desc id="desc">کتاب گشوده در قاب محراب با نشان سکه</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#341648"/><stop offset="1" stop-color="#62205f"/></linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffe9a6"/><stop offset="1" stop-color="#d9a73d"/></linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bg)"/>
+  <path d="M25 67V50c0-18 15-32 39-39 24 7 39 21 39 39v17" fill="none" stroke="url(#gold)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M27 62c13-7 25-7 37 1 12-8 24-8 37-1v34c-13-7-25-7-37 1-12-8-24-8-37-1V62Z" fill="#fffaf0" stroke="url(#gold)" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M64 63v34M36 70c7-3 14-3 21 0m-21 9c7-3 14-3 21 0m14-9c7-3 14-3 21 0m-21 9c7-3 14-3 21 0" fill="none" stroke="#8b668e" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="94" cy="32" r="14" fill="url(#gold)" stroke="#fff4cf" stroke-width="2"/>
+  <path d="M94 24v16m5-12c-1-2-3-3-5-3-3 0-5 2-5 4 0 6 10 2 10 8 0 2-2 4-5 4-2 0-4-1-5-3" fill="none" stroke="#5a3a17" stroke-width="2" stroke-linecap="round"/>
+</svg>
