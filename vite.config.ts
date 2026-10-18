@@ -3,14 +3,23 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// https://vitejs.dev/config/
+// Icon version: bump this whenever the logo artwork changes so that Android/iOS
+// discard the previously cached launcher icon and pick up the new one.
+const ICON_VERSION = '2';
+
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['apple-touch-icon.png', 'icon.svg', 'app-logo.jpg', 'pwa-192x192.png', 'pwa-512x512.png'],
+      includeAssets: [
+        `apple-touch-icon.png?v=${ICON_VERSION}`,
+        `icon.svg?v=${ICON_VERSION}`,
+        `app-logo.jpg?v=${ICON_VERSION}`,
+        `pwa-192x192.png?v=${ICON_VERSION}`,
+        `pwa-512x512.png?v=${ICON_VERSION}`,
+      ],
       manifest: {
         id: '/',
         name: 'سیستم مالی مدرسه القرآن',
@@ -23,19 +32,19 @@ export default defineConfig({
         scope: '/',
         icons: [
           {
-            src: '/pwa-192x192.png',
+            src: `/pwa-192x192.png?v=${ICON_VERSION}`,
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any',
           },
           {
-            src: '/pwa-512x512.png',
+            src: `/pwa-512x512.png?v=${ICON_VERSION}`,
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any',
           },
           {
-            src: '/pwa-maskable-512x512.png',
+            src: `/pwa-maskable-512x512.png?v=${ICON_VERSION}`,
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',
