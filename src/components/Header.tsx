@@ -1,6 +1,20 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { ArrowRight, UserCircle, Settings, Cloud, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import {
+  ArrowRight,
+  UserCircle,
+  Settings,
+  Cloud,
+  RefreshCw,
+  CheckCircle2,
+  LayoutGrid,
+  Wallet,
+  Scale,
+  UserMinus,
+  FileText,
+  MessageSquare,
+  X,
+} from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
 import { ScreenType } from '../types';
 
@@ -21,12 +35,29 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack = true }) => {
     goBack,
   } = useApp();
 
+  const [showFinanceMenu, setShowFinanceMenu] = useState(false);
+
   const handleSyncClick = async () => {
     if (isConnectedToGoogleSheets) {
       await syncWithGoogleSheets();
     } else {
       await connectWithGoogle();
     }
+  };
+
+  // Dedicated financial pages, reachable from every screen (same pattern as the
+  // students/managers sections on the dashboard).
+  const financeItems: Array<{ id: ScreenType; label: string; icon: React.ElementType }> = [
+    { id: 'payments_received', label: 'شهریه‌های دریافتی', icon: Wallet },
+    { id: 'statement', label: 'صورت وضعیت مالی', icon: Scale },
+    { id: 'debtors', label: 'لیست بدهکاران', icon: UserMinus },
+    { id: 'quick_invoice', label: 'صدور فاکتور سریع', icon: FileText },
+    { id: 'sms_batch', label: 'ارسال گروهی پیامک', icon: MessageSquare },
+  ];
+
+  const openFinancePage = (screen: ScreenType) => {
+    setShowFinanceMenu(false);
+    setCurrentScreen(screen);
   };
 
   return (
@@ -59,6 +90,63 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack = true }) => {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Financial shortcuts menu */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowFinanceMenu((v) => !v)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-[#e5dde8] bg-white hover:bg-gray-50 text-xs font-bold text-[#341648] shadow-xs transition-all"
+              title="بخش‌های مالی"
+            >
+              <LayoutGrid className="w-3.5 h-3.5 text-[#62205f]" style={{ color: accentColor }} />
+              <span className="hidden md:inline">بخش‌های مالی</span>
+            </button>
+
+            {showFinanceMenu && (
+              <>
+                {/* Click-away layer */}
+                <button
+                  type="button"
+                  aria-label="بستن منو"
+                  onClick={() => setShowFinanceMenu(false)}
+                  className="fixed inset-0 z-40 cursor-default bg-transparent"
+                />
+                <div className="absolute left-0 mt-2 w-60 z-50 bg-white rounded-2xl border border-[#e5dde8] shadow-2xl p-2 space-y-1">
+                  <div className="flex items-center justify-between px-2 py-1.5">
+                    <span className="text-[11px] font-bold text-gray-500">صفحه‌های مالی مستقل</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowFinanceMenu(false)}
+                      className="p-1 text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {financeItems.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => openFinancePage(item.id)}
+                        className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-bold text-[#341648] hover:bg-[#fcfaff] active:scale-[0.98] transition-all text-right"
+                      >
+                        <span
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0"
+                          style={{ backgroundColor: accentColor }}
+                        >
+                          <Icon className="w-3.5 h-3.5" />
+                        </span>
+                        <span className="truncate">{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+
           {/* PWA Install Button */}
           <PWAInstallButton variant="header" />
 
