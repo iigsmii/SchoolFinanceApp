@@ -21,6 +21,7 @@ import { MessagesScreen } from './components/screens/MessagesScreen';
 import { ActivityScreen } from './components/screens/ActivityScreen';
 import { SettingsScreen } from './components/screens/SettingsScreen';
 import { SmsScreen } from './components/screens/SmsScreen';
+import { SmsBatchScreen } from './components/screens/SmsBatchScreen';
 import { StaffScreen } from './components/screens/StaffScreen';
 import { PWAUpdatePrompt } from './components/PWAUpdatePrompt';
 import { LogOut, AlertTriangle } from 'lucide-react';
@@ -33,7 +34,6 @@ export const App: React.FC = () => {
     showExitModal,
     setShowExitModal,
     logout,
-    accentColor,
   } = useApp();
 
   // Listen to Phone Hardware Back button & Browser popstate
@@ -127,6 +127,8 @@ export const App: React.FC = () => {
         return <ActivityScreen />;
       case 'sms_reminders':
         return <SmsScreen />;
+      case 'sms_batch':
+        return <SmsBatchScreen />;
       case 'staff':
         return <StaffScreen />;
       case 'settings':
