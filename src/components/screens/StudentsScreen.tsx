@@ -2,25 +2,24 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { Student } from '../../types';
-import { buildParsianCode } from '../../utils/parsian';
 import {
   UserPlus,
-  FileSpreadsheet,
   AlertTriangle,
   Search,
   Edit2,
-  Trash2,
   X,
-  Check,
   CheckCircle2,
   Upload,
   PhoneCall,
-  UserCheck,
+  Loader2,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { playClickSound, playSuccessSound } from '../../utils/soundEffects';
+import { createStudent, updateStudentBackend, verifyStudentInSheet, loadSession } from '../../services/sheetBridge';
 
 const GRADES = ['پیش یک', 'پیش دو', 'اول', 'دوم', 'سوم', 'چهارم', 'پنجم', 'ششم'];
+
+type SaveState = 'idle' | 'saving' | 'saved_local_only' | 'saved_synced';
 
 export const StudentsScreen: React.FC = () => {
   const {
@@ -30,7 +29,6 @@ export const StudentsScreen: React.FC = () => {
     accentColor,
     addStudent,
     updateStudent,
-    deleteStudent,
     importStudents,
   } = useApp();
 
@@ -55,6 +53,10 @@ export const StudentsScreen: React.FC = () => {
   );
   const [formError, setFormError] = useState('');
 
+  // Sync feedback
+  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+
   // Excel import status state
   const [importSummary, setImportSummary] = useState<string | null>(null);
 
@@ -70,6 +72,7 @@ export const StudentsScreen: React.FC = () => {
     setFormNationalId('');
     setFormSchoolId(targetScId);
     setFormError('');
+    setSaveState('idle');
     setIsModalOpen(true);
   };
 
@@ -82,10 +85,11 @@ export const StudentsScreen: React.FC = () => {
     setFormNationalId(student.national_id);
     setFormSchoolId(student.school_id);
     setFormError('');
+    setSaveState('idle');
     setIsModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
 
@@ -128,7 +132,71 @@ export const StudentsScreen: React.FC = () => {
         school_id: formSchoolId,
         needs_fix: false,
       });
-    } else {
+
+      // Update on the server as well (best-effort; local record is already saved)
+      if (loadSession()?.token) {
+        setSaveState('saving');
+        const res = await updateStudentBackend({
+          id: editingStudent.id,
+          name: cleanName,
+          grade: formGrade,
+          phone: primaryPhone,
+          national_id: cleanNid,
+          school_id: formSchoolId,
+        });
+        setSaveState(res.success ? 'saved_synced' : 'saved_local_only');
+        if (!res.success) {
+          setSyncNotice(
+            `تغییرات در این دستگاه ذخیره شد، اما در گوگل شیت به‌روزرسانی نشد: ${res.error || 'خطای نامشخص'}`
+          );
+        }
+      } else {
+        setSaveState('saved_local_only');
+        setSyncNotice('تغییرات فقط در این دستگاه ذخیره شد؛ برای ثبت در گوگل شیت ابتدا وارد حساب کاربری سرور شوید.');
+      }
+
+      playSuccessSound();
+      setTimeout(() => setIsModalOpen(false), 900);
+      return;
+    }
+
+    // ---------- New student: write to the sheet FIRST, then to local state ----------
+    playSuccessSound();
+
+    if (!loadSession()?.token) {
+      // Offline / not logged into the backend: keep local record but be explicit.
+      const created = addStudent({
+        name: cleanName,
+        grade: formGrade,
+        phone: primaryPhone,
+        father_phone: cleanFatherPhone,
+        mother_phone: cleanMotherPhone,
+        national_id: cleanNid,
+        school_id: formSchoolId,
+        active: true,
+        needs_fix: false,
+      });
+      setSaveState('saved_local_only');
+      setSyncNotice(
+        `دانش‌آموز «${created.name}» فقط در همین دستگاه ثبت شد و در گوگل شیت ذخیره نشد؛ به همین دلیل در گوشی‌های دیگر دیده نمی‌شود. برای ثبت ابری، از بخش تنظیمات وارد حساب شوید.`
+      );
+      setTimeout(() => setIsModalOpen(false), 1200);
+      return;
+    }
+
+    setSaveState('saving');
+    const res = await createStudent({
+      name: cleanName,
+      grade: formGrade,
+      phone: primaryPhone,
+      national_id: cleanNid,
+      school_id: formSchoolId,
+    });
+
+    if (res.success) {
+      // Verify the row really landed in the sheet before claiming success.
+      const check = await verifyStudentInSheet(cleanNid);
+
       addStudent({
         name: cleanName,
         grade: formGrade,
@@ -140,9 +208,24 @@ export const StudentsScreen: React.FC = () => {
         active: true,
         needs_fix: false,
       });
+
+      if (check.verified) {
+        setSaveState('saved_synced');
+        setSyncNotice(`دانش‌آموز «${cleanName}» با موفقیت در گوگل شیت ثبت شد و در همه دستگاه‌ها نمایش داده می‌شود.`);
+      } else {
+        setSaveState('saved_synced');
+        setSyncNotice(
+          `ثبت در سرور انجام شد، اما بازخوانی تأییدکننده نتیجه نداد: ${check.error || 'ردیف جدید هنوز در خواندن ظاهر نشد.'}`
+        );
+      }
+      setTimeout(() => setIsModalOpen(false), 1200);
+    } else {
+      // Server rejected: do NOT silently keep a local-only record that would hide the problem.
+      setSaveState('idle');
+      setFormError(
+        `${res.error || 'ثبت در گوگل شیت انجام نشد.'} — دانش‌آموز ذخیره نشد؛ لطفاً مشکل را برطرف و دوباره تلاش کنید.`
+      );
     }
-    playSuccessSound();
-    setIsModalOpen(false);
   };
 
   const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -228,10 +311,10 @@ export const StudentsScreen: React.FC = () => {
   const needsFixCount = students.filter((s) => s.needs_fix).length;
 
   return (
-    <div className="min-h-screen pb-16 bg-[#f8f5f9]">
+    <div className="w-full max-w-full min-h-screen overflow-x-hidden pb-16 bg-[#f8f5f9]">
       <Header title="مدیریت دانش‌آموزان" />
 
-      <main className="max-w-4xl mx-auto px-4 py-5 space-y-4">
+      <main className="w-full max-w-4xl mx-auto px-4 py-5 space-y-4 box-border">
         {/* Top Actions: Add & Import */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-4 rounded-3xl border border-[#e5dde8] shadow-xs">
           <div className="flex items-center gap-2">
@@ -278,6 +361,15 @@ export const StudentsScreen: React.FC = () => {
             </div>
           )}
         </div>
+
+        {syncNotice && (
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 text-xs font-semibold flex items-start justify-between gap-2">
+            <span className="leading-relaxed">{syncNotice}</span>
+            <button onClick={() => setSyncNotice(null)} className="text-amber-700 shrink-0">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {importSummary && (
           <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-900 text-xs font-semibold flex items-center justify-between">
@@ -417,8 +509,21 @@ export const StudentsScreen: React.FC = () => {
             </div>
 
             {formError && (
-              <div className="p-3 mb-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
+              <div className="p-3 mb-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold leading-relaxed">
                 ⚠️ {formError}
+              </div>
+            )}
+
+            {saveState === 'saved_synced' && (
+              <div className="p-3 mb-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{syncNotice || 'در گوگل شیت ثبت شد.'}</span>
+              </div>
+            )}
+
+            {saveState === 'saved_local_only' && (
+              <div className="p-3 mb-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold leading-relaxed">
+                {syncNotice || 'فقط در این دستگاه ذخیره شد.'}
               </div>
             )}
 
@@ -532,10 +637,18 @@ export const StudentsScreen: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 rounded-xl text-white font-bold text-xs shadow-md active:scale-95 transition-all"
+                  disabled={saveState === 'saving'}
+                  className="flex-1 py-2.5 rounded-xl text-white font-bold text-xs shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
                   style={{ backgroundColor: accentColor }}
                 >
-                  {editingStudent ? 'ذخیره تغییرات' : 'ثبت دانش‌آموز'}
+                  {saveState === 'saving' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>
+                    {saveState === 'saving'
+                      ? 'در حال ثبت در گوگل شیت...'
+                      : editingStudent
+                      ? 'ذخیره تغییرات'
+                      : 'ثبت دانش‌آموز'}
+                  </span>
                 </button>
               </div>
             </form>
