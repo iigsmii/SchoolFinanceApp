@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { formatRial, jalaliFromGregorian } from '../../utils/jalali';
-import { ArrowLeftRight, Trash2, Search, Filter } from 'lucide-react';
+import { Trash2, Search } from 'lucide-react';
 
 export const TransactionsScreen: React.FC = () => {
   const { transactions, currentUser, deleteTransaction, accentColor } = useApp();
@@ -32,24 +32,25 @@ export const TransactionsScreen: React.FC = () => {
   });
 
   return (
-    <div className="min-h-screen bg-[#f8f5f9] pb-12">
+    // w-full max-w-full overflow-x-hidden => vertical-only page, no sideways drag
+    <div className="w-full max-w-full min-h-screen overflow-x-hidden bg-[#f8f5f9] pb-12">
       <Header title="دفتر کل تراکنش‌ها" />
 
-      <main className="max-w-4xl mx-auto px-4 py-6 space-y-5">
+      <main className="w-full max-w-4xl mx-auto px-4 py-6 space-y-5 box-border">
         {/* Filter Controls */}
-        <div className="bg-white rounded-3xl p-4 border border-[#e5dde8] shadow-xs space-y-3">
-          <div className="relative">
+        <div className="bg-white rounded-3xl p-4 border border-[#e5dde8] shadow-xs space-y-3 min-w-0">
+          <div className="relative min-w-0">
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="جست‌وجو بر اساس شرح، نام دانش‌آموز، کد پیگیری..."
-              className="w-full pl-4 pr-11 py-3 bg-[#fdfcfd] rounded-2xl border border-[#e5dde8] text-sm text-[#302735] focus:outline-hidden focus:border-[#62205f]"
+              className="w-full max-w-full pl-4 pr-11 py-3 bg-[#fdfcfd] rounded-2xl border border-[#e5dde8] text-sm text-[#302735] focus:outline-hidden focus:border-[#62205f]"
             />
             <Search className="w-5 h-5 text-gray-400 absolute right-3.5 top-3.5" />
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 min-w-0">
             {[
               { id: 'all', label: 'همه تراکنش‌ها' },
               { id: 'debt', label: 'بدهی شهریه' },
@@ -59,7 +60,7 @@ export const TransactionsScreen: React.FC = () => {
               <button
                 key={f.id}
                 onClick={() => setFilterKind(f.id as typeof filterKind)}
-                className={`py-2 px-3.5 rounded-xl text-xs font-bold transition-all ${
+                className={`py-2 px-3.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                   filterKind === f.id
                     ? 'bg-[#62205f] text-white'
                     : 'bg-[#fcfaff] text-gray-700 border border-[#e5dde8] hover:bg-gray-50'
@@ -73,7 +74,7 @@ export const TransactionsScreen: React.FC = () => {
         </div>
 
         {/* Transactions List */}
-        <div className="space-y-3">
+        <div className="space-y-3 min-w-0">
           <div className="text-xs text-gray-500 font-semibold">
             تعداد: {filtered.length} تراکنش
           </div>
@@ -86,17 +87,16 @@ export const TransactionsScreen: React.FC = () => {
             filtered.map((t) => {
               const isDebt = t.kind === 'شهریه_بدهی';
               const isExpense = t.kind === 'هزینه';
-              const isPayment = t.kind === 'شهریه';
 
               return (
                 <div
                   key={t.id}
-                  className="bg-white rounded-3xl p-4 sm:p-5 border border-[#e5dde8] shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3"
+                  className="w-full min-w-0 bg-white rounded-3xl p-4 sm:p-5 border border-[#e5dde8] shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3"
                 >
-                  <div>
-                    <div className="flex items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span
-                        className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
+                        className={`text-[11px] font-bold px-2 py-0.5 rounded-md whitespace-nowrap ${
                           isDebt
                             ? 'bg-rose-100 text-rose-800'
                             : isExpense
@@ -106,27 +106,31 @@ export const TransactionsScreen: React.FC = () => {
                       >
                         {isDebt ? 'بدهی شهریه' : isExpense ? 'هزینه جاری' : 'دریافت شهریه'}
                       </span>
-                      <h4 className="font-bold text-sm text-[#341648]">
+                      <h4 className="font-bold text-sm text-[#341648] break-words">
                         {t.student_name || t.expense_category_name || t.description}
                       </h4>
                     </div>
 
-                    <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-x-4">
+                    <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-x-4 gap-y-1">
                       <span>تاریخ: {jalaliFromGregorian(t.date)}</span>
-                      <span>مدرسه: {t.school_name}</span>
-                      {t.tracking_code && <span>پیگیری: <span className="font-mono">{t.tracking_code}</span></span>}
+                      <span className="break-words">مدرسه: {t.school_name}</span>
+                      {t.tracking_code && (
+                        <span className="break-all">
+                          پیگیری: <span className="font-mono">{t.tracking_code}</span>
+                        </span>
+                      )}
                     </div>
 
                     {t.description && (
-                      <div className="text-xs text-gray-600 mt-1">
+                      <div className="text-xs text-gray-600 mt-1 break-words">
                         شرح: {t.description}
                       </div>
                     )}
                   </div>
 
-                  <div className="flex sm:flex-col items-end justify-between w-full sm:w-auto gap-2">
+                  <div className="flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto gap-2 shrink-0">
                     <div
-                      className={`text-base font-black font-mono ${
+                      className={`text-base font-black font-mono whitespace-nowrap ${
                         isDebt || isExpense ? 'text-gray-900' : 'text-teal-700'
                       }`}
                     >
@@ -139,6 +143,7 @@ export const TransactionsScreen: React.FC = () => {
                         }
                       }}
                       className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                      aria-label="حذف تراکنش"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
