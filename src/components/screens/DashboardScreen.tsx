@@ -5,113 +5,54 @@ import { TuitionMonthlyChart } from '../TuitionMonthlyChart';
 import { QuickInvoiceModal } from '../QuickInvoiceModal';
 import { InvoicePrintModal } from '../InvoicePrintModal';
 import {
-  Users,
-  CreditCard,
-  FileCheck,
-  Receipt,
-  ArrowLeftRight,
-  BookOpen,
-  Wallet,
-  BarChart3,
-  ClipboardList,
-  Settings,
-  Building2,
-  UserCog,
-  FileSpreadsheet,
-  Megaphone,
-  Landmark,
-  AlertTriangle,
-  ChevronLeft,
-  AlertCircle,
-  PhoneCall,
-  FileText,
-  Sparkles,
-  Cloud,
-  Database,
-  RefreshCw,
-  CheckCircle2,
-  MessageSquare,
-  GraduationCap,
-  Upload,
-  X,
+  Users, CreditCard, Receipt, ArrowLeftRight, BookOpen, Wallet, BarChart3,
+  ClipboardList, Settings, Building2, UserCog, FileSpreadsheet, Megaphone,
+  Landmark, AlertTriangle, ChevronLeft, AlertCircle, PhoneCall, FileText,
+  Sparkles, Cloud, Database, RefreshCw, CheckCircle2, MessageSquare,
+  GraduationCap, Upload, X, ArrowUpDown,
 } from 'lucide-react';
 import { ScreenType, Student } from '../../types';
 import { formatRial, jalaliFromGregorian } from '../../utils/jalali';
 
 export const DashboardScreen: React.FC = () => {
   const {
-    currentUser,
-    setCurrentScreen,
-    accentColor,
-    students,
-    transactions,
-    cheques,
-    seniorMessages,
-    getStudentBalance,
-    isConnectedToGoogleSheets,
-    spreadsheetId,
-    syncStatus,
-    syncError,
-    lastSyncTime,
-    syncWithGoogleSheets,
-    connectWithGoogle,
-    loadOfflineExcel,
-    loadPublicSheet,
-    syncStats,
+    currentUser, setCurrentScreen, accentColor, students, transactions, cheques,
+    schools, seniorMessages, getStudentBalance, isConnectedToGoogleSheets,
+    spreadsheetId, syncStatus, syncError, lastSyncTime, syncWithGoogleSheets,
+    connectWithGoogle, loadOfflineExcel,
   } = useApp();
-
   const [offlineSuccessNotice, setOfflineSuccessNotice] = useState<string | null>(null);
-
-  const handleOfflineExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const ok = await loadOfflineExcel(file);
-    if (ok) {
-      setOfflineSuccessNotice('اطلاعات شیت با موفقیت از فایل اکسل در نرم‌افزار بارگذاری و همگام گردید.');
-    }
-    e.target.value = '';
-  };
-
   const [isQuickInvoiceOpen, setIsQuickInvoiceOpen] = useState(false);
   const [invoiceStudent, setInvoiceStudent] = useState<Student | null>(null);
+  const [debtorSort, setDebtorSort] = useState<'debt' | 'name'>('debt');
 
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
-
-  // Filter students & transactions based on school if manager
-  const userStudents = isSenior
-    ? students
-    : students.filter((s) => s.school_id === currentUser?.school_id);
-
-  const activeStudentsCount = userStudents.filter((s) => s.active).length;
-
-  // Calculate total outstanding debt
-  const userStudentIds = new Set(userStudents.map((s) => s.id));
+  const userStudents = isSenior ? students : students.filter((s) => s.school_id === currentUser?.school_id);
   const relevantTxs = isSenior
     ? transactions
-    : transactions.filter((t) => t.student_id && userStudentIds.has(t.student_id));
-
-  let totalDebt = 0;
-  let totalPaid = 0;
-  relevantTxs.forEach((t) => {
-    if (t.kind === 'شهریه_بدهی') totalDebt += t.debit || 0;
-    if (t.kind === 'شهریه') totalPaid += t.credit || 0;
-  });
+    : transactions.filter((t) => t.school_id === currentUser?.school_id);
+  const activeStudentsCount = userStudents.filter((s) => s.active).length;
+  const totalDebt = relevantTxs.filter((t) => t.kind === 'شهریه_بدهی').reduce((sum, t) => sum + (t.debit || 0), 0);
+  const totalPaid = relevantTxs.filter((t) => t.kind === 'شهریه').reduce((sum, t) => sum + (t.credit || 0), 0);
   const netOutstandingDebt = Math.max(0, totalDebt - totalPaid);
+  const expenseTransactions = relevantTxs.filter((t) => t.kind === 'هزینه');
+  const totalExpenses = expenseTransactions.reduce((sum, t) => sum + (t.amount || 0), 0);
 
-  // Top 5 students with highest outstanding debt
-  const topDebtors = userStudents
-    .map((s) => {
-      const balanceInfo = getStudentBalance(s.id);
-      return {
-        student: s,
-        debt: balanceInfo.balance,
-      };
-    })
+  const debtors = userStudents
+    .map((student) => ({ student, debt: getStudentBalance(student.id).balance }))
     .filter((item) => item.debt > 0)
-    .sort((a, b) => b.debt - a.debt)
-    .slice(0, 5);
+    .sort((a, b) => debtorSort === 'name'
+      ? a.student.name.localeCompare(b.student.name, 'fa')
+      : b.debt - a.debt);
 
-  // Cheque alerts (pending review or due soon)
+  const schoolFinancialSummaries = isSenior ? schools.map((school) => {
+    const schoolTxs = transactions.filter((t) => t.school_id === school.id);
+    const billed = schoolTxs.filter((t) => t.kind === 'شهریه_بدهی').reduce((sum, t) => sum + (t.debit || 0), 0);
+    const paid = schoolTxs.filter((t) => t.kind === 'شهریه').reduce((sum, t) => sum + (t.credit || 0), 0);
+    const expenses = schoolTxs.filter((t) => t.kind === 'هزینه').reduce((sum, t) => sum + (t.amount || 0), 0);
+    return { school, debt: Math.max(0, billed - paid), expenses, hasData: billed > 0 || paid > 0 || expenses > 0 };
+  }).filter((item) => item.hasData) : [];
+
   const pendingCheques = cheques.filter((c) => c.status === 'pending');
   const now = new Date();
   const nextWeek = new Date();
@@ -122,12 +63,20 @@ export const DashboardScreen: React.FC = () => {
     return dueDate >= now && dueDate <= nextWeek;
   });
 
+  const handleOfflineExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ok = await loadOfflineExcel(file);
+    if (ok) setOfflineSuccessNotice('اطلاعات با موفقیت از فایل اکسل بارگذاری شد.');
+    e.target.value = '';
+  };
+
   const menuItems = [
     { id: 'students', label: 'دانش‌آموزان', icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
     { id: 'tuition', label: 'دریافت شهریه', icon: CreditCard, color: 'text-emerald-600', bg: 'bg-emerald-50' },
     { id: 'staff', label: 'معلمان و پرسنل', icon: GraduationCap, color: 'text-amber-600', bg: 'bg-amber-50' },
     { id: 'sms_reminders', label: 'سامانه پیامک', icon: MessageSquare, color: 'text-purple-600', bg: 'bg-purple-50' },
-    { id: 'cheque_list', label: 'لیست چک‌ها', icon: FileCheck, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { id: 'cheque_list', label: 'لیست چک‌ها', icon: Receipt, color: 'text-amber-600', bg: 'bg-amber-50' },
     { id: 'expenses', label: 'هزینه‌ها', icon: Receipt, color: 'text-purple-600', bg: 'bg-purple-50' },
     { id: 'transactions', label: 'تراکنش‌ها', icon: ArrowLeftRight, color: 'text-indigo-600', bg: 'bg-indigo-50' },
     { id: 'statement', label: 'ریز گردش حساب', icon: BookOpen, color: 'text-teal-600', bg: 'bg-teal-50' },
@@ -136,10 +85,9 @@ export const DashboardScreen: React.FC = () => {
     { id: 'activity', label: 'گزارش فعالیت', icon: ClipboardList, color: 'text-slate-600', bg: 'bg-slate-50' },
     { id: 'settings', label: 'تنظیمات', icon: Settings, color: 'text-gray-600', bg: 'bg-gray-100' },
   ];
-
   const seniorExtraItems = [
     { id: 'staff', label: 'حقوق و بیمه معلمان', icon: GraduationCap, color: 'text-purple-600', bg: 'bg-purple-50' },
-    { id: 'cheques', label: 'چک صیادی (تأیید)', icon: FileCheck, color: 'text-rose-600', bg: 'bg-rose-50' },
+    { id: 'cheques', label: 'چک صیادی (تأیید)', icon: Receipt, color: 'text-rose-600', bg: 'bg-rose-50' },
     { id: 'bank', label: 'تطبیق بانک', icon: Landmark, color: 'text-emerald-600', bg: 'bg-emerald-50' },
     { id: 'managers', label: 'مدیران', icon: UserCog, color: 'text-indigo-600', bg: 'bg-indigo-50' },
     { id: 'schools', label: 'مدارس', icon: Building2, color: 'text-amber-600', bg: 'bg-amber-50' },
@@ -148,444 +96,137 @@ export const DashboardScreen: React.FC = () => {
   ];
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-5 space-y-6">
-      {/* Sacred Top Neyrizi Title Header Banner */}
-      <div
-        className="rounded-3xl p-6 sm:p-7 text-white shadow-xl relative overflow-hidden border border-amber-400/35 text-center"
-        style={{
-          background: 'linear-gradient(135deg, #2a0b33 0%, #4a1550 50%, #200827 100%)',
-        }}
-      >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(251,191,36,0.18),transparent_75%)] pointer-events-none" />
-        <div className="relative z-10 space-y-2">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-400/20 border border-amber-300/40 text-amber-200 text-xs font-bold shadow-2xs">
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            <span>بسم الله الرحمن الرحیم</span>
+    <div className="max-w-4xl mx-auto px-4 py-4 space-y-4">
+      <section className="rounded-2xl px-4 py-3 text-white shadow-md border border-amber-400/30" style={{ background: 'linear-gradient(135deg, #2a0b33 0%, #4a1550 55%, #200827 100%)' }}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <Sparkles className="w-4 h-4 shrink-0 text-amber-300" />
+            <h1 className="text-sm sm:text-base font-black text-amber-100 whitespace-nowrap">مدرسة القرآن الکریم شهرضا</h1>
+            <span className="hidden sm:inline text-xs text-purple-200">| سیستم مالی</span>
           </div>
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-black font-neyrizi text-amber-100 tracking-wide leading-relaxed drop-shadow-md">
-            سیستم‌ جامع امور مالی و حسابداری مدرسه القرآن الکریم شهرضا
-          </h1>
-          <p className="text-xs text-purple-200 font-medium max-w-xl mx-auto leading-normal">
-            سامانه یکپارچه نظارت، ثبت شهریه، معلمان، اسناد صیادی، تطبیق بانک و اتصال برخط پایگاه داده
-          </p>
+          <button type="button" onClick={() => setCurrentScreen('settings')} className="shrink-0 p-2 rounded-lg bg-white/10 hover:bg-white/20" title="تنظیمات">
+            <Settings className="w-4 h-4" />
+          </button>
         </div>
-      </div>
+      </section>
 
-      {/* Welcome Banner matching Android TR_BL gradient */}
-      <div
-        className="rounded-3xl p-6 text-white shadow-xl relative overflow-hidden"
-        style={{
-          background: `linear-gradient(135deg, ${accentColor} 0%, #341648 100%)`,
-        }}
-      >
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="text-xs font-semibold text-[#f5dff2] mb-1">
-              {isSenior ? 'نمای کلی مجموعه مدارس مدرسة القرآن' : currentUser?.school_name || 'مدرسه شما، حساب‌های شما'}
-            </div>
-            <h2 className="text-2xl md:text-3xl font-black">
-              خوش آمدید، {currentUser?.name || 'مدیر محترم'}
-            </h2>
-            <div className="text-xs text-[#f5dff2]/80 mt-1">
-              نقش کاربری: {isSenior ? 'کاربر ارشد سامانه' : 'مدیر مدرسه'}
-            </div>
+      <section className="rounded-2xl px-4 py-3 text-white shadow-md" style={{ background: `linear-gradient(135deg, ${accentColor} 0%, #341648 100%)` }}>
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0">
+            <h2 className="text-base sm:text-lg font-black">خوش آمدید، {currentUser?.name || 'مدیر محترم'}</h2>
+            {!isSenior && currentUser?.school_name && <span className="text-[11px] text-purple-100">{currentUser.school_name}</span>}
+            <span className="text-[10px] text-purple-100/80">{isSenior ? 'کاربر ارشد' : 'مدیر مدرسه'}</span>
           </div>
           <DashboardClock />
         </div>
-      </div>
+      </section>
 
-      {/* Google Sheets Live Database Connection Card */}
-      <div className={`rounded-3xl p-4 sm:p-5 border shadow-xs transition-all ${
-        isConnectedToGoogleSheets
-          ? 'bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-indigo-500/10 border-emerald-300/60'
-          : 'bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-blue-500/10 border-purple-200'
-      }`}>
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-xs ${
-              isConnectedToGoogleSheets ? 'bg-emerald-600 text-white' : 'bg-purple-700 text-white'
-            }`}>
-              <Database className="w-5 h-5" />
+      <section className={`rounded-2xl px-3 py-2.5 border shadow-xs ${isConnectedToGoogleSheets ? 'bg-emerald-50/70 border-emerald-200' : 'bg-purple-50/70 border-purple-200'}`}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0 ${isConnectedToGoogleSheets ? 'bg-emerald-600' : 'bg-purple-700'}`}>
+              {isConnectedToGoogleSheets ? <CheckCircle2 className="w-4 h-4" /> : <Database className="w-4 h-4" />}
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs sm:text-sm font-bold text-[#341648]">
-                  {isConnectedToGoogleSheets ? 'متصل به Google Sheets (پایگاه داده زنده مدارس)' : 'اتصال به Google Sheets مدارس'}
-                </span>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                  isConnectedToGoogleSheets ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                }`}>
-                  {isConnectedToGoogleSheets ? 'همگام و برخط' : 'آفلاین'}
-                </span>
-              </div>
-              <div className="text-[11px] text-gray-500 mt-0.5">
-                {isConnectedToGoogleSheets ? (
-                  <span>
-                    شناسه شیت: <code className="font-mono text-xs text-purple-900 bg-white/70 px-1 py-0.5 rounded">{spreadsheetId.substring(0, 14)}...</code>
-                    {lastSyncTime && <span className="mr-2">| آخرین به‌روزرسانی: {lastSyncTime}</span>}
-                  </span>
-                ) : (
-                  <span>اطلاعات دانش‌آموزان و شهریه‌ها در گوگل شیت آپلود شده است؛ با اتصال، اطلاعات زنده خوانده می‌شود.</span>
-                )}
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-[#341648] truncate">{isConnectedToGoogleSheets ? 'متصل به Google Sheets' : 'اتصال به Google Sheets'}</div>
+              <div className="text-[10px] text-gray-500 truncate">
+                {isConnectedToGoogleSheets
+                  ? `شیت ${spreadsheetId.substring(0, 10)}…${lastSyncTime ? ` | آخرین همگام‌سازی ${lastSyncTime}` : ''}`
+                  : 'وضعیت اتصال و ورود داده'}
               </div>
             </div>
           </div>
-
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-            {/* Offline Excel File Input */}
-            <label className="w-full sm:w-auto px-3.5 py-2.5 rounded-xl bg-white/90 hover:bg-white text-[#341648] border border-purple-200 hover:border-purple-300 text-xs font-bold flex items-center justify-center gap-2 shadow-2xs transition-all active:scale-95 cursor-pointer">
-              <Upload className="w-3.5 h-3.5 text-emerald-600" />
-              <span>بارگذاری فایل اکسل شیت</span>
-              <input
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                onChange={handleOfflineExcelUpload}
-                className="hidden"
-              />
+          <div className="flex flex-wrap items-center gap-1.5">
+            <label className="px-2.5 py-2 rounded-lg bg-white text-[#341648] border border-purple-200 text-[11px] font-bold flex items-center gap-1.5 cursor-pointer hover:bg-purple-50">
+              <Upload className="w-3.5 h-3.5 text-emerald-600" /> بارگذاری Excel
+              <input type="file" accept=".xlsx,.xls,.csv" onChange={handleOfflineExcelUpload} className="hidden" />
             </label>
-
-            {isConnectedToGoogleSheets ? (
-              <button
-                type="button"
-                onClick={() => syncWithGoogleSheets()}
-                disabled={syncStatus === 'syncing'}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-all active:scale-95"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
-                <span>همگام‌سازی سریع</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => connectWithGoogle()}
-                disabled={syncStatus === 'syncing'}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-all active:scale-95"
-              >
-                <Cloud className="w-3.5 h-3.5" />
-                <span>اتصال با حساب گوگل</span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setCurrentScreen('settings')}
-              className="p-2.5 rounded-xl bg-white/80 hover:bg-white text-gray-700 text-xs font-bold border border-gray-200 transition-all shrink-0"
-              title="تنظیمات پیشرفته شیت"
-            >
-              <Settings className="w-4 h-4 text-gray-600" />
+            <button type="button" onClick={() => isConnectedToGoogleSheets ? syncWithGoogleSheets() : connectWithGoogle()} disabled={syncStatus === 'syncing'} className="px-2.5 py-2 rounded-lg bg-purple-700 hover:bg-purple-800 text-white text-[11px] font-bold flex items-center gap-1.5 disabled:opacity-60">
+              {syncStatus === 'syncing' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : isConnectedToGoogleSheets ? <RefreshCw className="w-3.5 h-3.5" /> : <Cloud className="w-3.5 h-3.5" />}
+              {syncStatus === 'syncing' ? 'در حال اتصال' : isConnectedToGoogleSheets ? 'همگام‌سازی' : 'اتصال گوگل'}
             </button>
           </div>
         </div>
+        {syncError && <div className="mt-2 px-2.5 py-2 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 text-[11px] flex items-center gap-2"><AlertCircle className="w-4 h-4 shrink-0" />{syncError}</div>}
+        {offlineSuccessNotice && <div className="mt-2 px-2.5 py-2 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] flex items-center justify-between gap-2"><span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4" />{offlineSuccessNotice}</span><button onClick={() => setOfflineSuccessNotice(null)} aria-label="بستن"><X className="w-4 h-4" /></button></div>}
+      </section>
 
-        {syncError && (
-          <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 text-xs font-semibold flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-            <div className="flex-1">
-              <div>{syncError}</div>
-              <div className="text-[11px] text-rose-600 mt-1 font-normal">
-                راهکار در نرم‌افزار گوشی: شیت را از گوگل درایو با فرمت اکسل (.xlsx) دانلود کرده و دکمه «بارگذاری فایل اکسل شیت» را بزنید.
-              </div>
-            </div>
-          </div>
-        )}
-        {offlineSuccessNotice && (
-          <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-800 text-xs font-semibold flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>{offlineSuccessNotice}</span>
-            </div>
-            <button
-              onClick={() => setOfflineSuccessNotice(null)}
-              className="text-emerald-700 hover:text-emerald-900 text-xs p-1"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Quick Access Grid placed above Financial Overview */}
-      <div>
-        <div className="text-sm font-bold text-[#341648] mb-3 flex items-center justify-between">
-          <span>دسترسی سریع</span>
-          <span className="text-xs text-gray-400 font-normal">بخش‌های پرکاربرد سامانه</span>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
+      <section>
+        <div className="flex items-center justify-between mb-2"><h3 className="text-sm font-bold text-[#341648]">دسترسی سریع</h3><span className="text-[11px] text-gray-400">بخش‌های پرکاربرد</span></div>
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
           {menuItems.map((item) => {
             const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setCurrentScreen(item.id as ScreenType)}
-                className="flex flex-col items-center justify-center p-4 rounded-3xl bg-white border border-[#e5dde8] hover:border-[#62205f] hover:shadow-md active:scale-95 transition-all text-center group min-h-[120px]"
-              >
-                <div className={`w-12 h-12 rounded-2xl ${item.bg} flex items-center justify-center mb-2.5 group-hover:scale-110 transition-transform`}>
-                  <Icon className={`w-6 h-6 ${item.color}`} />
-                </div>
-                <span className="text-xs sm:text-sm font-bold text-[#341648] leading-tight">
-                  {item.label}
-                </span>
-              </button>
-            );
+            return <button key={item.id} onClick={() => setCurrentScreen(item.id as ScreenType)} className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white border border-[#e5dde8] hover:border-[#62205f] hover:shadow-sm active:scale-95 transition-all text-center group min-h-[82px]">
+              <span className={`w-9 h-9 rounded-xl ${item.bg} flex items-center justify-center mb-1.5`}><Icon className={`w-5 h-5 ${item.color}`} /></span>
+              <span className="text-[10px] sm:text-[11px] font-bold text-[#341648] leading-tight">{item.label}</span>
+            </button>;
           })}
         </div>
-      </div>
+      </section>
 
-      {/* Senior Only Section */}
-      {isSenior && (
-        <div className="pt-1">
-          <div className="text-sm font-bold text-[#62205f] mb-3 flex items-center gap-2" style={{ color: accentColor }}>
-            <span>بخش ویژه مدیریت ارشد مجموعه</span>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
-            {seniorExtraItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setCurrentScreen(item.id as ScreenType)}
-                  className="flex flex-col items-center justify-center p-4 rounded-3xl bg-white border border-[#e5dde8] hover:border-[#62205f] hover:shadow-md active:scale-95 transition-all text-center group min-h-[110px]"
-                >
-                  <div className={`w-11 h-11 rounded-2xl ${item.bg} flex items-center justify-center mb-2 group-hover:scale-110 transition-transform`}>
-                    <Icon className={`w-5 h-5 ${item.color}`} />
-                  </div>
-                  <span className="text-xs sm:text-sm font-bold text-[#341648] leading-tight">
-                    {item.label}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+      {isSenior && <section>
+        <h3 className="text-sm font-bold text-[#62205f] mb-2" style={{ color: accentColor }}>بخش ویژه مدیریت ارشد مجموعه</h3>
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-2">
+          {seniorExtraItems.map((item) => {
+            const Icon = item.icon;
+            return <button key={item.id} onClick={() => setCurrentScreen(item.id as ScreenType)} className="flex flex-col items-center justify-center p-2 rounded-2xl bg-white border border-[#e5dde8] hover:border-[#62205f] hover:shadow-sm active:scale-95 transition-all text-center min-h-[76px]">
+              <span className={`w-8 h-8 rounded-xl ${item.bg} flex items-center justify-center mb-1`}><Icon className={`w-4 h-4 ${item.color}`} /></span>
+              <span className="text-[10px] font-bold text-[#341648] leading-tight">{item.label}</span>
+            </button>;
+          })}
         </div>
-      )}
+      </section>}
 
-      {/* Financial Overview Card */}
-      <div className="bg-white rounded-3xl p-5 border border-[#e5dde8] shadow-sm">
-        <div className="text-xs font-bold text-gray-500 mb-3">وضعیت مالی</div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="bg-[#fcfaff] p-4 rounded-2xl border border-[#ede5ef] flex items-center justify-between">
-            <div>
-              <div className="text-xs text-gray-500 font-medium">دانش‌آموزان فعال</div>
-              <div className="text-2xl font-black text-[#341648] mt-1 font-mono">
-                {activeStudentsCount} <span className="text-xs font-normal text-gray-500">نفر</span>
-              </div>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-[#62205f]/10 flex items-center justify-center text-[#62205f]" style={{ color: accentColor }}>
-              <Users className="w-6 h-6" />
-            </div>
-          </div>
-
-          <div className="bg-[#fcfaff] p-4 rounded-2xl border border-[#ede5ef] flex items-center justify-between">
-            <div>
-              <div className="text-xs text-gray-500 font-medium">مانده بدهی شهریه دانش‌آموزان</div>
-              <div className="text-2xl font-black text-rose-700 mt-1 font-mono">
-                {formatRial(netOutstandingDebt)} <span className="text-xs font-normal text-gray-500">ریال</span>
-              </div>
-            </div>
-            <div className="w-12 h-12 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600">
-              <CreditCard className="w-6 h-6" />
-            </div>
-          </div>
+      <section className="bg-white rounded-2xl p-3 sm:p-4 border border-[#e5dde8] shadow-xs">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <h3 className="text-xs font-bold text-gray-600">وضعیت مالی</h3>
+          <button onClick={() => setCurrentScreen('report')} className="text-[11px] font-bold text-[#62205f] hover:underline" style={{ color: accentColor }}>مشاهده گزارش مالی</button>
         </div>
-      </div>
-
-      {/* Quick Invoice Issuance Action Banner */}
-      <div className="bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-indigo-500/10 border-2 border-amber-300/40 rounded-3xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
-        <div className="flex items-center gap-3.5">
-          <div
-            className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-md shrink-0"
-            style={{ backgroundColor: accentColor }}
-          >
-            <Sparkles className="w-6 h-6 text-[#ffd353]" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-base font-black text-[#341648]">صدور سریع فاکتور شهریه دانش‌آموز</h3>
-              <span className="text-[10px] bg-amber-100 text-amber-900 font-bold px-2 py-0.5 rounded-md">جدید</span>
-            </div>
-            <p className="text-xs text-gray-500 mt-0.5">
-              انتخاب سریع نام دانش‌آموز، مبلغ شهریه و تولید آنی سند چاپی رسمی PDF
-            </p>
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="bg-[#fcfaff] p-3 rounded-xl border border-[#ede5ef] flex items-center justify-between"><div><div className="text-[11px] text-gray-500">دانش‌آموزان فعال</div><div className="text-lg font-black text-[#341648] mt-0.5">{activeStudentsCount} <span className="text-[10px] font-normal text-gray-500">نفر</span></div></div><Users className="w-5 h-5 text-[#62205f]" style={{ color: accentColor }} /></div>
+          <div className="bg-rose-50/60 p-3 rounded-xl border border-rose-100 flex items-center justify-between"><div><div className="text-[11px] text-gray-500">بدهی باقی‌مانده شهریه</div><div className="text-base font-black text-rose-700 mt-0.5">{formatRial(netOutstandingDebt)} <span className="text-[10px] font-normal">ریال</span></div></div><CreditCard className="w-5 h-5 text-rose-600" /></div>
+          <div className="bg-purple-50/60 p-3 rounded-xl border border-purple-100 flex items-center justify-between"><div><div className="text-[11px] text-gray-500">جمع هزینه‌های ثبت‌شده</div><div className="text-base font-black text-purple-900 mt-0.5">{formatRial(totalExpenses)} <span className="text-[10px] font-normal">ریال</span></div></div><Receipt className="w-5 h-5 text-purple-600" /></div>
         </div>
-        <button
-          onClick={() => setIsQuickInvoiceOpen(true)}
-          className="w-full sm:w-auto px-5 py-3 rounded-2xl text-white font-bold text-xs sm:text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 shrink-0 hover:opacity-90"
-          style={{ backgroundColor: accentColor }}
-        >
-          <FileText className="w-4 h-4 text-amber-300" />
-          <span>صدور سریع فاکتور شهریه</span>
-        </button>
-      </div>
+      </section>
 
-      {/* Tuition Trend Bar Chart (Last 6 Months) */}
-      <TuitionMonthlyChart transactions={relevantTxs} accentColor={accentColor} />
-
-      {/* Top 5 Debtors Section */}
-      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#e5dde8] shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#f2eaf3] gap-2">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600 shadow-xs">
-              <AlertCircle className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-[#341648]">بیشترین بدهی‌های معوقه شهریه (۵ دانش‌آموز برتر)</h3>
-              <p className="text-xs text-gray-400">پیگیری و تسویه فوری مطالبات اولیا</p>
-            </div>
-          </div>
-          <button
-            onClick={() => setCurrentScreen('tuition')}
-            className="flex items-center gap-1 text-xs font-bold text-[#62205f] hover:underline self-start sm:self-auto"
-            style={{ color: accentColor }}
-          >
-            <span>ورود به بخش دریافت شهریه</span>
-            <ChevronLeft className="w-4 h-4" />
-          </button>
+      {isSenior && schoolFinancialSummaries.length > 0 && <section className="bg-white rounded-2xl p-3 sm:p-4 border border-[#e5dde8] shadow-xs">
+        <h3 className="text-xs font-bold text-[#341648] mb-3">صورت‌وضعیت مدارس، به تفکیک</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {schoolFinancialSummaries.map(({ school, debt, expenses }) => <button key={school.id} onClick={() => setCurrentScreen('report')} className="text-right p-3 rounded-xl bg-[#fcfaff] border border-[#ede5ef] hover:border-purple-300">
+            <span className="block text-xs font-bold text-[#341648] truncate">{school.name}</span>
+            <span className="mt-1 flex flex-wrap gap-x-3 text-[10px] text-gray-500"><span>بدهی: <b className="text-rose-700">{formatRial(debt)} ریال</b></span><span>هزینه: <b className="text-purple-800">{formatRial(expenses)} ریال</b></span></span>
+          </button>)}
         </div>
+      </section>}
 
-        {topDebtors.length === 0 ? (
-          <div className="p-6 text-center text-xs text-gray-400 bg-[#fcfaff] rounded-2xl border border-[#ede5ef]">
-            خوشبختانه هیچ دانش‌آموزی در حال حاضر دارای بدهی معوقه نیست و تمامی حساب‌ها تسویه می‌باشند.
-          </div>
-        ) : (
-          <div className="space-y-2.5">
-            {topDebtors.map((item, idx) => {
-              const rankColors = [
-                'bg-rose-600 text-white',
-                'bg-rose-500 text-white',
-                'bg-amber-600 text-white',
-                'bg-amber-500 text-white',
-                'bg-gray-600 text-white',
-              ];
-              return (
-                <div
-                  key={item.student.id}
-                  className="p-3.5 sm:p-4 rounded-2xl border border-[#ede5ef] bg-[#fcfaff] hover:border-[#62205f]/40 hover:bg-white transition-all flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3"
-                >
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`w-7 h-7 rounded-xl flex items-center justify-center font-black font-mono text-xs shrink-0 shadow-xs ${
-                        rankColors[idx] || 'bg-gray-500 text-white'
-                      }`}
-                    >
-                      {idx + 1}
-                    </span>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-sm text-[#341648]">{item.student.name}</span>
-                        <span className="text-[11px] px-2 py-0.5 rounded-md bg-[#f2eaf3] text-[#62205f] font-semibold">
-                          پایه {item.student.grade}
-                        </span>
-                        {isSenior && (
-                          <span className="text-[11px] text-gray-400 font-medium">({item.student.school_name})</span>
-                        )}
-                      </div>
-                      <div className="text-xs text-gray-400 mt-1 flex flex-wrap gap-x-4">
-                        <span>کد ملی: <span className="font-mono text-gray-600">{item.student.national_id}</span></span>
-                        <span>
-                          تماس اولیا:{' '}
-                          <a
-                            href={`tel:${item.student.phone}`}
-                            className="font-mono text-blue-600 hover:underline inline-flex items-center gap-1"
-                            dir="ltr"
-                          >
-                            <PhoneCall className="w-3 h-3 inline" />
-                            {item.student.phone}
-                          </a>
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+      <section className="bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-indigo-500/10 border border-amber-300/50 rounded-2xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5"><span className="w-9 h-9 rounded-xl flex items-center justify-center text-white" style={{ backgroundColor: accentColor }}><Sparkles className="w-5 h-5 text-amber-300" /></span><div><h3 className="text-sm font-black text-[#341648]">صدور سریع فاکتور شهریه</h3><p className="text-[10px] text-gray-500">انتخاب دانش‌آموز و چاپ فاکتور</p></div></div>
+        <button onClick={() => setIsQuickInvoiceOpen(true)} className="w-full sm:w-auto px-4 py-2 rounded-xl text-white font-bold text-xs flex items-center justify-center gap-2" style={{ backgroundColor: accentColor }}><FileText className="w-4 h-4" />صدور فاکتور</button>
+      </section>
 
-                  <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-4 self-end sm:self-center border-t sm:border-t-0 pt-2 sm:pt-0 border-gray-100">
-                    <div className="text-right sm:text-left">
-                      <div className="text-[10px] text-gray-400">مانده بدهی:</div>
-                      <div className="text-sm sm:text-base font-black font-mono text-rose-700">
-                        {formatRial(item.debt)} ریال
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setInvoiceStudent(item.student)}
-                        className="px-3 py-1.5 rounded-xl border border-purple-200 bg-purple-50 hover:bg-purple-100 text-xs font-bold text-[#62205f] transition-all shadow-xs flex items-center gap-1"
-                        title="صدور آنی فاکتور رسمی"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>فاکتور</span>
-                      </button>
-                      <button
-                        onClick={() => setCurrentScreen('tuition')}
-                        className="px-3 py-1.5 rounded-xl border border-[#e5dde8] hover:border-[#62205f] bg-white text-xs font-bold text-[#62205f] hover:bg-purple-50 transition-all shadow-xs flex items-center gap-1"
-                      >
-                        <span>ثبت واریز</span>
-                        <ChevronLeft className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      {isSenior && <TuitionMonthlyChart transactions={relevantTxs} accentColor={accentColor} />}
 
-      {/* Alerts & Messages Banner */}
-      {(pendingCheques.length > 0 || dueSoonCheques.length > 0 || seniorMessages.length > 0) && (
-        <div className="space-y-3">
-          {isSenior && pendingCheques.length > 0 && (
-            <div
-              onClick={() => setCurrentScreen('cheques')}
-              className="cursor-pointer bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center justify-between text-amber-900 hover:bg-amber-100/70 transition-all shadow-xs"
-            >
-              <div className="flex items-center gap-3">
-                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
-                <span className="text-xs sm:text-sm font-bold">
-                  تعداد {pendingCheques.length} فقره چک صیادی در انتظار بررسی و تأیید کاربر ارشد است.
-                </span>
-              </div>
-              <span className="text-xs font-bold text-amber-700 bg-amber-200/60 px-3 py-1 rounded-xl">
-                بررسی چک‌ها ←
-              </span>
-            </div>
-          )}
-
-          {seniorMessages.length > 0 && (
-            <div className="bg-white border border-[#e5dde8] rounded-2xl p-4 shadow-xs">
-              <div className="text-xs font-bold text-[#62205f] flex items-center gap-1.5 mb-2.5" style={{ color: accentColor }}>
-                <Megaphone className="w-4 h-4" />
-                <span>پیام‌های مدیریت ارشد به مدارس</span>
-              </div>
-              <div className="space-y-2">
-                {seniorMessages.slice(0, 2).map((msg) => (
-                  <div key={msg.id} className="bg-[#fcfaff] p-3 rounded-xl border border-[#f0e8f2] text-xs">
-                    <p className="font-semibold text-[#302735] leading-relaxed">{msg.message}</p>
-                    <div className="text-[10px] text-gray-400 mt-1 flex justify-between">
-                      <span>{msg.author_name}</span>
-                      <span>{jalaliFromGregorian(msg.created_at)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+      <section className="bg-white rounded-2xl p-3 sm:p-4 border border-[#e5dde8] shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-2 mb-2 border-b border-[#f2eaf3]">
+          <div className="flex items-center gap-2"><AlertCircle className="w-5 h-5 text-rose-600" /><div><h3 className="text-sm font-bold text-[#341648]">فهرست بدهکاران ({debtors.length})</h3><p className="text-[10px] text-gray-400">مرتب‌سازی و پیگیری بدهی شهریه</p></div></div>
+          <label className="flex items-center gap-1.5 text-[10px] text-gray-500"><ArrowUpDown className="w-3.5 h-3.5" />مرتب‌سازی<select value={debtorSort} onChange={(e) => setDebtorSort(e.target.value as 'debt' | 'name')} className="px-2 py-1 rounded-lg border border-gray-200 bg-white text-[10px] font-bold text-[#341648]"><option value="debt">بیشترین بدهی</option><option value="name">نام دانش‌آموز</option></select></label>
         </div>
-      )}
+        {debtors.length === 0 ? <div className="p-5 text-center text-xs text-gray-400 bg-[#fcfaff] rounded-xl">دانش‌آموز بدهکار ثبت نشده است.</div> : <div className="max-h-96 overflow-y-auto divide-y divide-gray-100">
+          {debtors.map((item, idx) => <div key={item.student.id} className="py-2.5 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0"><span className="w-6 h-6 rounded-lg bg-rose-50 text-rose-700 flex items-center justify-center text-[10px] font-bold shrink-0">{idx + 1}</span><div className="min-w-0"><div className="flex flex-wrap items-center gap-x-2"><span className="text-xs font-bold text-[#341648]">{item.student.name}</span><span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f2eaf3] text-[#62205f]">پایه {item.student.grade}</span>{isSenior && <span className="text-[10px] text-gray-400">{item.student.school_name}</span>}</div><div className="text-[10px] text-gray-400 flex flex-wrap gap-x-3 mt-0.5"><span>کد ملی: {item.student.national_id}</span><a href={`tel:${item.student.phone}`} className="text-blue-600 flex items-center gap-1" dir="ltr"><PhoneCall className="w-3 h-3" />{item.student.phone}</a></div></div></div>
+            <div className="flex items-center gap-2"><span className="text-[11px] font-black text-rose-700">{formatRial(item.debt)} ریال</span><button onClick={() => setInvoiceStudent(item.student)} className="px-2 py-1 rounded-lg border border-purple-200 bg-purple-50 text-[10px] font-bold text-[#62205f]">فاکتور</button><button onClick={() => setCurrentScreen('tuition')} className="px-2 py-1 rounded-lg border border-[#e5dde8] bg-white text-[10px] font-bold text-[#62205f]">ثبت واریز</button></div>
+          </div>)}
+        </div>}
+      </section>
 
-      {/* Quick Invoice Issuance Modal */}
-      <QuickInvoiceModal
-        isOpen={isQuickInvoiceOpen}
-        onClose={() => setIsQuickInvoiceOpen(false)}
-        onIssueInvoice={(st) => setInvoiceStudent(st)}
-      />
+      {(isSenior && pendingCheques.length > 0 || dueSoonCheques.length > 0 || seniorMessages.length > 0) && <section className="space-y-2">
+        {isSenior && pendingCheques.length > 0 && <button onClick={() => setCurrentScreen('cheques')} className="w-full bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center justify-between text-amber-900 text-xs font-bold"><span className="flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-amber-600" />{pendingCheques.length} چک در انتظار بررسی</span><ChevronLeft className="w-4 h-4" /></button>}
+        {dueSoonCheques.length > 0 && <button onClick={() => setCurrentScreen('cheque_list')} className="w-full bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center justify-between text-blue-900 text-xs font-bold"><span>{dueSoonCheques.length} چک تأییدشده در ۱۰ روز آینده سررسید می‌شود</span><ChevronLeft className="w-4 h-4" /></button>}
+        {seniorMessages.length > 0 && <div className="bg-white border border-[#e5dde8] rounded-xl p-3"><div className="text-xs font-bold text-[#62205f] flex items-center gap-1.5 mb-2" style={{ color: accentColor }}><Megaphone className="w-4 h-4" />پیام‌های مدیریت ارشد</div><div className="space-y-2">{seniorMessages.slice(0, 2).map((msg) => <div key={msg.id} className="bg-[#fcfaff] p-2.5 rounded-lg border border-[#f0e8f2] text-[11px]"><p className="font-semibold text-[#302735] leading-relaxed">{msg.message}</p><div className="text-[10px] text-gray-400 mt-1 flex justify-between"><span>{msg.author_name}</span><span>{jalaliFromGregorian(msg.created_at)}</span></div></div>)}</div></div>}
+      </section>}
 
-      {/* Invoice Printable PDF Modal */}
-      {invoiceStudent && (
-        <InvoicePrintModal
-          student={invoiceStudent}
-          transactions={transactions}
-          balance={getStudentBalance(invoiceStudent.id).balance}
-          onClose={() => setInvoiceStudent(null)}
-        />
-      )}
+      <QuickInvoiceModal isOpen={isQuickInvoiceOpen} onClose={() => setIsQuickInvoiceOpen(false)} onIssueInvoice={(st) => setInvoiceStudent(st)} />
+      {invoiceStudent && <InvoicePrintModal student={invoiceStudent} transactions={transactions} balance={getStudentBalance(invoiceStudent.id).balance} onClose={() => setInvoiceStudent(null)} />}
     </div>
   );
 };

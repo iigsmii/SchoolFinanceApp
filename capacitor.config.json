@@ -1,6 +1,6 @@
 {
   "appId": "com.iigsmii.schoolfinance",
-  "appName": "امور مالی مدرسة القرآن شهرضا",
+  "appName": "سیستم مالی مدرسه القرآن",
   "webDir": "dist",
   "bundledWebRuntime": false,
   "server": {
