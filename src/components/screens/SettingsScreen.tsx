@@ -11,15 +11,14 @@ import {
   Check,
   Server,
   Cloud,
-  ExternalLink,
   ShieldCheck,
   AlertCircle,
   Database,
   Users,
   CreditCard,
   Receipt,
+  Lock,
 } from 'lucide-react';
-import { DEFAULT_SPREADSHEET_ID } from '../../services/googleSheets';
 
 const THEME_NAMES = [
   { name: 'بنفش سلطنتی (اصلی)', color: '#62205f' },
@@ -43,12 +42,8 @@ export const SettingsScreen: React.FC = () => {
     schools,
     currentUser,
     googleUser,
-    googleAccessToken,
     isConnectedToGoogleSheets,
     spreadsheetId,
-    setSpreadsheetId,
-    webAppUrl,
-    setWebAppUrl,
     syncStatus,
     syncError,
     lastSyncTime,
@@ -61,54 +56,29 @@ export const SettingsScreen: React.FC = () => {
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
   const [exportSchoolId, setExportSchoolId] = useState<number>(0);
   const [updateMsg, setUpdateMsg] = useState<string | null>(null);
-  const [inputSheetId, setInputSheetId] = useState(spreadsheetId);
-  const [inputWebAppUrl, setInputWebAppUrl] = useState(webAppUrl);
-  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
 
   const handleExportParsian = () => {
     exportParsianExcel(transactions, students, schools, exportSchoolId);
   };
 
   const handleCheckUpdate = () => {
-    setUpdateMsg('نسخه فعلی v2.15.0 آخرین نسخه پایدار سامانه مدرسة القرآن می‌باشد و نرم‌افزار به‌روز است.');
+    setUpdateMsg('نسخه فعلی v2.16.0 آخرین نسخه پایدار سامانه مدرسة القرآن می‌باشد و نرم‌افزار به‌روز است.');
     setTimeout(() => setUpdateMsg(null), 5000);
   };
 
-  const handleSaveSheetId = () => {
-    const clean = inputSheetId.trim();
-    if (!clean) return;
-    setSpreadsheetId(clean);
-    setSaveFeedback('شناسه گوگل شیت با موفقیت ذخیره شد.');
-    setTimeout(() => setSaveFeedback(null), 3000);
-  };
-
-  const handleSaveWebAppUrl = () => {
-    const clean = inputWebAppUrl.trim();
-    setWebAppUrl(clean);
-    setSaveFeedback('نشانی وب‌اپ گوگل ذخیره شد.');
-    setTimeout(() => setSaveFeedback(null), 3000);
-  };
-
-  const handleResetDefaultSheet = () => {
-    setInputSheetId(DEFAULT_SPREADSHEET_ID);
-    setSpreadsheetId(DEFAULT_SPREADSHEET_ID);
-    setSaveFeedback('شناسه شیت به شناسه اصلی سامانه مدرسة القرآن بازگردانده شد.');
-    setTimeout(() => setSaveFeedback(null), 3000);
-  };
-
   const handleManualSync = async () => {
-    await syncWithGoogleSheets(inputSheetId);
+    await syncWithGoogleSheets();
   };
 
   return (
-    <div className="min-h-screen bg-[#f8f5f9] pb-12">
+    <div className="w-full max-w-full min-h-screen overflow-x-hidden bg-[#f8f5f9] pb-12">
       <Header title="تنظیمات سامانه" />
 
-      <main className="max-w-4xl mx-auto px-4 py-6 space-y-5">
+      <main className="w-full max-w-4xl mx-auto px-4 py-6 space-y-5 box-border">
         {/* Check for updates banner matching Android */}
         <div className="bg-white rounded-3xl p-5 border border-[#e5dde8] shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div>
-            <div className="text-sm font-bold text-[#341648]">نسخه سامانه: v2.15.0 (پایگاه داده Google Sheets)</div>
+            <div className="text-sm font-bold text-[#341648]">نسخه سامانه: v2.16.0 (پایگاه داده Google Sheets)</div>
             <div className="text-xs text-gray-400 mt-0.5">یکپارچه‌سازی شده با پایگاه داده گوگل شیت و درایو اختصاصی مدرسة القرآن</div>
           </div>
           <button
@@ -201,53 +171,21 @@ export const SettingsScreen: React.FC = () => {
             </div>
           </div>
 
-          {/* Spreadsheet ID configuration */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-[#341648]">شناسه فایل Google Sheet (Spreadsheet ID):</label>
-              <button
-                type="button"
-                onClick={handleResetDefaultSheet}
-                className="text-[11px] text-purple-700 hover:underline font-medium"
-              >
-                بازنشانی به شناسه پیش‌فرض مدرسة القرآن
-              </button>
+          {/* Fixed backend configuration (read-only, locked in code) */}
+          <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 space-y-2">
+            <div className="text-xs font-bold text-amber-900 flex items-center gap-2">
+              <Lock className="w-4 h-4 text-amber-700" />
+              <span>تنظیمات اتصال قفل شده است و قابل تغییر توسط کاربر نیست</span>
             </div>
-
-            <div className="flex flex-col sm:flex-row gap-2">
-              <input
-                type="text"
-                value={inputSheetId}
-                onChange={(e) => setInputSheetId(e.target.value)}
-                placeholder="مثال: 1bFTL1edC-btgjp2KvvkwIM5WaJnycVFylTmFQQFRixk"
-                className="grow px-3.5 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-mono text-[#302735] focus:outline-hidden focus:border-purple-600 focus:ring-2 focus:ring-purple-600/20"
-                dir="ltr"
-              />
-              <button
-                type="button"
-                onClick={handleSaveSheetId}
-                className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-bold rounded-xl border border-gray-300 transition-all shrink-0"
-              >
-                ذخیره شناسه
-              </button>
-              <a
-                href={`https://docs.google.com/spreadsheets/d/${inputSheetId.trim()}`}
-                target="_blank"
-                rel="noreferrer"
-                className="px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-200 transition-all shrink-0 flex items-center justify-center gap-1.5"
-                title="مشاهده شیت در گوگل شیتس"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>باز کردن شیت</span>
-              </a>
-            </div>
-
-            {saveFeedback && (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center gap-2">
-                <Check className="w-4 h-4 text-emerald-600" />
-                <span>{saveFeedback}</span>
+            <p className="text-[11px] text-amber-800 leading-relaxed">
+              برای جلوگیری از خرابی و ناهمخوانی داده‌ها، شناسهٔ فایل گوگل شیت و نشانی سرویس Google Apps Script به‌صورت ثابت در کد برنامه تنظیم شده‌اند و از این صفحه قابل ویرایش نیستند.
+            </p>
+            <div className="text-[11px] text-gray-600 space-y-1 pt-1" dir="ltr">
+              <div className="text-right">
+                <span className="font-bold text-gray-700">Spreadsheet ID:</span>{' '}
+                <span className="font-mono break-all">{spreadsheetId}</span>
               </div>
-            )}
+            </div>
           </div>
 
           {/* Sync action button & Stats */}
@@ -318,37 +256,6 @@ export const SettingsScreen: React.FC = () => {
                 </div>
               </div>
             )}
-          </div>
-
-          {/* Apps Script Web App Endpoint Alternative */}
-          <div className="pt-2 border-t border-gray-100">
-            <details className="text-xs text-gray-600 group">
-              <summary className="font-bold text-[#341648] cursor-pointer hover:text-purple-700 flex items-center gap-2 select-none">
-                <span>➕ تنظیمات پیشرفته نشانی Google Apps Script Web App (اختیاری)</span>
-              </summary>
-              <div className="mt-3 p-4 bg-gray-50 rounded-2xl border border-gray-200 space-y-3">
-                <p className="text-[11px] text-gray-500 leading-relaxed">
-                  اگر اسکریپت <code className="bg-gray-200 px-1 py-0.5 rounded font-mono">SchoolFinanceApp_GoogleAppsScript_FINAL.gs</code> را در Extensions &gt; Apps Script منتشر کرده‌اید، می‌توانید آدرس /exec را در زیر وارد کنید:
-                </p>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <input
-                    type="text"
-                    value={inputWebAppUrl}
-                    onChange={(e) => setInputWebAppUrl(e.target.value)}
-                    placeholder="https://script.google.com/macros/s/.../exec"
-                    className="grow px-3 py-2 bg-white rounded-xl border border-gray-300 text-xs font-mono"
-                    dir="ltr"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSaveWebAppUrl}
-                    className="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white rounded-xl text-xs font-bold"
-                  >
-                    ذخیره نشانی
-                  </button>
-                </div>
-              </div>
-            </details>
           </div>
         </div>
 
@@ -463,7 +370,7 @@ export const SettingsScreen: React.FC = () => {
             <Server className="w-4 h-4 text-[#62205f]" style={{ color: accentColor }} />
             <span>مشخصات فنی و زیرساخت ابری</span>
           </div>
-          <div>پایگاه داده زنده: Google Sheets (شناسه: {spreadsheetId})</div>
+          <div>پایگاه داده زنده: Google Sheets (شناسه ثابت و قفل‌شده در کد برنامه)</div>
           <div>احراز هویت و امنیت: Google Workspace OAuth 2.0 و رمزنگاری AES-GCM</div>
           <div>پیوست‌ها و اسناد: Google Drive Folder (SchoolFinanceApp_Attachments)</div>
         </div>
