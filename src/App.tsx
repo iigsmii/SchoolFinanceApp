@@ -4,6 +4,10 @@ import { LoginScreen } from './components/screens/LoginScreen';
 import { DashboardScreen } from './components/screens/DashboardScreen';
 import { StudentsScreen } from './components/screens/StudentsScreen';
 import { TuitionScreen } from './components/screens/TuitionScreen';
+import { PaymentsReceivedScreen } from './components/screens/PaymentsReceivedScreen';
+import { FinancialStatementScreen } from './components/screens/FinancialStatementScreen';
+import { DebtorsScreen } from './components/screens/DebtorsScreen';
+import { QuickInvoiceScreen } from './components/screens/QuickInvoiceScreen';
 import { ChequesScreen } from './components/screens/ChequesScreen';
 import { ExpensesScreen } from './components/screens/ExpensesScreen';
 import { TransactionsScreen } from './components/screens/TransactionsScreen';
@@ -19,7 +23,7 @@ import { SettingsScreen } from './components/screens/SettingsScreen';
 import { SmsScreen } from './components/screens/SmsScreen';
 import { StaffScreen } from './components/screens/StaffScreen';
 import { PWAUpdatePrompt } from './components/PWAUpdatePrompt';
-import { LogOut, X, AlertTriangle } from 'lucide-react';
+import { LogOut, AlertTriangle } from 'lucide-react';
 
 export const App: React.FC = () => {
   const {
@@ -91,6 +95,14 @@ export const App: React.FC = () => {
         return <StudentsScreen />;
       case 'tuition':
         return <TuitionScreen />;
+      case 'payments_received':
+        return <PaymentsReceivedScreen />;
+      case 'statement':
+        return <FinancialStatementScreen />;
+      case 'debtors':
+        return <DebtorsScreen />;
+      case 'quick_invoice':
+        return <QuickInvoiceScreen />;
       case 'cheques':
         return <ChequesScreen initialMode="review" />;
       case 'cheque_list':
@@ -99,8 +111,6 @@ export const App: React.FC = () => {
         return <ExpensesScreen />;
       case 'transactions':
         return <TransactionsScreen />;
-      case 'statement':
-        return <StatementScreen />;
       case 'claim':
         return <MyClaimScreen />;
       case 'report':
