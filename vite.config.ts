@@ -10,7 +10,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['apple-touch-icon.png', 'icon.svg', 'app-logo.jpg', 'pwa-192x192.png', 'pwa-512x512.png'],
+      includeAssets: ['apple-touch-icon.png', 'icon.svg', 'app-logo.jpg'],
       manifest: {
         id: '/',
         name: 'سیستم مالی مدرسه القرآن',
@@ -23,26 +23,29 @@ export default defineConfig({
         scope: '/',
         icons: [
           {
-            src: '/pwa-192x192.png',
-            sizes: '192x192',
-            type: 'image/png',
+            src: '/icon.svg',
+            sizes: 'any',
+            type: 'image/svg+xml',
             purpose: 'any',
           },
           {
-            src: '/pwa-512x512.png',
+            src: '/icon.svg',
             sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any',
-          },
-          {
-            src: '/pwa-maskable-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
+            type: 'image/svg+xml',
             purpose: 'maskable',
+          },
+          {
+            src: '/app-logo.jpg',
+            sizes: '512x512',
+            type: 'image/jpeg',
+            purpose: 'any',
           },
         ],
       },
       workbox: {
+        cleanupOutdatedCaches: true,
+        skipWaiting: true,
+        clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,jpg,jpeg}'],
         runtimeCaching: [
           {
