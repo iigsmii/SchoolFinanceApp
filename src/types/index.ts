@@ -20,4 +20,5 @@ export type ScreenType =
   | 'export'
   | 'messages'
   | 'sms_reminders'
+  | 'sms_batch'
   | 'staff';
