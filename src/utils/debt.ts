@@ -11,8 +11,32 @@ export interface OverdueStudentInfo {
   formattedMessage: string;
 }
 
+/**
+ * Default reminder template.
+ *
+ * IMPORTANT: keep the Latin placeholder tokens ({name}, {school}, {amount}, {days}).
+ * The send paths in AppContext/SmsScreen replace those exact tokens. Persian
+ * spellings of the same tokens are also supported by fillSmsTemplate() below, so
+ * user-edited templates written either way still work.
+ */
 export const DEFAULT_SMS_TEMPLATE =
-  'اولیا محترم دانش‌آموز {نام_دانش‌آموز}، با سلام. مانده شهریه معوقه به مبلغ {مبلغ} ریال بیش از {تعداد_روز} روز است که از سررسید گذشته است. خواهشمند است جهت تسویه حساب به امور مالی {نام_مدرسه} مراجعه فرمایید.';
+  'اولیا محترم دانش‌آموز {name}، با سلام. مانده شهریه معوقه به مبلغ {amount} ریال بیش از {days} روز است که از سررسید گذشته است. خواهشمند است جهت تسویه حساب به امور مالی {school} مراجعه فرمایید.';
+
+/**
+ * Replaces every supported placeholder spelling with its value.
+ * Supports both the Latin tokens used in code and the Persian tokens that
+ * existed in older saved templates, so previously saved templates keep working.
+ */
+export function fillSmsTemplate(
+  template: string,
+  values: { name: string; school: string; amount: string; days: string }
+): string {
+  return String(template || '')
+    .replace(/\{name\}|\{نام_دانش‌آموز\}|\{نام_دانش آموز\}|\{نام\}|\{دانش‌آموز\}/g, values.name)
+    .replace(/\{school\}|\{نام_مدرسه\}|\{نام مدرسه\}|\{مدرسه\}/g, values.school)
+    .replace(/\{amount\}|\{مبلغ\}|\{مبلغ_بدهی\}|\{بدهی\}/g, values.amount)
+    .replace(/\{days\}|\{تعداد_روز\}|\{تعداد روز\}|\{روز\}/g, values.days);
+}
 
 export function calculateStudentOverdue(
   student: Student,
@@ -66,11 +90,12 @@ export function calculateStudentOverdue(
   const isOverdue30Days = overdueDays >= 30;
 
   const tmpl = template || DEFAULT_SMS_TEMPLATE;
-  const formattedMessage = tmpl
-    .replace(/{نام_دانش‌آموز}/g, student.name)
-    .replace(/{مبلغ}/g, formatRial(balance))
-    .replace(/{تعداد_روز}/g, overdueDays.toLocaleString('fa-IR'))
-    .replace(/{نام_مدرسه}/g, student.school_name || 'مدرسه');
+  const formattedMessage = fillSmsTemplate(tmpl, {
+    name: student.name,
+    school: student.school_name || 'مدرسه',
+    amount: formatRial(balance),
+    days: overdueDays.toLocaleString('fa-IR'),
+  });
 
   return {
     student,
