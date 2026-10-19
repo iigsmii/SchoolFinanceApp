@@ -721,6 +721,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateStudent = (id: number, data: Partial<Student>) => {
+    let updatedStudent: Student | null = null;
+
     setStudents((prev) =>
       prev.map((s) => {
         if (s.id !== id) return s;
@@ -732,16 +734,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const sc = schools.find((x) => x.id === sid);
           if (sc) updated.school_name = sc.name;
         }
+        updatedStudent = updated;
         return updated;
       })
     );
+
     logActivity('ویرایش دانش‌آموز', `ویرایش اطلاعات دانش‌آموز شناسه ${id}`, 'student', id);
+
+    // Sync with Google Sheets
+    if (googleAccessToken && updatedStudent) {
+      const st = updatedStudent as Student;
+      appendSheetRow(googleAccessToken, spreadsheetId, 'Students', [
+        st.id,
+        st.name,
+        st.grade,
+        st.phone,
+        st.national_id,
+        st.school_id,
+        '67',
+        schools.find((x) => x.id === st.school_id)?.moeen_code || '1',
+        st.national_id,
+        st.active,
+        new Date().toISOString(),
+      ]).catch((err) => console.warn('Cloud sheet update student failed:', err));
+    }
   };
 
   const deleteStudent = (id: number) => {
     const student = students.find((s) => s.id === id);
     setStudents((prev) => prev.filter((s) => s.id !== id));
     logActivity('حذف دانش‌آموز', `حذف دانش‌آموز ${student?.name || id}`, 'student', id);
+
+    // Sync with Google Sheets (soft delete)
+    if (googleAccessToken && student) {
+      appendSheetRow(googleAccessToken, spreadsheetId, 'Students', [
+        student.id,
+        student.name,
+        student.grade,
+        student.phone,
+        student.national_id,
+        student.school_id,
+        '67',
+        schools.find((x) => x.id === student.school_id)?.moeen_code || '1',
+        student.national_id,
+        false,
+        new Date().toISOString(),
+      ]).catch((err) => console.warn('Cloud sheet delete student failed:', err));
+    }
   };
 
   const importStudents = (newStudents: Array<Omit<Student, 'id' | 'parsian_code'>>) => {
@@ -778,6 +817,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setStudents((prev) => [...addedList, ...prev]);
     logActivity('ورود گروهی دانش‌آموزان', `افزودن ${added} دانش‌آموز، ${skipped} تکراری، ${invalid} نامعتبر`);
+
+    // Sync bulk imports with Google Sheets
+    if (googleAccessToken && addedList.length > 0) {
+      addedList.forEach((newSt) => {
+        appendSheetRow(googleAccessToken, spreadsheetId, 'Students', [
+          newSt.id,
+          newSt.name,
+          newSt.grade,
+          newSt.phone,
+          newSt.national_id,
+          newSt.school_id,
+          '67',
+          schools.find((x) => x.id === newSt.school_id)?.moeen_code || '1',
+          newSt.national_id,
+          true,
+          newSt.created_at,
+        ]).catch((err) => console.warn('Cloud sheet import student failed:', err));
+      });
+    }
+
     return { added, skipped, invalid };
   };
 
