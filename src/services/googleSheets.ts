@@ -90,56 +90,6 @@ export const appendSheetRow = async (
   return true;
 };
 
-// Update an existing row in a sheet based on the ID in column A
-export const updateSheetRow = async (
-  accessToken: string,
-  spreadsheetId: string,
-  sheetName: string,
-  id: string | number,
-  rowValues: any[]
-): Promise<boolean> => {
-  try {
-    // 1. Fetch only the first column to find the row number of the given ID
-    const range = `${sheetName}!A:A`;
-    const rows = await fetchSheetRange(accessToken, spreadsheetId, range);
-    
-    // 2. Find the row index (The ID is usually in the first column, so row[0])
-    const rowIndex = rows.findIndex((row) => String(row[0]) === String(id));
-
-    // If the row is not found, we cannot update. (You might want to append instead)
-    if (rowIndex === -1) {
-      console.warn(`Row with ID ${id} not found in sheet ${sheetName}. Appending as new row instead.`);
-      return appendSheetRow(accessToken, spreadsheetId, sheetName, rowValues);
-    }
-
-    // 3. Google Sheets API uses 1-based indexing for row numbers
-    const rowNumber = rowIndex + 1;
-    const updateRange = encodeURIComponent(`${sheetName}!A${rowNumber}`);
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${updateRange}?valueInputOption=USER_ENTERED`;
-
-    // 4. Send PUT request to update the row
-    const response = await fetch(url, {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        values: [rowValues],
-      }),
-    });
-
-    if (!response.ok) {
-      const errorBody = await response.json().catch(() => ({}));
-      throw new Error(errorBody?.error?.message || `خطا در بروزرسانی شیت (${response.status})`);
-    }
-    return true;
-  } catch (error) {
-    console.error('Error updating sheet row:', error);
-    throw error;
-  }
-};
-
 // Load and parse all school accounting data from the user's Google Sheet
 export const loadAccountingDataFromGoogleSheets = async (
   accessToken: string,
