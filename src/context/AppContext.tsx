@@ -45,6 +45,7 @@ import {
   loadAccountingDataFromGoogleSheets,
   loadDataFromAppsScript,
   appendSheetRow,
+  updateSheetRow, // <-- اضافه شد
   loadDataFromExcelFile,
   loadDataFromPublicGoogleSheet,
 } from '../services/googleSheets';
@@ -57,14 +58,10 @@ import {
 } from '../utils/soundEffects';
 
 interface AppContextType {
-  // Official Signature
   managerSignature: string | null;
   setManagerSignature: (sig: string | null) => void;
-
-  // Sound effects
   soundEnabled: boolean;
   setSoundEnabled: (en: boolean) => void;
-
   currentUser: User | null;
   setCurrentUser: (u: User | null) => void;
   currentScreen: ScreenType;
@@ -74,7 +71,6 @@ interface AppContextType {
   fontScale: number;
   setFontScale: (scale: number) => void;
   accentColor: string;
-
   schools: School[];
   users: User[];
   students: Student[];
@@ -94,8 +90,6 @@ interface AppContextType {
   sendSmsReminder: (studentId: number, customMessage?: string) => { success: boolean; message: string; log: SmsLog };
   sendBatchSmsReminders: (studentIds?: number[]) => { sentCount: number; failedCount: number };
   clearSmsLogs: () => void;
-
-  // Google Sheets & Cloud Connection
   googleUser: any;
   googleAccessToken: string | null;
   isConnectedToGoogleSheets: boolean;
@@ -110,14 +104,10 @@ interface AppContextType {
   disconnectGoogle: () => Promise<void>;
   syncWithGoogleSheets: (targetSheetId?: string) => Promise<boolean>;
   syncStats: { studentsCount: number; transactionsCount: number; chequesCount: number; expensesCount: number } | null;
-
-  // Student ops
   addStudent: (data: Omit<Student, 'id' | 'parsian_code'>) => Student;
   updateStudent: (id: number, data: Partial<Student>) => void;
   deleteStudent: (id: number) => void;
   importStudents: (newStudents: Array<Omit<Student, 'id' | 'parsian_code'>>) => { added: number; skipped: number; invalid: number };
-
-  // Tuition & Transactions ops
   addTuitionDebt: (data: { student_id: number; amount: number; date: string; description: string; school_id?: number }) => Transaction;
   addTuitionPayment: (data: {
     student_id: number;
@@ -141,8 +131,6 @@ interface AppContextType {
   addBulkDebt: (data: { student_ids: number[]; amount: number; date: string; description: string; school_id: number }) => number;
   deleteTransaction: (id: number) => void;
   updateTransaction: (id: number, data: Partial<Transaction>) => void;
-
-  // Expense ops
   addExpense: (data: {
     category_id: string;
     amount: number;
@@ -157,44 +145,28 @@ interface AppContextType {
   updateExpense: (id: number, data: Partial<Transaction>) => void;
   addCategory: (name: string) => void;
   toggleCategory: (id: string, active: boolean) => void;
-
-  // Cheque ops
   reviewCheque: (id: number, action: 'receive' | 'favor' | 'reject') => { success: boolean; status: string; message: string };
   addDirectCheque: (cheque: Omit<Cheque, 'id'>) => Cheque;
   deleteCheque: (id: number) => void;
   updateCheque: (id: number, data: Partial<Cheque>) => void;
-
-  // Offline & Public Sheet import
   loadOfflineExcel: (file: File) => Promise<boolean>;
   loadPublicSheet: (spreadsheetId?: string) => Promise<boolean>;
-
-  // Navigation & Hardware Back History
   screenHistory: ScreenType[];
   goBack: () => void;
   showExitModal: boolean;
   setShowExitModal: (show: boolean) => void;
-
-  // Bank reconciliation ops
   reconcileBank: () => { matched: number; unmatched: number };
   manualReviewTransaction: (id: number, approve: boolean, note?: string) => void;
   importBankTransactions: (txs: Array<Omit<BankTransaction, 'id' | 'reconciled'>>) => number;
-
-  // Managers & Schools ops
   addManager: (m: Omit<User, 'id'>) => void;
   updateManager: (id: number, m: Partial<User>) => void;
   deleteManager: (id: number) => void;
   addSchool: (s: Omit<School, 'id'>) => void;
   updateSchool: (id: number, s: Partial<School>) => void;
   deleteSchool: (id: number) => void;
-
-  // Senior message ops
   addSeniorMessage: (msg: string) => void;
   deleteSeniorMessage: (id: string) => void;
-
-  // Student balance calc
   getStudentBalance: (studentId: number) => { balance: number; debt: number; credit: number };
-
-  // Staff & Teachers & Payroll ops
   staffMembers: StaffMember[];
   staffWorkLogs: StaffWorkLog[];
   payrollPayments: PayrollPayment[];
@@ -216,19 +188,17 @@ interface AppContextType {
     insuranceEmployee: number;
     netPayable: number;
   };
-
-  // Auth
   login: (username: string, pass?: string) => boolean;
   logout: () => void;
 }
 
 const THEME_ACCENTS = [
-  '#62205f', // 0: Plum / Original
-  '#3f51b5', // 1: Indigo / Blue
-  '#7b3082', // 2: Violet / Purple
-  '#a85213', // 3: Amber / Saffron
-  '#2c6c4b', // 4: Emerald / Green
-  '#146a67', // 5: Teal / Dark Green
+  '#62205f',
+  '#3f51b5',
+  '#7b3082',
+  '#a85213',
+  '#2c6c4b',
+  '#146a67',
 ];
 
 export const DEFAULT_SMS_CONFIG: SmsConfig = {
@@ -265,7 +235,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [themeIndex, setThemeIndexState] = useState<number>(() => loadFromStorage('theme_index', 0));
   const [fontScale, setFontScaleState] = useState<number>(() => loadFromStorage('font_scale', 1));
 
-  // Signature state
   const [managerSignature, setManagerSignatureState] = useState<string | null>(() =>
     loadFromStorage('signature', null)
   );
@@ -274,7 +243,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     saveToStorage('signature', sig);
   };
 
-  // Sound effects state
   const [soundEnabled, setSoundEnabledState] = useState<boolean>(() => isSoundEnabled());
   const setSoundEnabled = (en: boolean) => {
     setSoundEnabledState(en);
@@ -314,7 +282,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [screenHistory, setScreenHistory] = useState<ScreenType[]>([]);
   const [showExitModal, setShowExitModal] = useState<boolean>(false);
 
-  // Initialize browser history trap on mount so hardware back button does not abruptly exit
   useEffect(() => {
     try {
       window.history.replaceState({ screen: 'dashboard', root: true }, '', '');
@@ -394,12 +361,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [smsTemplate, setSmsTemplateState] = useState<string>(() => loadFromStorage('sms_template', DEFAULT_SMS_TEMPLATE));
   const [smsConfig, setSmsConfigState] = useState<SmsConfig>(() => loadFromStorage('sms_config', DEFAULT_SMS_CONFIG));
 
-  // Staff, Teachers & Payroll State
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>(() => loadFromStorage('staff_members', INITIAL_STAFF));
   const [staffWorkLogs, setStaffWorkLogs] = useState<StaffWorkLog[]>(() => loadFromStorage('staff_work_logs', INITIAL_WORK_LOGS));
   const [payrollPayments, setPayrollPayments] = useState<PayrollPayment[]>(() => loadFromStorage('payroll_payments', INITIAL_PAYROLL));
 
-  // Google Sheets & Cloud Connection State
   const [googleUser, setGoogleUser] = useState<any>(null);
   const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(null);
   const [spreadsheetId, setSpreadsheetIdState] = useState<string>(() =>
@@ -462,7 +427,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const isConnectedToGoogleSheets = !!(googleAccessToken || (webAppUrl && syncStats));
   const accentColor = THEME_ACCENTS[themeIndex] || THEME_ACCENTS[0];
 
-  // Initialize Firebase Auth listener
   useEffect(() => {
     const unsubscribe = initAuth(
       (user, token) => {
@@ -570,7 +534,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setGoogleUser(res.user);
       setGoogleAccessToken(res.accessToken);
 
-      // Load data from Google Sheets immediately
       const syncResult = await loadAccountingDataFromGoogleSheets(res.accessToken, spreadsheetId);
       if (syncResult.success) {
         if (syncResult.students.length > 0) setStudents(syncResult.students);
@@ -621,7 +584,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSyncStatus('syncing');
     setSyncError(null);
 
-    // If webAppUrl is provided and no google token, sync via webAppUrl
     if (webAppUrl && !googleAccessToken) {
       try {
         const result = await loadDataFromAppsScript(webAppUrl);
@@ -649,7 +611,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       token = await getAccessToken();
     }
     if (!token) {
-      // Trigger sign-in popup
       return await connectWithGoogle();
     }
 
@@ -700,7 +661,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setStudents((prev) => [newStudent, ...prev]);
     logActivity('افزودن دانش‌آموز', `ثبت دانش‌آموز ${newStudent.name} در ${newStudent.school_name}`, 'student', newId);
 
-    // If connected to Google Sheets, append row directly to cloud sheet
     if (googleAccessToken) {
       appendSheetRow(googleAccessToken, spreadsheetId, 'Students', [
         newStudent.id,
@@ -741,10 +701,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     logActivity('ویرایش دانش‌آموز', `ویرایش اطلاعات دانش‌آموز شناسه ${id}`, 'student', id);
 
-    // Sync with Google Sheets
     if (googleAccessToken && updatedStudent) {
       const st = updatedStudent as Student;
-      appendSheetRow(googleAccessToken, spreadsheetId, 'Students', [
+      updateSheetRow(googleAccessToken, spreadsheetId, 'Students', st.id, [
         st.id,
         st.name,
         st.grade,
@@ -765,9 +724,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setStudents((prev) => prev.filter((s) => s.id !== id));
     logActivity('حذف دانش‌آموز', `حذف دانش‌آموز ${student?.name || id}`, 'student', id);
 
-    // Sync with Google Sheets (soft delete)
     if (googleAccessToken && student) {
-      appendSheetRow(googleAccessToken, spreadsheetId, 'Students', [
+      updateSheetRow(googleAccessToken, spreadsheetId, 'Students', student.id, [
         student.id,
         student.name,
         student.grade,
@@ -818,7 +776,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setStudents((prev) => [...addedList, ...prev]);
     logActivity('ورود گروهی دانش‌آموزان', `افزودن ${added} دانش‌آموز، ${skipped} تکراری، ${invalid} نامعتبر`);
 
-    // Sync bulk imports with Google Sheets
     if (googleAccessToken && addedList.length > 0) {
       addedList.forEach((newSt) => {
         appendSheetRow(googleAccessToken, spreadsheetId, 'Students', [
@@ -1460,7 +1417,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSmsLogs([]);
   };
 
-  // Staff & Teachers operations
   const addStaffMember = (staffData: Omit<StaffMember, 'id'>): StaffMember => {
     const newId = staffMembers.length > 0 ? Math.max(...staffMembers.map((s) => s.id)) + 1 : 1;
     const school = schools.find((sc) => sc.id === staffData.school_id);
@@ -1544,7 +1500,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } else if (staff.contract_type === 'session') {
       gross += (totalSessions * hourlyRate) + (totalHours * hourlyRate);
     } else {
-      // monthly
       gross += (totalOvertime * (hourlyRate || Math.round(baseSalary / 160)) * 1.4);
     }
 
@@ -1578,7 +1533,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setPayrollPayments((prev) => [newPayment, ...prev]);
 
-    // Also record automatically as an Expense in school accounting
     const expenseTitle = paymentData.payment_type === 'salary'
       ? `پرداخت حقوق ${newPayment.month_name} - ${newPayment.staff_name}`
       : paymentData.payment_type === 'insurance'
@@ -1613,7 +1567,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const found = users.find((u) => u.username.toLowerCase() === cleanUser && u.active);
 
     if (found) {
-      // If user has a password defined in Google Sheets
       if (found.password && found.password.trim() !== '') {
         if (!pass || pass.trim() === '') {
           return false;
@@ -1631,7 +1584,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return true;
     }
 
-    // Fallback: if username is 'admin', log in as senior admin
     if (cleanUser === 'admin') {
       const senior = users[0];
       if (senior?.password && senior.password.trim() !== '') {
