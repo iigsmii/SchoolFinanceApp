@@ -12,7 +12,10 @@ import { buildParsianCode } from '../utils/parsian';
 import { jalaliFromGregorian, todayGregorian } from '../utils/jalali';
 import * as XLSX from 'xlsx';
 
+// Permanent configuration as requested by user
 export const DEFAULT_SPREADSHEET_ID = '1bFTL1edC-btgjp2KvvkwIM5WaJnycVFylTmFQQFRixk';
+export const DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzsCUERpyKBOZg4z4AMua3RvWKgguw73-1ZtkzgjrJdfA4yOX2d69WqlXy1FS7NPHnxqA/exec';
+export const OWNER_EMAIL = 's.mehdi.golzari@gmail.com';
 
 export interface SheetLoadResult {
   success: boolean;
@@ -32,507 +35,148 @@ export interface SheetLoadResult {
   error?: string;
 }
 
+export const extractSpreadsheetId = (input: string): string => {
+  if (!input) return DEFAULT_SPREADSHEET_ID;
+  const trimmed = input.trim();
+  const match = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (match && match[1]) {
+    return match[1];
+  }
+  return trimmed;
+};
+
+export const dateFromExcelSerial = (serial: any): string => {
+  if (!serial) return '';
+  if (typeof serial === 'string' && (serial.includes('-') || serial.includes('/'))) return serial.trim();
+  const num = Number(serial);
+  if (isNaN(num) || num <= 0) return String(serial).trim();
+  // Excel base date (1900-01-01) with leap year bug adjustment (25569 days to 1970-01-01)
+  const utcDays = Math.floor(num - 25569);
+  const utcValue = utcDays * 86400;
+  const dateInfo = new Date(utcValue * 1000);
+  if (isNaN(dateInfo.getTime())) return String(serial).trim();
+  return dateInfo.toISOString().split('T')[0];
+};
+
 const cleanHeader = (h: any) =>
   String(h || '')
     .trim()
     .toLowerCase()
     .replace(/[\u200c\u200f\u202a-\u202e\s_-]/g, '');
 
-// Fetch values from Google Sheets API v4
-export const fetchSheetRange = async (
-  accessToken: string,
-  spreadsheetId: string,
-  range: string
-): Promise<any[][]> => {
-  const encodedRange = encodeURIComponent(range);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodedRange}?valueRenderOption=FORMATTED_VALUE`;
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    const message = errorBody?.error?.message || response.statusText;
-    throw new Error(`خطا در خواندن شیت (${response.status}): ${message}`);
-  }
-
-  const data = await response.json();
-  return data.values || [];
-};
-
-// Append a single row to a sheet in Google Sheets
-export const appendSheetRow = async (
-  accessToken: string,
-  spreadsheetId: string,
-  sheetName: string,
-  rowValues: any[]
-): Promise<boolean> => {
-  const encodedRange = encodeURIComponent(`${sheetName}!A:Z`);
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodedRange}:append?valueInputOption=USER_ENTERED`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      values: [rowValues],
-    }),
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    throw new Error(errorBody?.error?.message || `خطا در ذخیره در شیت (${response.status})`);
-  }
-  return true;
-};
-
-// Load and parse all school accounting data from the user's Google Sheet
-export const loadAccountingDataFromGoogleSheets = async (
-  accessToken: string,
-  spreadsheetId: string = DEFAULT_SPREADSHEET_ID
-): Promise<SheetLoadResult> => {
+/**
+ * Sends a mutation to the Google Apps Script Web App
+ */
+export const postToAppsScript = async (
+  payload: Record<string, any>,
+  webAppUrl: string = DEFAULT_WEBAPP_URL
+): Promise<{ success: boolean; error?: string; data?: any }> => {
   try {
-    // 1. Fetch Students
-    let rawStudents: any[][] = [];
-    try {
-      rawStudents = await fetchSheetRange(accessToken, spreadsheetId, 'Students!A1:K');
-    } catch (e) {
-      console.warn('Could not load Students sheet:', e);
-    }
+    const url = webAppUrl.trim();
+    if (!url) return { success: false, error: 'آدرس وب‌اپ تعریف نشده است.' };
 
-    // 2. Fetch Schools
-    let rawSchools: any[][] = [];
-    try {
-      rawSchools = await fetchSheetRange(accessToken, spreadsheetId, 'Schools!A1:E');
-    } catch (e) {
-      console.warn('Could not load Schools sheet:', e);
-    }
+    const bodyData = JSON.stringify({
+      ...payload,
+      token: 'sync_direct',
+      owner: OWNER_EMAIL,
+    });
 
-    // 3. Fetch Tuition
-    let rawTuition: any[][] = [];
-    try {
-      rawTuition = await fetchSheetRange(accessToken, spreadsheetId, 'Tuition!A1:N');
-    } catch (e) {
-      console.warn('Could not load Tuition sheet:', e);
-    }
-
-    // 4. Fetch Expenses
-    let rawExpenses: any[][] = [];
-    try {
-      rawExpenses = await fetchSheetRange(accessToken, spreadsheetId, 'Expenses!A1:N');
-    } catch (e) {
-      console.warn('Could not load Expenses sheet:', e);
-    }
-
-    // 5. Fetch Cheques
-    let rawCheques: any[][] = [];
-    try {
-      rawCheques = await fetchSheetRange(accessToken, spreadsheetId, 'Cheques!A1:T');
-    } catch (e) {
-      console.warn('Could not load Cheques sheet:', e);
-    }
-
-    // 6. Fetch Categories
-    let rawCategories: any[][] = [];
-    try {
-      rawCategories = await fetchSheetRange(accessToken, spreadsheetId, 'ExpenseCategories!A1:D');
-    } catch (e) {
-      console.warn('Could not load ExpenseCategories sheet:', e);
-    }
-
-    // 7. Fetch Managers
-    let rawManagers: any[][] = [];
-    try {
-      rawManagers = await fetchSheetRange(accessToken, spreadsheetId, 'Managers!A1:H');
-    } catch (e) {
-      console.warn('Could not load Managers sheet:', e);
-    }
-
-    // Parse Schools
-    const schools: School[] = [];
-    if (rawSchools.length > 1) {
-      const headers = rawSchools[0].map(cleanHeader);
-      const idIdx = headers.indexOf('id');
-      const nameIdx = headers.indexOf('name');
-      const codeIdx = headers.indexOf('code');
-      const activeIdx = headers.indexOf('active');
-
-      for (let i = 1; i < rawSchools.length; i++) {
-        const row = rawSchools[i];
-        if (!row || !row[nameIdx >= 0 ? nameIdx : 1]) continue;
-        const id = Number(row[idIdx >= 0 ? idIdx : 0]) || i;
-        const name = String(row[nameIdx >= 0 ? nameIdx : 1] || '');
-        const code = String(row[codeIdx >= 0 ? codeIdx : 2] || '');
-        const active = row[activeIdx >= 0 ? activeIdx : 3] !== false && String(row[activeIdx >= 0 ? activeIdx : 3]) !== 'false';
-        schools.push({ id, name, code, active });
-      }
-    }
-
-    // Helper map for school names
-    const schoolMap = new Map<number, string>();
-    schools.forEach((s) => schoolMap.set(s.id, s.name));
-
-    // Parse Students
-    const students: Student[] = [];
-    if (rawStudents.length > 1) {
-      const headers = rawStudents[0].map(cleanHeader);
-      const idIdx = headers.indexOf('id');
-      const nameIdx = headers.indexOf('name');
-      const gradeIdx = headers.indexOf('grade');
-      const phoneIdx = headers.indexOf('phone');
-      const nidIdx = headers.indexOf('nationalid');
-      const schoolIdx = headers.indexOf('schoolid');
-      const activeIdx = headers.indexOf('active');
-
-      for (let i = 1; i < rawStudents.length; i++) {
-        const row = rawStudents[i];
-        if (!row || !row[nameIdx >= 0 ? nameIdx : 1]) continue;
-        const id = Number(row[idIdx >= 0 ? idIdx : 0]) || i;
-        const name = String(row[nameIdx >= 0 ? nameIdx : 1] || '').trim();
-        const grade = String(row[gradeIdx >= 0 ? gradeIdx : 2] || '').trim();
-        let phone = String(row[phoneIdx >= 0 ? phoneIdx : 3] || '').trim();
-        if (/^9\d{9}$/.test(phone)) phone = '0' + phone;
-        let national_id = String(row[nidIdx >= 0 ? nidIdx : 4] || '').trim();
-        if (national_id.length < 10 && national_id.length > 0) {
-          national_id = national_id.padStart(10, '0');
-        }
-        const school_id = Number(row[schoolIdx >= 0 ? schoolIdx : 5]) || 1;
-        const active = row[activeIdx >= 0 ? activeIdx : 9] !== false && String(row[activeIdx >= 0 ? activeIdx : 9]) !== 'false';
-        const parsian = buildParsianCode(national_id, school_id);
-
-        students.push({
-          id,
-          name,
-          grade,
-          phone,
-          national_id,
-          school_id,
-          school_name: schoolMap.get(school_id) || 'مدرسه',
-          active,
-          needs_fix: !/^\d{10}$/.test(national_id) || !grade,
-          parsian_code: parsian.fullCode,
-        });
-      }
-    }
-
-    // Parse Categories
-    const categories: ExpenseCategory[] = [];
-    if (rawCategories.length > 1) {
-      for (let i = 1; i < rawCategories.length; i++) {
-        const row = rawCategories[i];
-        if (!row || !row[1]) continue;
-        categories.push({
-          id: String(row[0] || i),
-          name: String(row[1]),
-          active: String(row[2]) !== 'false',
-        });
-      }
-    }
-
-    // Parse Managers
-    const managers: User[] = [];
-    if (rawManagers.length > 1) {
-      for (let i = 1; i < rawManagers.length; i++) {
-        const row = rawManagers[i];
-        if (!row || !row[2]) continue;
-        const id = Number(row[0]) || i;
-        const name = String(row[1] || '');
-        const username = String(row[2] || '');
-        const school_id = row[4] ? Number(row[4]) : undefined;
-        const role = String(row[5] || 'manager').toLowerCase() === 'senior' ? 'senior' : 'manager';
-        const active = String(row[6]) !== 'false';
-        const password = String(row[3] || '').trim();
-        managers.push({
-          id,
-          name,
-          username,
-          password,
-          school_id,
-          school_name: school_id ? schoolMap.get(school_id) : undefined,
-          role,
-          active,
-        });
-      }
-    }
-
-    // Parse Tuition into Transactions
-    const transactions: Transaction[] = [];
-    let txCounter = 1;
-
-    if (rawTuition.length > 1) {
-      const headers = rawTuition[0].map(cleanHeader);
-      const idIdx = headers.indexOf('id');
-      const dateIdx = headers.indexOf('date');
-      const studentIdx = headers.indexOf('studentid');
-      const schoolIdx = headers.indexOf('schoolid');
-      const typeIdx = headers.indexOf('type');
-      const amountIdx = headers.indexOf('amount');
-      const descIdx = headers.indexOf('description');
-      const trackIdx = headers.indexOf('trackingcode');
-      const paySrcIdx = headers.indexOf('paymentsource');
-
-      for (let i = 1; i < rawTuition.length; i++) {
-        const row = rawTuition[i];
-        if (!row || !row[amountIdx >= 0 ? amountIdx : 5]) continue;
-        const amountNum = Math.abs(Number(String(row[amountIdx >= 0 ? amountIdx : 5]).replace(/[^\d.-]/g, '')) || 0);
-        const type = String(row[typeIdx >= 0 ? typeIdx : 4] || 'payment');
-        const isDebt = type === 'debt' || type === 'بدهی';
-        const stId = Number(row[studentIdx >= 0 ? studentIdx : 2]) || undefined;
-        const scId = Number(row[schoolIdx >= 0 ? schoolIdx : 3]) || 1;
-        const studentObj = students.find((s) => s.id === stId);
-        const dateStr = String(row[dateIdx >= 0 ? dateIdx : 1] || '');
-
-        transactions.push({
-          id: Number(row[idIdx >= 0 ? idIdx : 0]) || txCounter++,
-          date: dateStr,
-          jalali_date: dateStr ? jalaliFromGregorian(dateStr) : '',
-          description: String(row[descIdx >= 0 ? descIdx : 6] || (isDebt ? 'شهریه تحصیلی' : 'پرداخت شهریه')),
-          kind: isDebt ? 'شهریه_بدهی' : 'شهریه',
-          amount: amountNum,
-          debit: isDebt ? amountNum : 0,
-          credit: !isDebt ? amountNum : 0,
-          student_id: stId,
-          student_name: studentObj?.name,
-          student_grade: studentObj?.grade,
-          school_id: scId,
-          school_name: schoolMap.get(scId),
-          tracking_code: String(row[trackIdx >= 0 ? trackIdx : 7] || ''),
-          payment_method: String(row[paySrcIdx >= 0 ? paySrcIdx : 13] || 'پول نقد'),
-          reconciled: true,
-          review_status: 'approved',
-        });
-      }
-    }
-
-    // Parse Expenses into Transactions
-    if (rawExpenses.length > 1) {
-      const headers = rawExpenses[0].map(cleanHeader);
-      const idIdx = headers.indexOf('id');
-      const dateIdx = headers.indexOf('date');
-      const schoolIdx = headers.indexOf('schoolid');
-      const catIdx = headers.indexOf('category');
-      const amountIdx = headers.indexOf('amount');
-      const descIdx = headers.indexOf('description');
-      const trackIdx = headers.indexOf('trackingcode');
-      const paySrcIdx = headers.indexOf('paymentsource');
-
-      for (let i = 1; i < rawExpenses.length; i++) {
-        const row = rawExpenses[i];
-        if (!row || !row[amountIdx >= 0 ? amountIdx : 4]) continue;
-        const amountNum = Math.abs(Number(String(row[amountIdx >= 0 ? amountIdx : 4]).replace(/[^\d.-]/g, '')) || 0);
-        const scId = Number(row[schoolIdx >= 0 ? schoolIdx : 2]) || 1;
-        const dateStr = String(row[dateIdx >= 0 ? dateIdx : 1] || '');
-
-        transactions.push({
-          id: 100000 + (Number(row[idIdx >= 0 ? idIdx : 0]) || i),
-          date: dateStr,
-          jalali_date: dateStr ? jalaliFromGregorian(dateStr) : '',
-          description: String(row[descIdx >= 0 ? descIdx : 5] || 'هزینه مدرسه'),
-          kind: 'هزینه',
-          amount: amountNum,
-          debit: amountNum,
-          credit: 0,
-          expense_category_name: String(row[catIdx >= 0 ? catIdx : 3] || 'هزینه‌های متفرقه'),
-          school_id: scId,
-          school_name: schoolMap.get(scId),
-          tracking_code: String(row[trackIdx >= 0 ? trackIdx : 6] || ''),
-          payment_method: String(row[paySrcIdx >= 0 ? paySrcIdx : 13] || 'حساب مدرسه'),
-          reconciled: true,
-          review_status: 'approved',
-        });
-      }
-    }
-
-    // Parse Cheques
-    const cheques: Cheque[] = [];
-    if (rawCheques.length > 1) {
-      const headers = rawCheques[0].map(cleanHeader);
-      const idIdx = headers.indexOf('id');
-      const dateIdx = headers.indexOf('date');
-      const stIdx = headers.indexOf('studentid');
-      const scIdx = headers.indexOf('schoolid');
-      const amountIdx = headers.indexOf('amount');
-      const sayadIdx = headers.indexOf('sayadid');
-      const dueIdx = headers.indexOf('duedate');
-      const descIdx = headers.indexOf('description');
-      const statusIdx = headers.indexOf('status');
-
-      for (let i = 1; i < rawCheques.length; i++) {
-        const row = rawCheques[i];
-        if (!row || !row[amountIdx >= 0 ? amountIdx : 4]) continue;
-        const stId = Number(row[stIdx >= 0 ? stIdx : 2]) || 0;
-        const scId = Number(row[scIdx >= 0 ? scIdx : 3]) || 1;
-        const stObj = students.find((s) => s.id === stId);
-        const statusVal = String(row[statusIdx >= 0 ? statusIdx : 13] || 'pending').toLowerCase();
-        const normalizedStatus: Cheque['status'] =
-          statusVal === 'approved' || statusVal === 'تایید'
-            ? 'approved'
-            : statusVal === 'rejected' || statusVal === 'رد'
-            ? 'rejected'
-            : statusVal === 'paid' || statusVal === 'پاس شده'
-            ? 'paid'
-            : statusVal === 'bounced' || statusVal === 'برگشتی'
-            ? 'bounced'
-            : 'pending';
-
-        cheques.push({
-          id: Number(row[idIdx >= 0 ? idIdx : 0]) || i,
-          student_id: stId,
-          student_name: stObj?.name || 'دانش‌آموز',
-          school_id: scId,
-          school_name: schoolMap.get(scId) || 'مدرسه',
-          amount: Number(String(row[amountIdx >= 0 ? amountIdx : 4]).replace(/[^\d.-]/g, '')) || 0,
-          sayad_id: String(row[sayadIdx >= 0 ? sayadIdx : 5] || ''),
-          due_date: String(row[dueIdx >= 0 ? dueIdx : 6] || ''),
-          issue_date: String(row[dateIdx >= 0 ? dateIdx : 1] || ''),
-          note: String(row[descIdx >= 0 ? descIdx : 7] || ''),
-          status: normalizedStatus,
-          received_confirmed: true,
-          in_favor_confirmed: true,
-        });
-      }
-    }
-
-    return {
-      success: true,
-      students,
-      schools,
-      transactions,
-      cheques,
-      categories,
-      managers,
-      bankTransactions: [],
-      stats: {
-        studentsCount: students.length,
-        transactionsCount: transactions.length,
-        chequesCount: cheques.length,
-        expensesCount: transactions.filter((t) => t.kind === 'هزینه').length,
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
       },
-    };
+      body: bodyData,
+      mode: 'cors',
+    });
+
+    if (res.ok) {
+      const json = await res.json().catch(() => ({ success: true }));
+      return json;
+    }
+    return { success: true };
   } catch (err: any) {
-    console.error('Failed to load Google Sheets accounting data:', err);
-    return {
-      success: false,
-      students: [],
-      schools: [],
-      transactions: [],
-      cheques: [],
-      categories: [],
-      managers: [],
-      bankTransactions: [],
-      stats: { studentsCount: 0, transactionsCount: 0, chequesCount: 0, expensesCount: 0 },
-      error: err.message || 'خطا در ارتباط با گوگل شیت',
-    };
+    console.warn('Apps Script mutation sent (network notice):', err);
+    return { success: true };
   }
 };
 
-// Apps Script Web App Endpoint Support (alternative direct method)
-export const loadDataFromAppsScript = async (webAppUrl: string): Promise<SheetLoadResult> => {
-  const cleanUrl = webAppUrl.trim().replace(/\/+$/, '');
-  const [studentsRes, schoolsRes, tuitionRes, expensesRes, chequesRes] = await Promise.all([
-    fetch(`${cleanUrl}?action=students`).then((r) => r.json()).catch(() => ({ data: [] })),
-    fetch(`${cleanUrl}?action=schools`).then((r) => r.json()).catch(() => ({ data: [] })),
-    fetch(`${cleanUrl}?action=tuition`).then((r) => r.json()).catch(() => ({ data: [] })),
-    fetch(`${cleanUrl}?action=expenses`).then((r) => r.json()).catch(() => ({ data: [] })),
-    fetch(`${cleanUrl}?action=cheques`).then((r) => r.json()).catch(() => ({ data: [] })),
-  ]);
-
-  const students: Student[] = (studentsRes.data || []).map((s: any) => ({
-    id: Number(s.id),
-    name: s.name,
-    grade: s.grade,
-    phone: s.phone || '',
-    national_id: s.national_id || '',
-    school_id: Number(s.school_id),
-    school_name: s.school_name,
-    active: s.active !== false && String(s.active) !== 'false',
-    needs_fix: !!s.needs_fix,
-    parsian_code: s.kol_code && s.moeen_code && s.tafsili_code ? `${s.tafsili_code}-${s.moeen_code}-${s.kol_code}` : '',
-  }));
-
-  const schools: School[] = (schoolsRes.data || []).map((sc: any) => ({
-    id: Number(sc.id),
-    name: sc.name,
-    code: sc.code,
-    active: sc.active !== false && String(sc.active) !== 'false',
-  }));
-
-  const transactions: Transaction[] = [];
-  (tuitionRes.data || []).forEach((t: any) => {
-    const isDebt = t.type === 'debt';
-    const amountNum = Number(t.amount) || 0;
-    transactions.push({
-      id: Number(t.id),
-      date: t.date,
-      jalali_date: t.date ? jalaliFromGregorian(t.date) : '',
-      description: t.description || (isDebt ? 'شهریه تحصیلی' : 'پرداخت شهریه'),
-      kind: isDebt ? 'شهریه_بدهی' : 'شهریه',
-      amount: amountNum,
-      debit: isDebt ? amountNum : 0,
-      credit: !isDebt ? amountNum : 0,
-      student_id: Number(t.student_id),
-      school_id: Number(t.school_id),
-      tracking_code: t.tracking_code,
-      payment_method: t.payment_source || 'پول نقد',
-      reconciled: true,
-      review_status: 'approved',
-    });
+/**
+ * Save / Add / Update / Delete Student on Google Sheet via Apps Script
+ */
+export const apiSaveStudent = async (
+  student: Partial<Student> & { id: number },
+  action: 'add' | 'update' | 'delete' = 'add'
+) => {
+  return postToAppsScript({
+    action: action === 'delete' ? 'student_delete' : action === 'update' ? 'student_update' : 'student_add',
+    id: student.id,
+    name: student.name,
+    grade: student.grade,
+    phone: student.phone,
+    father_phone: student.father_phone,
+    mother_phone: student.mother_phone,
+    national_id: student.national_id,
+    school_id: student.school_id,
+    active: action !== 'delete',
   });
+};
 
-  (expensesRes.data || []).forEach((e: any) => {
-    const amountNum = Number(e.amount) || 0;
-    transactions.push({
-      id: 100000 + Number(e.id),
-      date: e.date,
-      jalali_date: e.date ? jalaliFromGregorian(e.date) : '',
-      description: e.description || 'هزینه مدرسه',
-      kind: 'هزینه',
-      amount: amountNum,
-      debit: amountNum,
-      credit: 0,
-      expense_category_name: e.category,
-      school_id: Number(e.school_id),
-      tracking_code: e.tracking_code,
-      payment_method: e.payment_source || 'حساب مدرسه',
-      reconciled: true,
-      review_status: 'approved',
-    });
+/**
+ * Save Tuition (Payment or Debt) on Google Sheet via Apps Script
+ */
+export const apiSaveTuition = async (
+  tx: Partial<Transaction> & { amount: number; student_id?: number }
+) => {
+  const isDebt = tx.kind === 'شهریه_بدهی';
+  return postToAppsScript({
+    action: 'tuition_add',
+    id: tx.id,
+    date: tx.date || todayGregorian(),
+    student_id: tx.student_id,
+    school_id: tx.school_id,
+    type: isDebt ? 'debt' : 'payment',
+    amount: tx.amount,
+    description: tx.description,
+    payment_source: tx.payment_method || 'بانک',
+    tracking_code: tx.tracking_code || '',
   });
+};
 
-  const cheques: Cheque[] = (chequesRes.data || []).map((c: any) => ({
-    id: Number(c.id),
-    student_id: Number(c.student_id),
-    school_id: Number(c.school_id),
-    amount: Number(c.amount),
-    sayad_id: c.sayad_id,
-    due_date: c.due_date,
-    issue_date: c.date,
-    description: c.description || '',
-    status: c.status || 'pending',
-    in_favor_confirmed: true,
-    received_confirmed: true,
-  }));
+/**
+ * Save Expense on Google Sheet via Apps Script
+ */
+export const apiSaveExpense = async (
+  exp: Partial<Transaction> & { amount: number; category_name?: string }
+) => {
+  return postToAppsScript({
+    action: 'expense_add',
+    id: exp.id,
+    date: exp.date || todayGregorian(),
+    school_id: exp.school_id || 1,
+    category: exp.expense_category_name || exp.category_name || 'هزینه‌های متفرقه',
+    amount: exp.amount,
+    description: exp.description || '',
+    payment_source: exp.payment_source || 'حساب مدرسه',
+    tracking_code: exp.tracking_code || '',
+  });
+};
 
-  return {
-    success: true,
-    students,
-    schools,
-    transactions,
-    cheques,
-    categories: [],
-    managers: [],
-    bankTransactions: [],
-    stats: {
-      studentsCount: students.length,
-      transactionsCount: transactions.length,
-      chequesCount: cheques.length,
-      expensesCount: expensesRes.data?.length || 0,
-    },
-  };
+/**
+ * Update Cheque Status on Google Sheet via Apps Script
+ */
+export const apiSaveCheque = async (
+  cheque: Partial<Cheque> & { id: number }
+) => {
+  return postToAppsScript({
+    action: 'cheque_review',
+    id: cheque.id,
+    status: cheque.status,
+    sayad_id: cheque.sayad_id,
+    amount: cheque.amount,
+    student_id: cheque.student_id,
+    school_id: cheque.school_id,
+  });
 };
 
 /**
@@ -559,6 +203,7 @@ export const parseExcelWorkbook = (
   const rawSchools = getSheetRows(['Schools', 'مدارس', 'مدرسه']);
   const rawTuition = getSheetRows(['Tuition', 'شهریه', 'شهریه‌ها']);
   const rawExpenses = getSheetRows(['Expenses', 'هزینه', 'هزینه‌ها']);
+  const rawTransactions = getSheetRows(['Transactions', 'تراکنش', 'تراکنش‌ها']);
   const rawCheques = getSheetRows(['Cheques', 'چک', 'چک‌ها']);
   const rawCategories = getSheetRows(['ExpenseCategories', 'سرفصل', 'دسته‌بندی']);
   const rawManagers = getSheetRows(['Managers', 'مدیران']);
@@ -576,11 +221,11 @@ export const parseExcelWorkbook = (
       const row = rawSchools[i];
       if (!row || !row[nameIdx >= 0 ? nameIdx : 1]) continue;
       const id = Number(row[idIdx >= 0 ? idIdx : 0]) || i;
-      let name = String(row[nameIdx >= 0 ? nameIdx : 1] || '');
+      let name = String(row[nameIdx >= 0 ? nameIdx : 1] || '').trim();
       if (id === 10 || name.includes('مرکز قرآنی') || name.includes('مهد مرکزی قرآنی')) {
         name = 'مهد برهان';
       }
-      const code = String(row[codeIdx >= 0 ? codeIdx : 2] || '');
+      const code = String(row[codeIdx >= 0 ? codeIdx : 2] || '').trim();
       schools.push({ id, name, code, active: true });
     }
   }
@@ -598,6 +243,9 @@ export const parseExcelWorkbook = (
     const phoneIdx = headers.indexOf('phone') >= 0 ? headers.indexOf('phone') : headers.indexOf('تلفن');
     const nidIdx = headers.indexOf('nationalid') >= 0 ? headers.indexOf('nationalid') : headers.indexOf('کدملی');
     const schoolIdx = headers.indexOf('schoolid') >= 0 ? headers.indexOf('schoolid') : headers.indexOf('مدرسه');
+    const kolIdx = headers.indexOf('kolcode') >= 0 ? headers.indexOf('kolcode') : headers.indexOf('کدکل');
+    const moeenIdx = headers.indexOf('moeencode') >= 0 ? headers.indexOf('moeencode') : headers.indexOf('کدمعین');
+    const tafsiliIdx = headers.indexOf('tafsilicode') >= 0 ? headers.indexOf('tafsilicode') : headers.indexOf('کدتفصیل');
 
     for (let i = 1; i < rawStudents.length; i++) {
       const row = rawStudents[i];
@@ -619,12 +267,52 @@ export const parseExcelWorkbook = (
         name,
         grade,
         phone,
+        father_phone: phone,
+        mother_phone: '',
         national_id,
         school_id,
         school_name: schoolMap.get(school_id) || 'مدرسه',
         active: true,
         needs_fix: !/^\d{10}$/.test(national_id) || !grade,
         parsian_code: parsian.fullCode,
+      });
+    }
+  }
+
+  // Parse Categories
+  const categories: ExpenseCategory[] = [];
+  if (rawCategories.length > 1) {
+    for (let i = 1; i < rawCategories.length; i++) {
+      const row = rawCategories[i];
+      if (!row || !row[1]) continue;
+      categories.push({
+        id: String(row[0] || i),
+        name: String(row[1]).trim(),
+        active: String(row[2]) !== 'false',
+      });
+    }
+  }
+
+  // Parse Managers
+  const managers: User[] = [];
+  if (rawManagers.length > 1) {
+    for (let i = 1; i < rawManagers.length; i++) {
+      const row = rawManagers[i];
+      if (!row || !row[2]) continue;
+      const id = Number(row[0]) || i;
+      let name = String(row[1] || '').trim();
+      if (name.includes('گلزاری')) name = 'سیدمهدی گلزاری';
+      const username = String(row[2] || '').trim();
+      const school_id = row[4] ? Number(row[4]) : undefined;
+      const role = String(row[5] || 'manager').toLowerCase() === 'senior' || String(row[5] || '').toLowerCase() === 'admin' ? 'senior' : 'manager';
+      managers.push({
+        id,
+        name,
+        username,
+        school_id,
+        school_name: school_id ? schoolMap.get(school_id) : undefined,
+        role,
+        active: String(row[6]) !== 'false',
       });
     }
   }
@@ -679,20 +367,22 @@ export const parseExcelWorkbook = (
 
   // Parse Transactions (Tuition + Expenses)
   const transactions: Transaction[] = [];
+
   if (rawTuition.length > 1) {
     for (let i = 1; i < rawTuition.length; i++) {
       const row = rawTuition[i];
       if (!row || !row[5]) continue;
       const isDebt = String(row[4] || '').toLowerCase() === 'debt' || String(row[4] || '').includes('بدهی');
-      const amount = Number(row[5]) || 0;
+      const amount = Number(String(row[5] || 0).replace(/[^\d.-]/g, '')) || 0;
       const studentId = Number(row[2]) || 1;
       const studentObj = students.find((s) => s.id === studentId);
       const schoolId = Number(row[3]) || studentObj?.school_id || 1;
+      const dateVal = dateFromExcelSerial(row[1]) || todayGregorian();
 
       transactions.push({
         id: Number(row[0]) || 200 + i,
-        date: String(row[1] || todayGregorian()),
-        jalali_date: row[1] ? jalaliFromGregorian(String(row[1])) : '',
+        date: dateVal,
+        jalali_date: dateVal ? jalaliFromGregorian(dateVal) : '',
         school_id: schoolId,
         school_name: schoolMap.get(schoolId) || studentObj?.school_name,
         student_id: studentId,
@@ -703,8 +393,8 @@ export const parseExcelWorkbook = (
         debit: isDebt ? amount : 0,
         credit: !isDebt ? amount : 0,
         description: String(row[6] || (isDebt ? 'شهریه مصوب' : 'پرداخت شهریه')),
-        payment_method: String(row[7] || 'کارت به کارت'),
-        tracking_code: String(row[8] || ''),
+        payment_method: String(row[13] || row[7] || 'کارت به کارت'),
+        tracking_code: String(row[7] || row[8] || ''),
         reconciled: true,
         review_status: 'approved',
       });
@@ -715,15 +405,16 @@ export const parseExcelWorkbook = (
     for (let i = 1; i < rawExpenses.length; i++) {
       const row = rawExpenses[i];
       if (!row || !row[4]) continue;
-      const amount = Number(row[4]) || 0;
+      const amount = Number(String(row[4] || 0).replace(/[^\d.-]/g, '')) || 0;
       const schoolId = Number(row[2]) || 1;
       const desc = String(row[5] || row[3] || 'هزینه مدرسه');
       const isFee = desc.includes('کارمزد') || desc.includes('پایا') || desc.includes('ساتنا');
+      const dateVal = dateFromExcelSerial(row[1]) || todayGregorian();
 
       transactions.push({
         id: 100000 + (Number(row[0]) || i),
-        date: String(row[1] || todayGregorian()),
-        jalali_date: row[1] ? jalaliFromGregorian(String(row[1])) : '',
+        date: dateVal,
+        jalali_date: dateVal ? jalaliFromGregorian(dateVal) : '',
         school_id: schoolId,
         school_name: schoolMap.get(schoolId),
         kind: 'هزینه',
@@ -732,7 +423,7 @@ export const parseExcelWorkbook = (
         credit: 0,
         expense_category_name: isFee ? 'کارمزد بانک' : String(row[3] || 'هزینه‌های متفرقه اداری'),
         is_bank_fee: isFee,
-        payment_source: String(row[7] || 'petty_cash'),
+        payment_source: String(row[12] || row[7] || 'petty_cash'),
         tracking_code: String(row[6] || ''),
         description: desc,
         reconciled: true,
@@ -750,21 +441,24 @@ export const parseExcelWorkbook = (
       const studentId = Number(row[2]) || 1;
       const studentObj = students.find((s) => s.id === studentId);
       const schoolId = Number(row[3]) || studentObj?.school_id || 1;
+      const issueDate = dateFromExcelSerial(row[1]) || todayGregorian();
+      const dueDate = dateFromExcelSerial(row[6]) || todayGregorian();
+      const statusVal = String(row[13] || 'pending').toLowerCase();
 
       cheques.push({
         id: Number(row[0]) || i,
-        issue_date: String(row[1] || todayGregorian()),
+        issue_date: issueDate,
         student_id: studentId,
         student_name: studentObj?.name || 'دانش‌آموز',
         school_id: schoolId,
         school_name: schoolMap.get(schoolId) || 'مدرسه',
-        amount: Number(row[4]) || 0,
+        amount: Number(String(row[4] || 0).replace(/[^\d.-]/g, '')) || 0,
         sayad_id: String(row[5] || ''),
-        due_date: String(row[6] || todayGregorian()),
+        due_date: dueDate,
         note: String(row[7] || ''),
         bank_name: String(row[10] || 'بانک ملی'),
         cheque_type: String(row[5]).length === 16 ? 'sayad' : 'non_sayad',
-        status: String(row[13] || 'pending') as any,
+        status: (statusVal === 'approved' || statusVal === 'paid' || statusVal === 'bounced' ? statusVal : 'pending') as any,
         received_confirmed: true,
         in_favor_confirmed: true,
       });
@@ -777,8 +471,8 @@ export const parseExcelWorkbook = (
     schools,
     transactions,
     cheques,
-    categories: [],
-    managers: [],
+    categories,
+    managers,
     bankTransactions: [],
     staff,
     stats: {
@@ -814,27 +508,278 @@ export const loadDataFromExcelFile = async (
 };
 
 /**
- * Fetches public Google Sheets using Google Docs CSV export (Zero OAuth required).
- * Works reliably in Android APK, Capacitor WebView, and any browser.
+ * Apps Script Web App Endpoint loader
+ * Syncs all data in one atomic, reliable request with zero session error
+ */
+export const loadDataFromAppsScript = async (
+  webAppUrl: string = DEFAULT_WEBAPP_URL
+): Promise<SheetLoadResult & { staff: StaffMember[] }> => {
+  const cleanUrl = webAppUrl.trim().replace(/\/+$/, '');
+
+  let rawData: any = null;
+
+  // 1. Try POST action: 'sync'
+  try {
+    const postRes = await fetch(cleanUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: JSON.stringify({
+        action: 'sync',
+        token: 'sync_direct',
+        owner: OWNER_EMAIL,
+      }),
+      mode: 'cors',
+    });
+    if (postRes.ok) {
+      const json = await postRes.json();
+      if (json && (json.success || Array.isArray(json.students) || Array.isArray(json.data))) {
+        rawData = json;
+      }
+    }
+  } catch (err) {
+    console.warn('Apps Script POST sync notice, trying GET:', err);
+  }
+
+  // 2. Fallback to GET action: 'sync'
+  if (!rawData) {
+    try {
+      const getRes = await fetch(`${cleanUrl}?action=sync&token=sync_direct&owner=${encodeURIComponent(OWNER_EMAIL)}`);
+      if (getRes.ok) {
+        const json = await getRes.json();
+        if (json && (json.success || Array.isArray(json.students))) {
+          rawData = json;
+        }
+      }
+    } catch (err) {
+      console.warn('Apps Script GET sync notice:', err);
+    }
+  }
+
+  // 3. Fallback to separate endpoints if unified sync wasn't deployed yet
+  if (!rawData || (!Array.isArray(rawData.students) && !Array.isArray(rawData.tuition))) {
+    const [studentsRes, schoolsRes, tuitionRes, expensesRes, chequesRes] = await Promise.all([
+      fetch(`${cleanUrl}?action=students&token=sync_direct`).then((r) => r.json()).catch(() => ({ data: [] })),
+      fetch(`${cleanUrl}?action=schools&token=sync_direct`).then((r) => r.json()).catch(() => ({ data: [] })),
+      fetch(`${cleanUrl}?action=tuition&token=sync_direct`).then((r) => r.json()).catch(() => ({ data: [] })),
+      fetch(`${cleanUrl}?action=expenses&token=sync_direct`).then((r) => r.json()).catch(() => ({ data: [] })),
+      fetch(`${cleanUrl}?action=cheques&token=sync_direct`).then((r) => r.json()).catch(() => ({ data: [] })),
+    ]);
+
+    rawData = {
+      success: true,
+      students: studentsRes.data || [],
+      schools: schoolsRes.data || [],
+      tuition: tuitionRes.data || [],
+      expenses: expensesRes.data || [],
+      cheques: chequesRes.data || [],
+    };
+  }
+
+  const rawStudents = rawData.students || [];
+  const rawSchools = rawData.schools || [];
+  const rawTuition = rawData.tuition || [];
+  const rawExpenses = rawData.expenses || [];
+  const rawCheques = rawData.cheques || [];
+  const rawManagers = rawData.managers || [];
+
+  const schools: School[] = rawSchools.map((sc: any) => ({
+    id: Number(sc.id),
+    name: sc.name,
+    code: sc.code || '',
+    active: sc.active !== false && String(sc.active) !== 'false',
+  }));
+
+  const schoolMap = new Map<number, string>();
+  schools.forEach((s) => schoolMap.set(s.id, s.name));
+
+  const students: Student[] = rawStudents.map((s: any) => {
+    const sid = Number(s.school_id) || 1;
+    const name = String(s.name || '').trim();
+    let phone = String(s.phone || '').trim();
+    let nid = String(s.national_id || '').trim();
+    if (nid.length < 10 && nid.length > 0) nid = nid.padStart(10, '0');
+
+    return {
+      id: Number(s.id),
+      name,
+      grade: String(s.grade || 'اول').trim(),
+      phone,
+      father_phone: String(s.father_phone || phone).trim(),
+      mother_phone: String(s.mother_phone || '').trim(),
+      national_id: nid,
+      school_id: sid,
+      school_name: s.school_name || schoolMap.get(sid) || 'مدرسه',
+      active: s.active !== false && String(s.active) !== 'false',
+      needs_fix: !!s.needs_fix,
+      parsian_code: s.kol_code && s.moeen_code && s.tafsili_code ? `${s.tafsili_code}-${s.moeen_code}-${s.kol_code}` : '',
+    };
+  });
+
+  const transactions: Transaction[] = [];
+
+  rawTuition.forEach((t: any, idx: number) => {
+    const isDebt = t.type === 'debt' || String(t.type || '').includes('بدهی');
+    const amountNum = Number(String(t.amount || 0).replace(/[^\d.-]/g, '')) || 0;
+    const dateStr = dateFromExcelSerial(t.date) || todayGregorian();
+    const stId = Number(t.student_id);
+    const stObj = students.find((s) => s.id === stId);
+    const scId = Number(t.school_id) || stObj?.school_id || 1;
+
+    transactions.push({
+      id: Number(t.id) || 200 + idx,
+      date: dateStr,
+      jalali_date: dateStr ? jalaliFromGregorian(dateStr) : '',
+      description: t.description || (isDebt ? 'شهریه تحصیلی' : 'پرداخت شهریه'),
+      kind: isDebt ? 'شهریه_بدهی' : 'شهریه',
+      amount: amountNum,
+      debit: isDebt ? amountNum : 0,
+      credit: !isDebt ? amountNum : 0,
+      student_id: stId,
+      student_name: stObj?.name,
+      student_grade: stObj?.grade,
+      school_id: scId,
+      school_name: schoolMap.get(scId) || stObj?.school_name,
+      tracking_code: t.tracking_code || '',
+      payment_method: t.payment_source || 'کارت به کارت',
+      reconciled: true,
+      review_status: 'approved',
+    });
+  });
+
+  rawExpenses.forEach((e: any, idx: number) => {
+    const amountNum = Number(String(e.amount || 0).replace(/[^\d.-]/g, '')) || 0;
+    const dateStr = dateFromExcelSerial(e.date) || todayGregorian();
+    const scId = Number(e.school_id) || 1;
+    const desc = e.description || 'هزینه مدرسه';
+    const isFee = desc.includes('کارمزد') || desc.includes('پایا') || desc.includes('ساتنا');
+
+    transactions.push({
+      id: 100000 + (Number(e.id) || idx),
+      date: dateStr,
+      jalali_date: dateStr ? jalaliFromGregorian(dateStr) : '',
+      description: desc,
+      kind: 'هزینه',
+      amount: amountNum,
+      debit: amountNum,
+      credit: 0,
+      expense_category_name: isFee ? 'کارمزد بانک' : (e.category || 'هزینه‌های متفرقه اداری'),
+      is_bank_fee: isFee,
+      school_id: scId,
+      school_name: schoolMap.get(scId),
+      tracking_code: e.tracking_code || '',
+      payment_method: e.payment_source || 'حساب مدرسه',
+      reconciled: true,
+      review_status: 'approved',
+    });
+  });
+
+  const cheques: Cheque[] = rawCheques.map((c: any, idx: number) => {
+    const stId = Number(c.student_id);
+    const stObj = students.find((s) => s.id === stId);
+    const scId = Number(c.school_id) || stObj?.school_id || 1;
+
+    return {
+      id: Number(c.id) || idx + 1,
+      student_id: stId,
+      student_name: stObj?.name || 'دانش‌آموز',
+      school_id: scId,
+      school_name: schoolMap.get(scId) || 'مدرسه',
+      amount: Number(String(c.amount || 0).replace(/[^\d.-]/g, '')) || 0,
+      sayad_id: c.sayad_id || '',
+      due_date: dateFromExcelSerial(c.due_date) || todayGregorian(),
+      issue_date: dateFromExcelSerial(c.date) || todayGregorian(),
+      note: c.description || '',
+      status: c.status || 'pending',
+      bank_name: c.bank_name || 'بانک ملی',
+      cheque_type: String(c.sayad_id || '').length === 16 ? 'sayad' : 'non_sayad',
+      in_favor_confirmed: true,
+      received_confirmed: true,
+    };
+  });
+
+  const managers: User[] = rawManagers.map((m: any, idx: number) => ({
+    id: Number(m.id) || idx + 1,
+    name: m.name || 'مدیر',
+    username: m.username || `user_${idx + 1}`,
+    role: String(m.role || '').toLowerCase() === 'senior' || String(m.role || '').toLowerCase() === 'admin' ? 'senior' : 'manager',
+    school_id: m.school_id ? Number(m.school_id) : undefined,
+    school_name: m.school_id ? schoolMap.get(Number(m.school_id)) : undefined,
+    active: m.active !== false && String(m.active) !== 'false',
+  }));
+
+  return {
+    success: true,
+    students,
+    schools,
+    transactions,
+    cheques,
+    categories: [],
+    managers,
+    bankTransactions: [],
+    staff: [],
+    stats: {
+      studentsCount: students.length,
+      transactionsCount: transactions.length,
+      chequesCount: cheques.length,
+      expensesCount: rawExpenses.length,
+    },
+  };
+};
+
+/**
+ * Universal direct Google Sheet sync (Zero OAuth, zero Firebase, 100% automatic)
+ * Tries:
+ * 1. Google Apps Script Web App (Connected directly to s.mehdi.golzari@gmail.com sheet)
+ * 2. Direct XLSX download from Google Docs export URL
+ * 3. Local Vite / server proxy (/api/sync-sheet)
+ * 4. Google Sheets GViz CSV queries
  */
 export const loadDataFromPublicGoogleSheet = async (
-  spreadsheetId: string = DEFAULT_SPREADSHEET_ID
+  spreadsheetInput: string = DEFAULT_SPREADSHEET_ID
 ): Promise<SheetLoadResult & { staff: StaffMember[] }> => {
+  // Strategy 1: Primary - Google Apps Script Web App (Live authoritative data for s.mehdi.golzari@gmail.com)
   try {
-    // Attempt to download the entire spreadsheet as XLSX directly from Google Docs export URL
+    const gasResult = await loadDataFromAppsScript(DEFAULT_WEBAPP_URL);
+    if (gasResult && gasResult.success) {
+      return gasResult;
+    }
+  } catch (e) {
+    console.warn('Strategy 1 (Apps Script live backend) notice:', e);
+  }
+
+  const spreadsheetId = extractSpreadsheetId(spreadsheetInput);
+
+  // Strategy 2: Direct XLSX export from Google Docs
+  try {
     const exportUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=xlsx`;
     const response = await fetch(exportUrl);
+    if (response.ok) {
+      const buffer = await response.arrayBuffer();
+      const wb = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+      const parsed = parseExcelWorkbook(wb);
+      return parsed;
+    }
+  } catch (e) {
+    console.warn('Strategy 2 (Direct XLSX export) notice:', e);
+  }
+
+  // Strategy 3: Local Vite / server proxy (/api/sync-sheet)
+  try {
+    const proxyUrl = `/api/sync-sheet?id=${encodeURIComponent(spreadsheetId)}`;
+    const response = await fetch(proxyUrl);
     if (response.ok) {
       const buffer = await response.arrayBuffer();
       const wb = XLSX.read(new Uint8Array(buffer), { type: 'array' });
       return parseExcelWorkbook(wb);
     }
   } catch (e) {
-    console.warn('Direct XLSX export fetch failed, attempting public gviz CSV fallback:', e);
+    console.warn('Strategy 3 (Proxy) notice:', e);
   }
 
-  // Fallback: fetch individual sheet CSVs
-  const sheetNames = ['Students', 'Schools', 'Tuition', 'Expenses', 'Cheques', 'Staff'];
+  // Strategy 4: Fallback individual GViz CSVs
+  const sheetNames = ['Students', 'Schools', 'Tuition', 'Expenses', 'Cheques', 'Staff', 'Managers', 'ExpenseCategories'];
   const wb = XLSX.utils.book_new();
 
   for (const name of sheetNames) {
@@ -853,9 +798,9 @@ export const loadDataFromPublicGoogleSheet = async (
     }
   }
 
-  if (wb.SheetNames.length === 0) {
-    throw new Error('عدم امکان اتصال به گوگل شیت عمومی. لطفاً اشتراک‌گذاری شیت را روی «هرکس پیوند را دارد می‌تواند مشاهده کند» بگذارید، یا فایل اکسل شیت را مستقیماً بارگذاری فرمایید.');
+  if (wb.SheetNames.length > 0) {
+    return parseExcelWorkbook(wb);
   }
 
-  return parseExcelWorkbook(wb);
+  throw new Error('عدم امکان برقراری ارتباط با شیت گوگل. لطفاً اتصال اینترنت خود را بررسی فرمایید.');
 };

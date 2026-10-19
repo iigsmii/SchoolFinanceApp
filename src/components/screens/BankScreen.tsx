@@ -148,10 +148,10 @@ export const BankScreen: React.FC = () => {
   const managersWithCards = users.filter((u) => u.role === 'manager' || u.petty_cash_card);
 
   return (
-    <div className="min-h-screen bg-[#f8f5f9] pb-16">
+    <div className="min-h-screen bg-[#f8f5f9] pb-16 w-full max-w-full overflow-x-hidden">
       <Header title="تطبیق بانک، کارت تن‌خواه و کارمزدها" />
 
-      <main className="max-w-4xl mx-auto px-4 py-6 space-y-5">
+      <main className="max-w-4xl mx-auto px-4 py-6 space-y-5 w-full min-w-0">
         {/* Sacred Banner with Description */}
         <div
           className="rounded-3xl p-6 text-white shadow-xl relative overflow-hidden"
@@ -304,7 +304,7 @@ export const BankScreen: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 text-xs">
                       <div
                         className={`p-2.5 rounded-xl border flex items-center justify-between ${
                           matched
@@ -371,7 +371,7 @@ export const BankScreen: React.FC = () => {
               <div className="text-xs font-bold text-gray-600 mb-2.5">
                 کارت‌های تن‌خواه اختصاصی مدیران مدارس:
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                 {schools.map((sc) => {
                   const manager = users.find((u) => u.school_id === sc.id && u.role === 'manager');
                   const cardNum = manager?.petty_cash_card || sc.petty_cash_card || '۶۰۳۷-۹۹۷۵-۱۱۲۲-۳۳۴۴';

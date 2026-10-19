@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { formatRial, jalaliFromGregorian } from '../../utils/jalali';
-import { calculateStudentOverdue } from '../../utils/debt';
+import { calculateStudentOverdue, formatSmsTemplate } from '../../utils/debt';
 import { Student } from '../../types';
 import {
   MessageSquare,
@@ -108,17 +108,46 @@ export const SmsScreen: React.FC = () => {
     return true;
   });
 
+  // Multi-select for Batch SMS
+  const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
+
   const totalDebtorsCount = filteredStudents.length;
   const totalDebtSum = filteredStudents.reduce((sum, s) => sum + getStudentBalance(s.id).debt, 0);
 
   const getFormattedMessage = (student: Student) => {
     const { debt } = getStudentBalance(student.id);
     const overdue = calculateStudentOverdue(student, transactions);
-    return smsConfig.smsTemplate
-      .replace('{name}', student.name)
-      .replace('{school}', student.school_name || 'مدرسه')
-      .replace('{amount}', formatRial(debt))
-      .replace('{days}', String(overdue.overdueDays));
+    return formatSmsTemplate(smsConfig.smsTemplate, student, debt, overdue.overdueDays);
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedStudentIds.length === filteredStudents.length) {
+      setSelectedStudentIds([]);
+    } else {
+      setSelectedStudentIds(filteredStudents.map((s) => s.id));
+    }
+  };
+
+  const handleToggleSelectStudent = (id: number) => {
+    setSelectedStudentIds((prev) =>
+      prev.includes(id) ? prev.filter((sid) => sid !== id) : [...prev, id]
+    );
+  };
+
+  const handleCopySelectedPhones = () => {
+    const targets = filteredStudents.filter((s) =>
+      selectedStudentIds.length > 0 ? selectedStudentIds.includes(s.id) : true
+    );
+    const phones = targets
+      .map((s) => s.father_phone || s.phone || s.mother_phone)
+      .filter(Boolean) as string[];
+
+    if (phones.length === 0) {
+      alert('شماره تلفنی یافت نشد.');
+      return;
+    }
+    navigator.clipboard.writeText(phones.join('\n'));
+    alert(`تعداد ${phones.length} شماره تلفن در کلیپ‌بورد کپی شد.`);
   };
 
   const handleOpenPreview = (student: Student, specificPhone?: string) => {
@@ -128,8 +157,13 @@ export const SmsScreen: React.FC = () => {
   };
 
   const handleSendFromPhone = (student: Student, customText?: string, specificPhone?: string) => {
-    const textToSend = customText || editableMessage || getFormattedMessage(student);
-    const phone = (specificPhone || previewTargetPhone || student.father_phone || student.phone || student.mother_phone)?.trim();
+    // If customText is passed or if the user is in preview mode for THIS student, use it.
+    // Otherwise, ALWAYS freshly compute the personalized text for THIS student so name and debt are 100% accurate!
+    const textToSend =
+      customText ||
+      (previewStudent?.id === student.id && editableMessage ? editableMessage : getFormattedMessage(student));
+
+    const phone = (specificPhone || (previewStudent?.id === student.id ? previewTargetPhone : null) || student.father_phone || student.phone || student.mother_phone)?.trim();
     if (!phone || !/^0\d{10}$/.test(phone)) {
       alert('شماره تلفن همراه انتخاب‌شده نامعتبر است.');
       return;
@@ -157,7 +191,7 @@ export const SmsScreen: React.FC = () => {
   };
 
   const handleExecuteBatch = () => {
-    const targetIds = filteredStudents.map((s) => s.id);
+    const targetIds = selectedStudentIds.length > 0 ? selectedStudentIds : filteredStudents.map((s) => s.id);
     const result = sendBatchSmsReminders(targetIds);
     setBatchResult(result);
     setIsBatchConfirmOpen(false);
@@ -384,6 +418,47 @@ export const SmsScreen: React.FC = () => {
               </div>
             </div>
 
+            {/* Batch Selection Action Bar */}
+            <div className="bg-[#fcfaff] rounded-2xl p-3 border border-[#ede5ef] flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 font-bold text-[#341648] cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={filteredStudents.length > 0 && selectedStudentIds.length === filteredStudents.length}
+                    onChange={handleToggleSelectAll}
+                    className="w-4 h-4 rounded text-purple-700 accent-[#62205f]"
+                  />
+                  <span>انتخاب همه ({filteredStudents.length} بدهکار)</span>
+                </label>
+                {selectedStudentIds.length > 0 && (
+                  <span className="bg-purple-100 text-purple-900 px-2.5 py-0.5 rounded-full font-bold text-[11px]">
+                    {selectedStudentIds.length} نفر انتخاب شده
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopySelectedPhones}
+                  className="px-3 py-1.5 rounded-xl bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5"
+                >
+                  <Copy className="w-3.5 h-3.5 text-gray-500" />
+                  <span>کپی شماره‌ها</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsBatchConfirmOpen(true)}
+                  disabled={filteredStudents.length === 0}
+                  className="px-4 py-1.5 rounded-xl bg-[#62205f] hover:opacity-95 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+                  style={{ backgroundColor: accentColor }}
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>ارسال پیامک گروهی {selectedStudentIds.length > 0 ? `(${selectedStudentIds.length} نفر)` : ''}</span>
+                </button>
+              </div>
+            </div>
+
             {/* Debtors List Table */}
             <div className="bg-white rounded-3xl border border-[#e5dde8] shadow-xs overflow-hidden">
               {filteredStudents.length === 0 ? (
@@ -399,19 +474,29 @@ export const SmsScreen: React.FC = () => {
                     const overdue = calculateStudentOverdue(st, transactions);
                     const fatherPhone = st.father_phone || st.phone;
                     const motherPhone = st.mother_phone;
+                    const isSelected = selectedStudentIds.includes(st.id);
 
                     return (
                       <div
                         key={st.id}
-                        className="p-4 hover:bg-[#fcfaff] transition-colors flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+                        className={`p-4 transition-colors flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                          isSelected ? 'bg-purple-50/60' : 'hover:bg-[#fcfaff]'
+                        }`}
                       >
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-sm font-bold text-[#341648]">{st.name}</span>
-                            <span className="text-[10px] bg-purple-100 text-purple-900 font-semibold px-2 py-0.5 rounded-md">
-                              {st.school_name || 'مدرسه'} - پایه {st.grade}
-                            </span>
-                          </div>
+                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectStudent(st.id)}
+                            className="w-4 h-4 mt-1 rounded text-purple-700 accent-[#62205f] cursor-pointer"
+                          />
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-bold text-[#341648]">{st.name}</span>
+                              <span className="text-[10px] bg-purple-100 text-purple-900 font-semibold px-2 py-0.5 rounded-md">
+                                {st.school_name || 'مدرسه'} - پایه {st.grade}
+                              </span>
+                            </div>
 
                           <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
                             {fatherPhone && (
@@ -440,8 +525,9 @@ export const SmsScreen: React.FC = () => {
                             )}
                           </div>
                         </div>
+                      </div>
 
-                        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto self-end sm:self-auto justify-end">
+                      <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto self-end sm:self-auto justify-end">
                           {/* Send to Mother button */}
                           {motherPhone && (
                             <button

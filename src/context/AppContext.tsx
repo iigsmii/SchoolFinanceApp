@@ -33,20 +33,19 @@ import {
 } from '../data/initialData';
 import { buildParsianCode } from '../utils/parsian';
 import { jalaliFromGregorian, todayGregorian } from '../utils/jalali';
-import { calculateStudentOverdue, DEFAULT_SMS_TEMPLATE } from '../utils/debt';
-import {
-  initAuth,
-  googleSignIn,
-  googleSignOut,
-  getAccessToken,
-} from '../services/firebaseAuth';
+import { calculateStudentOverdue, DEFAULT_SMS_TEMPLATE, formatSmsTemplate } from '../utils/debt';
 import {
   DEFAULT_SPREADSHEET_ID,
-  loadAccountingDataFromGoogleSheets,
+  DEFAULT_WEBAPP_URL,
+  OWNER_EMAIL,
   loadDataFromAppsScript,
-  appendSheetRow,
   loadDataFromExcelFile,
   loadDataFromPublicGoogleSheet,
+  extractSpreadsheetId,
+  apiSaveStudent,
+  apiSaveTuition,
+  apiSaveExpense,
+  apiSaveCheque,
 } from '../services/googleSheets';
 import {
   playSuccessSound,
@@ -399,15 +398,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [staffWorkLogs, setStaffWorkLogs] = useState<StaffWorkLog[]>(() => loadFromStorage('staff_work_logs', INITIAL_WORK_LOGS));
   const [payrollPayments, setPayrollPayments] = useState<PayrollPayment[]>(() => loadFromStorage('payroll_payments', INITIAL_PAYROLL));
 
-  // Google Sheets & Cloud Connection State
-  const [googleUser, setGoogleUser] = useState<any>(null);
-  const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(null);
-  const [spreadsheetId, setSpreadsheetIdState] = useState<string>(() =>
-    loadFromStorage('spreadsheet_id', DEFAULT_SPREADSHEET_ID)
-  );
-  const [webAppUrl, setWebAppUrlState] = useState<string>(() =>
-    loadFromStorage('webapp_url', '')
-  );
+  // Google Sheets & Cloud Connection State - Hardcoded to official school cloud
+  const [googleUser, setGoogleUser] = useState<any>({
+    email: OWNER_EMAIL,
+    displayName: 'سیدمهدی گلزاری (مدیریت ارشد مدرسة القرآن)',
+  });
+  const [googleAccessToken, setGoogleAccessToken] = useState<string | null>('active_cloud');
+  const [spreadsheetId, setSpreadsheetIdState] = useState<string>(DEFAULT_SPREADSHEET_ID);
+  const [webAppUrl, setWebAppUrlState] = useState<string>(DEFAULT_WEBAPP_URL);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
   const [syncError, setSyncError] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(() =>
@@ -459,24 +457,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     saveToStorage('webapp_url', url);
   };
 
-  const isConnectedToGoogleSheets = !!(googleAccessToken || (webAppUrl && syncStats));
+  const isConnectedToGoogleSheets = !!(spreadsheetId && (lastSyncTime || syncStats));
   const accentColor = THEME_ACCENTS[themeIndex] || THEME_ACCENTS[0];
 
-  // Initialize Firebase Auth listener
+  // Automatic background synchronization on app startup (No login required)
   useEffect(() => {
-    const unsubscribe = initAuth(
-      (user, token) => {
-        setGoogleUser(user);
-        if (token) {
-          setGoogleAccessToken(token);
-        }
-      },
-      () => {
-        setGoogleUser(null);
-        setGoogleAccessToken(null);
-      }
-    );
-    return () => unsubscribe();
+    const timer = setTimeout(() => {
+      syncWithGoogleSheets(spreadsheetId).catch((err) => {
+        console.log('Background auto-sync status:', err);
+      });
+    }, 1000);
+    return () => clearTimeout(timer);
   }, []);
 
   const logActivity = (action: string, description: string, entity_type?: string, entity_id?: string | number) => {
@@ -502,10 +493,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const result = await loadDataFromExcelFile(file);
       if (result.success) {
-        if (result.students.length > 0) setStudents(result.students);
-        if (result.schools.length > 0) setSchools(result.schools);
-        if (result.transactions.length > 0) setTransactions(result.transactions);
-        if (result.cheques.length > 0) setCheques(result.cheques);
+        setStudents(result.students);
+        if (result.schools && result.schools.length > 0) setSchools(result.schools);
+        setTransactions(result.transactions);
+        setCheques(result.cheques);
+        if (result.categories && result.categories.length > 0) setCategories(result.categories);
         if (result.staff && result.staff.length > 0) setStaffMembers(result.staff);
         setSyncStats(result.stats);
         saveToStorage('sync_stats', result.stats);
@@ -518,7 +510,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setSyncStatus('synced');
         logActivity(
           'ورود فایل اکسل شیت آفلاین',
-          `بارگذاری کامل ${result.students.length} دانش‌آموز، ${result.transactions.length} تراکنش و معلمان`
+          `بارگذاری کامل ${result.students.length} دانش‌آموز، ${result.transactions.length} تراکنش`
         );
         return true;
       }
@@ -530,20 +522,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const loadPublicSheet = async (targetId?: string): Promise<boolean> => {
-    const sId = targetId || spreadsheetId;
+  const connectWithGoogle = async (): Promise<boolean> => {
+    return await syncWithGoogleSheets(spreadsheetId);
+  };
+
+  const disconnectGoogle = async () => {
+    setSyncStatus('idle');
+    setLastSyncTime(null);
+    saveToStorage('last_sync_time', null);
+  };
+
+  const syncWithGoogleSheets = async (targetSheetId?: string): Promise<boolean> => {
+    const sId = extractSpreadsheetId(targetSheetId || spreadsheetId || DEFAULT_SPREADSHEET_ID);
     setSyncStatus('syncing');
     setSyncError(null);
+
+    // Strategy 1: Google Apps Script Web App (Live authoritative backend for s.mehdi.golzari@gmail.com)
     try {
-      const result = await loadDataFromPublicGoogleSheet(sId);
-      if (result.success) {
-        if (result.students.length > 0) setStudents(result.students);
-        if (result.schools.length > 0) setSchools(result.schools);
-        if (result.transactions.length > 0) setTransactions(result.transactions);
-        if (result.cheques.length > 0) setCheques(result.cheques);
-        if (result.staff && result.staff.length > 0) setStaffMembers(result.staff);
-        setSyncStats(result.stats);
-        saveToStorage('sync_stats', result.stats);
+      const gasResult = await loadDataFromAppsScript(DEFAULT_WEBAPP_URL);
+      if (gasResult && gasResult.success) {
+        setStudents(gasResult.students);
+        saveToStorage('students', gasResult.students);
+
+        if (gasResult.schools && gasResult.schools.length > 0) {
+          setSchools(gasResult.schools);
+          saveToStorage('schools', gasResult.schools);
+        }
+
+        setTransactions(gasResult.transactions);
+        saveToStorage('transactions', gasResult.transactions);
+
+        setCheques(gasResult.cheques);
+        saveToStorage('cheques', gasResult.cheques);
+
+        if (gasResult.categories && gasResult.categories.length > 0) {
+          setCategories(gasResult.categories);
+          saveToStorage('categories', gasResult.categories);
+        }
+
+        if (gasResult.managers && gasResult.managers.length > 0) {
+          setUsers(gasResult.managers);
+          saveToStorage('users', gasResult.managers);
+        }
+
+        setSyncStats(gasResult.stats);
+        saveToStorage('sync_stats', gasResult.stats);
+
         const timeStr =
           jalaliFromGregorian(new Date().toISOString()) +
           ' ' +
@@ -551,145 +575,81 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setLastSyncTime(timeStr);
         saveToStorage('last_sync_time', timeStr);
         setSyncStatus('synced');
-        logActivity('همگام‌سازی گوگل شیت برخط', `دریافت ${result.students.length} دانش‌آموز از شیت عمومی`);
+        logActivity('همگام‌سازی ابری گوگل شیت', `دریافت ${gasResult.students.length} دانش‌آموز و ${gasResult.transactions.length} تراکنش`);
         return true;
       }
-      return false;
     } catch (e: any) {
-      setSyncStatus('error');
-      setSyncError(e.message || 'خطا در اتصال به گوگل شیت');
-      return false;
+      console.warn('Apps Script sync attempt notice:', e);
     }
-  };
 
-  const connectWithGoogle = async (): Promise<boolean> => {
-    setSyncStatus('syncing');
-    setSyncError(null);
+    // Strategy 2: Direct Google Sheet export / fallback
     try {
-      const res = await googleSignIn();
-      setGoogleUser(res.user);
-      setGoogleAccessToken(res.accessToken);
+      const result = await loadDataFromPublicGoogleSheet(sId);
+      if (result.success) {
+        setStudents(result.students);
+        saveToStorage('students', result.students);
 
-      // Load data from Google Sheets immediately
-      const syncResult = await loadAccountingDataFromGoogleSheets(res.accessToken, spreadsheetId);
-      if (syncResult.success) {
-        if (syncResult.students.length > 0) setStudents(syncResult.students);
-        if (syncResult.schools.length > 0) setSchools(syncResult.schools);
-        if (syncResult.transactions.length > 0) setTransactions(syncResult.transactions);
-        if (syncResult.cheques.length > 0) setCheques(syncResult.cheques);
-        if (syncResult.categories.length > 0) setCategories(syncResult.categories);
-        if (syncResult.managers.length > 0) setUsers(syncResult.managers);
-        setSyncStats(syncResult.stats);
-        saveToStorage('sync_stats', syncResult.stats);
+        if (result.schools && result.schools.length > 0) {
+          setSchools(result.schools);
+          saveToStorage('schools', result.schools);
+        }
 
-        const timeStr = jalaliFromGregorian(new Date().toISOString()) + ' ' + new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+        setTransactions(result.transactions);
+        saveToStorage('transactions', result.transactions);
+
+        setCheques(result.cheques);
+        saveToStorage('cheques', result.cheques);
+
+        if (result.categories && result.categories.length > 0) {
+          setCategories(result.categories);
+          saveToStorage('categories', result.categories);
+        }
+
+        if (result.managers && result.managers.length > 0) {
+          setUsers(result.managers);
+          saveToStorage('users', result.managers);
+        }
+
+        if (result.staff && result.staff.length > 0) {
+          setStaffMembers(result.staff);
+          saveToStorage('staff_members', result.staff);
+        }
+
+        setSyncStats(result.stats);
+        saveToStorage('sync_stats', result.stats);
+
+        const timeStr =
+          jalaliFromGregorian(new Date().toISOString()) +
+          ' ' +
+          new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
         setLastSyncTime(timeStr);
         saveToStorage('last_sync_time', timeStr);
         setSyncStatus('synced');
-        logActivity('اتصال به Google Sheets', `همگام‌سازی موفق اطلاعات با شناسه شیت ${spreadsheetId}`);
+        logActivity('همگام‌سازی اکسل گوگل شیت', `دریافت ${result.students.length} دانش‌آموز`);
         return true;
-      } else {
-        setSyncStatus('error');
-        setSyncError(syncResult.error || 'خطا در بارگذاری داده‌های شیت');
-        return false;
       }
-    } catch (e: any) {
-      console.warn('Google popup error, trying public sheet fallback:', e);
-      try {
-        const fallbackRes = await loadPublicSheet(spreadsheetId);
-        if (fallbackRes) {
-          return true;
-        }
-      } catch (err) {
-        console.warn('Public sheet fallback failed:', err);
-      }
-      setSyncStatus('error');
-      setSyncError('ورود با حساب گوگل در اپلیکیشن مسدود شده است. لطفاً از دکمه «بارگذاری فایل اکسل شیت» یا اتصال به لینک عمومی استفاده کنید.');
-      return false;
+    } catch (err: any) {
+      console.warn('Public sheet sync attempt notice:', err);
     }
+
+    setSyncStatus('error');
+    setSyncError('عدم امکان همگام‌سازی برخط با سرور ابری. لطفاً اتصال اینترنت خود را بررسی فرمایید.');
+    return false;
   };
 
-  const disconnectGoogle = async () => {
-    await googleSignOut();
-    setGoogleUser(null);
-    setGoogleAccessToken(null);
-    setSyncStatus('idle');
-  };
-
-  const syncWithGoogleSheets = async (targetSheetId?: string): Promise<boolean> => {
-    const sId = targetSheetId || spreadsheetId;
-    setSyncStatus('syncing');
-    setSyncError(null);
-
-    // If webAppUrl is provided and no google token, sync via webAppUrl
-    if (webAppUrl && !googleAccessToken) {
-      try {
-        const result = await loadDataFromAppsScript(webAppUrl);
-        if (result.success) {
-          if (result.students.length > 0) setStudents(result.students);
-          if (result.schools.length > 0) setSchools(result.schools);
-          if (result.transactions.length > 0) setTransactions(result.transactions);
-          if (result.cheques.length > 0) setCheques(result.cheques);
-          setSyncStats(result.stats);
-          saveToStorage('sync_stats', result.stats);
-          const timeStr = jalaliFromGregorian(new Date().toISOString()) + ' ' + new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
-          setLastSyncTime(timeStr);
-          saveToStorage('last_sync_time', timeStr);
-          setSyncStatus('synced');
-          logActivity('همگام‌سازی با وب‌اپ Apps Script', `دریافت ${result.students.length} دانش‌آموز`);
-          return true;
-        }
-      } catch (e: any) {
-        console.warn('Apps script sync error:', e);
-      }
-    }
-
-    let token = googleAccessToken;
-    if (!token) {
-      token = await getAccessToken();
-    }
-    if (!token) {
-      // Trigger sign-in popup
-      return await connectWithGoogle();
-    }
-
-    try {
-      const syncResult = await loadAccountingDataFromGoogleSheets(token, sId);
-      if (syncResult.success) {
-        if (syncResult.students.length > 0) setStudents(syncResult.students);
-        if (syncResult.schools.length > 0) setSchools(syncResult.schools);
-        if (syncResult.transactions.length > 0) setTransactions(syncResult.transactions);
-        if (syncResult.cheques.length > 0) setCheques(syncResult.cheques);
-        if (syncResult.categories.length > 0) setCategories(syncResult.categories);
-        if (syncResult.managers.length > 0) setUsers(syncResult.managers);
-        setSyncStats(syncResult.stats);
-        saveToStorage('sync_stats', syncResult.stats);
-
-        const timeStr = jalaliFromGregorian(new Date().toISOString()) + ' ' + new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
-        setLastSyncTime(timeStr);
-        saveToStorage('last_sync_time', timeStr);
-        setSyncStatus('synced');
-        logActivity('همگام‌سازی با گوگل شیت', `دریافت ${syncResult.students.length} دانش‌آموز و ${syncResult.transactions.length} تراکنش`);
-        return true;
-      } else {
-        setSyncStatus('error');
-        setSyncError(syncResult.error || 'خطا در بارگذاری داده‌ها');
-        return false;
-      }
-    } catch (e: any) {
-      setSyncStatus('error');
-      setSyncError(e.message || 'خطا در ارتباط با گوگل شیت');
-      return false;
-    }
+  const loadPublicSheet = async (id?: string) => {
+    return await syncWithGoogleSheets(id);
   };
 
   const addStudent = (data: Omit<Student, 'id' | 'parsian_code'>): Student => {
     const newId = students.length > 0 ? Math.max(...students.map((s) => s.id)) + 1 : 1;
     const schoolObj = schools.find((s) => s.id === data.school_id);
     const parsian = buildParsianCode(data.national_id, data.school_id);
+    const cleanFullName = String(data.name || '').trim();
 
     const newStudent: Student = {
       ...data,
+      name: cleanFullName,
       id: newId,
       school_name: schoolObj?.name || 'مدرسه',
       parsian_code: parsian.fullCode,
@@ -700,22 +660,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setStudents((prev) => [newStudent, ...prev]);
     logActivity('افزودن دانش‌آموز', `ثبت دانش‌آموز ${newStudent.name} در ${newStudent.school_name}`, 'student', newId);
 
-    // If connected to Google Sheets, append row directly to cloud sheet
-    if (googleAccessToken) {
-      appendSheetRow(googleAccessToken, spreadsheetId, 'Students', [
-        newStudent.id,
-        newStudent.name,
-        newStudent.grade,
-        newStudent.phone,
-        newStudent.national_id,
-        newStudent.school_id,
-        '67',
-        schoolObj?.moeen_code || '1',
-        newStudent.national_id,
-        true,
-        new Date().toISOString(),
-      ]).catch((err) => console.warn('Cloud sheet append student failed:', err));
-    }
+    // Save directly to Google Apps Script / Google Sheet
+    apiSaveStudent(newStudent, 'add').catch((err) => console.warn('Cloud sync student notice:', err));
 
     return newStudent;
   };
@@ -724,7 +670,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setStudents((prev) =>
       prev.map((s) => {
         if (s.id !== id) return s;
-        const updated = { ...s, ...data };
+        const updated = {
+          ...s,
+          ...data,
+          name: data.name !== undefined ? String(data.name).trim() : s.name,
+        };
         if (data.national_id || data.school_id) {
           const sid = data.school_id ?? s.school_id;
           const nid = data.national_id ?? s.national_id;
@@ -732,6 +682,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const sc = schools.find((x) => x.id === sid);
           if (sc) updated.school_name = sc.name;
         }
+        apiSaveStudent(updated, 'update').catch((err) => console.warn('Cloud update student notice:', err));
         return updated;
       })
     );
@@ -741,6 +692,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteStudent = (id: number) => {
     const student = students.find((s) => s.id === id);
     setStudents((prev) => prev.filter((s) => s.id !== id));
+    apiSaveStudent({ id }, 'delete').catch((err) => console.warn('Cloud delete student notice:', err));
     logActivity('حذف دانش‌آموز', `حذف دانش‌آموز ${student?.name || id}`, 'student', id);
   };
 
@@ -766,6 +718,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const parsian = buildParsianCode(st.national_id, st.school_id);
       const newSt: Student = {
         ...st,
+        name: String(st.name).trim(),
         id: maxId,
         school_name: schoolObj?.name || 'مدرسه',
         parsian_code: parsian.fullCode,
@@ -774,6 +727,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       addedList.push(newSt);
       added++;
+      apiSaveStudent(newSt, 'add').catch((err) => console.warn('Cloud import student notice:', err));
     });
 
     setStudents((prev) => [...addedList, ...prev]);
@@ -809,25 +763,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     playTransactionSound();
     logActivity('ثبت بدهی شهریه', `ثبت ${data.amount.toLocaleString('fa-IR')} ریال برای ${student?.name}`, 'transaction', newId);
 
-    if (googleAccessToken) {
-      appendSheetRow(googleAccessToken, spreadsheetId, 'Tuition', [
-        newTx.id,
-        newTx.date,
-        newTx.student_id,
-        newTx.school_id,
-        'debt',
-        newTx.amount,
-        newTx.description,
-        '',
-        '',
-        currentUser?.username || 'admin',
-        new Date().toISOString(),
-        true,
-        true,
-        '',
-      ]).catch((e) => console.warn('Cloud sheet sync debt failed:', e));
-    }
-
+    apiSaveTuition(newTx).catch((e) => console.warn('Cloud sync tuition debt notice:', e));
     return newTx;
   };
 
@@ -896,24 +832,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         newChequeId
       );
 
-      if (googleAccessToken) {
-        appendSheetRow(googleAccessToken, spreadsheetId, 'Cheques', [
-          newCheque.id,
-          newCheque.issue_date,
-          newCheque.student_id,
-          newCheque.school_id,
-          newCheque.amount,
-          newCheque.sayad_id,
-          newCheque.due_date,
-          newCheque.note || '',
-          currentUser?.username || 'admin',
-          new Date().toISOString(),
-          'چک',
-          true,
-          newCheque.in_favor_confirmed,
-          newCheque.status,
-        ]).catch((e) => console.warn('Cloud sheet sync cheque failed:', e));
-      }
+      apiSaveCheque(newCheque).catch((e: any) => console.warn('Cloud sheet sync cheque failed:', e));
 
       if (newCheque.status === 'approved') {
         const newTxId = transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101;
@@ -968,24 +887,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     playTransactionSound();
     logActivity('ثبت دریافت شهریه', `دریافت ${data.amount.toLocaleString('fa-IR')} ریال از ${student?.name}`, 'transaction', newTxId);
 
-    if (googleAccessToken) {
-      appendSheetRow(googleAccessToken, spreadsheetId, 'Tuition', [
-        newTx.id,
-        newTx.date,
-        newTx.student_id,
-        newTx.school_id,
-        'payment',
-        newTx.amount,
-        newTx.description,
-        newTx.tracking_code || '',
-        newTx.attachment_url || '',
-        currentUser?.username || 'admin',
-        new Date().toISOString(),
-        true,
-        true,
-        newTx.payment_method || '',
-      ]).catch((e) => console.warn('Cloud sheet sync tuition payment failed:', e));
-    }
+    apiSaveTuition(newTx).catch((e) => console.warn('Cloud sync tuition payment notice:', e));
   };
 
   const addBulkDebt = (data: { student_ids: number[]; amount: number; date: string; description: string; school_id: number }): number => {
@@ -1070,23 +972,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     playTransactionSound();
     logActivity('ثبت هزینه', `ثبت هزینه ${cat?.name} به مبلغ ${data.amount.toLocaleString('fa-IR')} ریال`, 'transaction', newId);
 
-    if (googleAccessToken) {
-      appendSheetRow(googleAccessToken, spreadsheetId, 'Expenses', [
-        newTx.id,
-        newTx.date,
-        newTx.school_id,
-        newTx.expense_category_name || '',
-        newTx.amount,
-        newTx.description,
-        newTx.tracking_code || '',
-        newTx.attachment_url || '',
-        currentUser?.username || 'admin',
-        new Date().toISOString(),
-        true,
-        true,
-        newTx.payment_method || '',
-      ]).catch((e) => console.warn('Cloud sheet sync expense failed:', e));
-    }
+    apiSaveExpense(newTx).catch((e) => console.warn('Cloud sync expense notice:', e));
 
     return newTx;
   };
@@ -1356,11 +1242,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const overdue = calculateStudentOverdue(student, transactions);
     const finalMsg =
       customMessage ||
-      smsTemplate
-        .replace('{name}', student.name)
-        .replace('{school}', student.school_name || 'مدرسه')
-        .replace('{amount}', debt.toLocaleString('fa-IR'))
-        .replace('{days}', String(overdue.overdueDays));
+      formatSmsTemplate(smsConfig.smsTemplate || smsTemplate, student, debt, overdue.overdueDays);
 
     const newLog: SmsLog = {
       id: 'sms_' + Date.now() + Math.random().toString(36).substring(2, 5),
