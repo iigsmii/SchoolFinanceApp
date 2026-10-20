@@ -182,6 +182,7 @@ function doGet(e) {
         success: true,
         students: (students_(b)||{}).data || [],
         schools: (schools_(b)||{}).data || [],
+        staff: (staff_(b)||{}).data || [],
         tuition: (tuition_(b)||{}).data || [],
         expenses: (expenses_(b)||{}).data || [],
         cheques: (cheques_(b)||{}).data || [],
@@ -195,6 +196,7 @@ function doGet(e) {
     if(action==='transactions') return json_(transactions_(b));
     if(action==='students'){ return json_(students_(b)); }
     if(action==='schools') return json_(schools_(b));
+    if(action==='staff') return json_(staff_(b));
     if(action==='managers') return json_(managers_(b));
     if(action==='expenses') return json_(expenses_(b));
     if(action==='bank') return json_(bank_(b));
@@ -261,7 +263,6 @@ function doPost(e) {
         managers: managerData,
         bank: (bank_(body)||{}).data || [],
         bankTransactions: (bank_(body)||{}).data || [],
-        staff: (staff_(body)||{}).data || [],
         transactions: (transactions_(body)||{}).data || [],
       });
     }
