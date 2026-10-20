@@ -566,8 +566,8 @@ function students_(b) {
         .replace(/[يىئ]/g,'ی').replace(/ك/g,'ک')
         .replace(/[۰-۹]/g,d=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
         .replace(/[٠-٩]/g,d=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
-        .replace(/[\\u064B-\\u065F\\u0670\\u0640\\u200c\\u200d\\u200e\\u200f\\ufeff]/g,'')
-        .replace(/[^\\p{L}\\p{N}\\s]/gu,' ').replace(/\\s+/g,' ').trim();
+        .replace(/[\u064B-\u065F\u0670\u0640\u200c\u200d\u200e\u200f\ufeff]/g,'')
+        .replace(/[^\p{L}\p{N}\s]/gu,' ').replace(/\s+/g,' ').trim();
       const q=normalizeStudentSearch_(b.q);
       const searchText=normalizeStudentSearch_([x.name,x.national_id,x.grade,x.phone,x.father_phone,x.mother_phone].join(' '));
       if(q && searchText.indexOf(q)<0) return;
