@@ -82,7 +82,7 @@ export const SmsScreen: React.FC = () => {
 
   // Filter students
   const filteredStudents = students.filter((s) => {
-    if (!s.active) return false;
+    if (s.active === false) return false;
     if (selectedSchoolId !== 0 && s.school_id !== selectedSchoolId) return false;
     if (targetGrade !== 'all' && s.grade !== targetGrade) return false;
     if (targetRecipient === 'mothers' && !s.mother_phone) return false;
