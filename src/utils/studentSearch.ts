@@ -18,26 +18,20 @@ export const normalizeSearchText = (value: unknown): string =>
     .replace(/\s+/g, ' ')
     .trim();
 
-const normalizedStudentFields = new WeakMap<object, string[]>();
-
 export const matchesStudentSearch = (student: Partial<Student>, query: string): boolean => {
   const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) return true;
 
-  let fields = normalizedStudentFields.get(student as object);
-  if (!fields) {
-    fields = [
-      student.name,
-      student.national_id,
-      student.grade,
-      student.phone,
-      student.father_phone,
-      student.mother_phone,
-      student.school_name,
-      student.parsian_code,
-    ].map(normalizeSearchText);
-    normalizedStudentFields.set(student as object, fields);
-  }
+  const fields = [
+    student.name,
+    student.national_id,
+    student.grade,
+    student.phone,
+    student.father_phone,
+    student.mother_phone,
+    student.school_name,
+    student.parsian_code,
+  ].map(normalizeSearchText);
 
   return fields.some((field) => field.includes(normalizedQuery));
 };
