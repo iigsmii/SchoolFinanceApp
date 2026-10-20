@@ -55,6 +55,8 @@ export const BankScreen: React.FC = () => {
     if (t.payment_method === 'پول نقد') return false;
     if (t.payment_source === 'own') return false;
     if (t.payment_source === 'petty_cash') return false;
+    // Keep only transactions awaiting review; accepted and rejected records leave this queue.
+    if (t.review_status === 'approved' || t.review_status === 'rejected') return false;
     if (!isSenior && t.school_id !== currentUser?.school_id) return false;
     return true;
   });
@@ -413,6 +415,35 @@ export const BankScreen: React.FC = () => {
                         {formatRial(t.amount)} ریال
                       </div>
                     </div>
+
+                    {t.attachment_url && (
+                      <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-3 space-y-2">
+                        <div className="text-xs font-bold text-indigo-900 flex items-center gap-2">
+                          <Receipt className="w-4 h-4" />
+                          تصویر رسید / مدرک تراکنش
+                        </div>
+                        <a
+                          href={t.attachment_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block"
+                          title="مشاهده تصویر در اندازه کامل"
+                        >
+                          <img
+                            src={t.attachment_url}
+                            alt={`تصویر رسید تراکنش ${t.id}`}
+                            loading="lazy"
+                            className="max-h-72 max-w-full rounded-xl border border-indigo-100 object-contain bg-white mx-auto"
+                            onError={(event) => {
+                              event.currentTarget.style.display = 'none';
+                            }}
+                          />
+                          <span className="mt-2 inline-flex text-[11px] font-bold text-indigo-700 underline">
+                            مشاهده تصویر در اندازه کامل
+                          </span>
+                        </a>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 text-xs">
                       <div
