@@ -210,6 +210,7 @@ export const StudentsScreen: React.FC = () => {
           chosenSchoolId = requestedId;
         }
 
+        let rejectedRows = 0;
         data.forEach((row: any) => {
           const firstName = cleanText(getCell(row, ['نام کوچک','نام','اسم','first name','firstname','given name']));
           const lastName = cleanText(getCell(row, ['نام خانوادگی','نام‌خانوادگی','نام خانوادگي','فامیلی','فامیل','نام فامیل','نام خانوادگی دانش آموز','نام خانوادگی دانش‌آموز','last name','lastname','surname','family name']));
@@ -233,29 +234,31 @@ export const StudentsScreen: React.FC = () => {
             if (sc) schoolId = sc.id;
           }
 
-          if (name && nid) {
-            newStudents.push({
-              name: String(name).trim(),
-              grade,
-              phone: normalizedFatherP || motherP || '',
-              father_phone: normalizedFatherP || '',
-              mother_phone: motherP || '',
-              national_id: nid.padStart(10, '0'),
-              school_id: schoolId,
-              active: true,
-              needs_fix: nid.length !== 10,
-            });
+          if (!name || !nid || nid.length > 10) {
+            rejectedRows++;
+            return;
           }
+          newStudents.push({
+            name: String(name).trim(),
+            grade,
+            phone: normalizedFatherP || motherP || '',
+            father_phone: normalizedFatherP || '',
+            mother_phone: motherP || '',
+            national_id: nid.padStart(10, '0'),
+            school_id: schoolId,
+            active: true,
+            needs_fix: nid.length !== 10,
+          });
         });
 
         if (newStudents.length > 0) {
           const res = importStudents(newStudents);
           playSuccessSound();
           setImportSummary(
-            `ورود موفق: ${res.added} دانش‌آموز افزوده شد. (${res.skipped} مورد تکراری، ${res.invalid} ناقص)`
+            `ورود موفق: ${res.added} دانش‌آموز افزوده شد. (${res.skipped} مورد تکراری، ${res.invalid} ناقص، ${rejectedRows} ردیف خراب/ناقص رد شد)`
           );
         } else {
-          setImportSummary('هیچ سطری مطابق با ستون‌های مورد نظر (نام و کد ملی) یافت نشد.');
+          setImportSummary(`هیچ دانش‌آموز قابل ورود پیدا نشد. ${rejectedRows} ردیف به‌دلیل نام یا کد ملی نامعتبر رد شد.`);
         }
       } catch (err: any) {
         setImportSummary('خطا در پردازش فایل اکسل: ' + err.message);
