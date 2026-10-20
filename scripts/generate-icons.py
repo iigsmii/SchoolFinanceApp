@@ -46,12 +46,4 @@ if android_res.exists():
 '''
     (adaptive / "ic_launcher.xml").write_text(xml, encoding="utf-8")
     (adaptive / "ic_launcher_round.xml").write_text(xml, encoding="utf-8")
-    values = android_res / "values"
-    values.mkdir(parents=True, exist_ok=True)
-    (values / "ic_launcher_colors.xml").write_text('''<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <color name="ic_launcher_background">#FFFFFF</color>
-</resources>
-''', encoding="utf-8")
-
 print("Generated PWA and Android launcher icons from public/app-logo.jpg")
