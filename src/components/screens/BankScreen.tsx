@@ -544,12 +544,15 @@ export const BankScreen: React.FC = () => {
                           <button type="button" className="rounded-lg bg-purple-50 text-purple-800 border border-purple-200 py-1.5 text-[11px] font-bold" onClick={() => {
                             const nextCard = window.prompt('شماره کارت تنخواه مدیر', manager.petty_cash_card || '');
                             if (nextCard === null) return;
-                            const nextLimit = window.prompt('سقف تنخواه به ریال', String(manager.petty_cash_limit || 0));
+                            updateManager(manager.id, { petty_cash_card: nextCard.trim() });
+                          }}>{cardNum ? 'ویرایش شماره کارت' : 'افزودن شماره کارت'}</button>
+                          <button type="button" className="rounded-lg bg-indigo-50 text-indigo-800 border border-indigo-200 py-1.5 text-[11px] font-bold" onClick={() => {
+                            const nextLimit = window.prompt('سقف مجاز کارت تن‌خواه به ریال', String(manager.petty_cash_limit || 0));
                             if (nextLimit === null) return;
                             const parsedLimit = Number(nextLimit.replace(/[^0-9]/g, ''));
                             if (!Number.isFinite(parsedLimit) || parsedLimit < 0) { alert('سقف تنخواه معتبر نیست.'); return; }
-                            updateManager(manager.id, { petty_cash_card: nextCard.trim(), petty_cash_limit: parsedLimit });
-                          }}>{cardNum ? 'ویرایش کارت' : 'افزودن کارت'}</button>
+                            updateManager(manager.id, { petty_cash_limit: parsedLimit });
+                          }}>ویرایش سقف کارت</button>
                           <button type="button" className="rounded-lg bg-rose-50 text-rose-700 border border-rose-200 py-1.5 text-[11px] font-bold disabled:opacity-40" disabled={!cardNum} onClick={() => {
                             if (window.confirm('اطلاعات کارت تنخواه حذف شود؟ سابقه هزینه‌ها باقی می‌ماند.')) updateManager(manager.id, { petty_cash_card: '', petty_cash_bank: '', petty_cash_shaba: '', petty_cash_limit: 0 });
                           }}>حذف کارت</button>
