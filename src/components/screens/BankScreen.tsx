@@ -170,6 +170,7 @@ export const BankScreen: React.FC = () => {
           const rawAmount = pick(row, ['مبلغ','مبلغ تراکنش','amount','transaction amount']);
           const amount = debit || credit || toAmount(rawAmount);
           const track = String(pick(row, ['شماره پیگیری','کد پیگیری','شماره مرجع','شماره ارجاع','ارجاع','tracking','reference','reference number']) || '').trim();
+          const terminal = toDigits(pick(row, ['شماره پایانه','شماره ترمینال','کد پایانه','پایانه','terminal id','terminal number','pos terminal','terminal'])).replace(/\D/g, '');
           const desc = String(pick(row, ['شرح','شرح تراکنش','توضیحات','بابت','description','details']) || '').trim();
           const date = toDate(pick(row, ['تاریخ','تاریخ تراکنش','تاریخ عملیات','date','transaction date']));
           const account = String(pick(row, ['شماره حساب','حساب','شماره کارت','شماره کارت مقصد','شماره کارت مبدا','bank account','account','card number']) || '').trim();
@@ -190,20 +191,56 @@ export const BankScreen: React.FC = () => {
         }).filter((x): x is NonNullable<typeof x> => x !== null);
 
         if (!newItems.length) throw new Error('هیچ ردیف معتبر دارای مبلغ، شرح یا شماره پیگیری یافت نشد. فایل و سطر عنوان را بررسی کنید.');
-        const count = importBankTransactions(newItems);
+        const normalizeTerminal = (v: unknown) => toDigits(v).replace(/\D/g, '').replace(/^0+/, '');
+        const configured = schools.filter((sc) => String(sc.pos_terminal_number || '').trim());
+        const usedTxIds = new Set<number>();
+        const assignedItems = newItems.map((item) => {
+          const terminalNo = normalizeTerminal(item.terminal_number || '');
+          const terminalSchool = terminalNo
+            ? configured.find((sc) => normalizeTerminal(sc.pos_terminal_number) === terminalNo)
+            : (configured.length === 1 ? configured[0] : undefined);
+          const schoolId = terminalNo ? (terminalSchool?.id || 0) : (terminalSchool?.id || item.school_id);
+          const candidates = transactions.filter((t) =>
+            !usedTxIds.has(t.id) && !t.reconciled &&
+            Number(t.school_id) === Number(schoolId) &&
+            Number(t.amount) === Number(item.amount) &&
+            String(t.tracking_code || '').trim() !== '' &&
+            String(t.tracking_code || '').trim() === String(item.tracking_code || '').trim()
+          );
+          const matched = candidates.length === 1 ? candidates[0] : undefined;
+          if (matched) usedTxIds.add(matched.id);
+          return {
+            ...item,
+            school_id: schoolId,
+            school_name: terminalSchool?.name || schools.find((s) => s.id === schoolId)?.name,
+            reconciled: Boolean(matched),
+            matched_transaction_id: matched?.id,
+            assigned_student_id: matched?.student_id,
+            assigned_student_name: matched?.student_name || '',
+          };
+        });
+        const count = importBankTransactions(assignedItems);
         let cloudMessage = 'ذخیره در Google Sheets تأیید نشد؛ اطلاعات محلی حفظ شده است.';
         try {
-          const bytes = new Uint8Array(evt.target?.result as ArrayBuffer);
-          let binary = '';
-          const chunkSize = 0x8000;
-          for (let i = 0; i < bytes.length; i += chunkSize) binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-          const upload = await postToAppsScript({ action: 'bank_upload', file_name: file.name, base64: btoa(binary), school_id: currentUser?.school_id || 1 });
-          if (upload?.success) cloudMessage = `ذخیره در Google Sheets تأیید شد (${upload.count ?? count} ردیف؛ برگه Bank).`;
+          const uploadRows = assignedItems.map((item) => ({
+            date: item.date, school_id: item.school_id, amount: item.amount,
+            description: item.description || '', tracking_code: item.tracking_code || '',
+            bank_account: item.bank_account || '', card_number: item.card_number || '',
+            balance: item.balance ?? '', direction: item.direction || 'unknown',
+            terminal_number: item.terminal_number || ''
+          }));
+          const upload = await postToAppsScript({
+            action: 'bank_upload', file_name: file.name, school_id: currentUser?.school_id || 1,
+            rows: uploadRows
+          });
+          if (upload?.success) cloudMessage = `ذخیره در Google Sheets تأیید شد (${upload.count ?? count} ردیف؛ ${upload.skipped || 0} تکراری/نامعتبر).`;
           else if (upload?.error) cloudMessage += ` علت: ${upload.error}`;
         } catch (cloudError) {
           console.warn('Cloud bank upload failed; local import remains available:', cloudError);
         }
-        let msg = `برگه «${sourceName}»: ${count} تراکنش معتبر به فهرست محلی اضافه شد. ${cloudMessage}`;
+        const matchedCount = assignedItems.filter((item) => item.reconciled).length;
+        const unmatchedCount = assignedItems.length - matchedCount;
+        let msg = `برگه «${sourceName}»: ${count} تراکنش وارد شد؛ ${matchedCount} مورد با شماره پیگیری و مبلغ تطبیق شد و ${unmatchedCount} مورد در فهرست تطبیق‌نشده‌ها باقی ماند. ${cloudMessage}`;
         if (skipped) msg += ` ${skipped} ردیف خالی/نامعتبر کنار گذاشته شد.`;
         if (feeCount) msg += ` ${feeCount} مورد با احتمال کارمزد شناسایی شد.`;
         alert(msg);
