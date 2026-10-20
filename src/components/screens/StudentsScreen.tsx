@@ -247,7 +247,7 @@ export const StudentsScreen: React.FC = () => {
 
   // Filter list
   const filteredStudents = students.filter((s) => {
-    if (!s.active) return false;
+    if (s.active === false) return false;
     if (selectedSchoolFilter !== 0 && Number(s.school_id) !== Number(selectedSchoolFilter)) return false;
     if (filterNeedsFix && !s.needs_fix) return false;
     if (!matchesStudentSearch(s, searchQuery)) return false;
