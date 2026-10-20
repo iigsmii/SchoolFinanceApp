@@ -14,6 +14,7 @@ export const SchoolsScreen: React.FC = () => {
   const [formCode, setFormCode] = useState('');
   const [formType, setFormType] = useState('دبستان پسرانه');
   const [formActive, setFormActive] = useState(true);
+  const [formPosTerminal, setFormPosTerminal] = useState('');
   const [formError, setFormError] = useState('');
 
   const openAddModal = () => {
@@ -22,6 +23,7 @@ export const SchoolsScreen: React.FC = () => {
     setFormCode('');
     setFormType('دبستان پسرانه');
     setFormActive(true);
+    setFormPosTerminal('');
     setFormError('');
     setIsModalOpen(true);
   };
@@ -32,6 +34,7 @@ export const SchoolsScreen: React.FC = () => {
     setFormCode(sc.code);
     setFormType(sc.type || 'دبستان');
     setFormActive(sc.active);
+    setFormPosTerminal(sc.pos_terminal_number || '');
     setFormError('');
     setIsModalOpen(true);
   };
@@ -55,6 +58,7 @@ export const SchoolsScreen: React.FC = () => {
         code: formCode.trim().toUpperCase(),
         type: formType,
         active: formActive,
+        pos_terminal_number: formPosTerminal.trim(),
       });
     } else {
       addSchool({
@@ -111,6 +115,7 @@ export const SchoolsScreen: React.FC = () => {
                   <div className="text-[11px] font-mono text-[#62205f] font-semibold mt-2 bg-[#fcfaff] p-2 rounded-xl border border-[#ede5ef]">
                     کد معین پارسیان: {moeen} | کد کل: 67
                   </div>
+                  <div className="text-xs text-gray-600 mt-2">شماره پایانه پوز: <span className="font-mono font-bold">{sc.pos_terminal_number || 'ثبت نشده'}</span></div>
                 </div>
 
                 <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-3">
@@ -186,6 +191,16 @@ export const SchoolsScreen: React.FC = () => {
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-[#341648] mb-1.5">
+                  شماره پایانه دستگاه پوز
+                </label>
+                <input type="text" inputMode="numeric" value={formPosTerminal}
+                  onChange={(e) => setFormPosTerminal(e.target.value.replace(/[^0-9۰-۹٠-٩]/g, ''))}
+                  placeholder="شماره پایانه روی رسید/صورتحساب پوز"
+                  className="w-full px-4 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left" dir="ltr" />
+                <p className="text-[11px] text-gray-500 mt-1">برای انتساب خودکار تراکنش‌های پوز به این مدرسه استفاده می‌شود.</p>
+              </div>
               <div>
                 <label className="block text-xs font-bold text-[#341648] mb-1.5">
                   نوع مرکز
