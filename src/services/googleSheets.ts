@@ -14,7 +14,7 @@ import * as XLSX from 'xlsx';
 
 // Permanent configuration as requested by user
 export const DEFAULT_SPREADSHEET_ID = '1bFTL1edC-btgjp2KvvkwIM5WaJnycVFylTmFQQFRixk';
-export const DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzsCUERpyKBOZg4z4AMua3RvWKgguw73-1ZtkzgjrJdfA4yOX2d69WqlXy1FS7NPHnxqA/exec';
+export const DEFAULT_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbznVf-LPQDWAbZyoenKD8B6UYLjmrjRIqWZPlVJnzwwF2yBpqbqR6HZeGsd-WcQWKJoWA/exec';
 export const OWNER_EMAIL = 's.mehdi.golzari@gmail.com';
 
 export interface SheetLoadResult {
