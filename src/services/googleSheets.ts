@@ -75,8 +75,18 @@ export const postToAppsScript = async (
     const url = webAppUrl.trim();
     if (!url) return { success: false, error: 'آدرس وب‌اپ تعریف نشده است.' };
 
+    const action = String(payload.action || payload.endpoint || '').replace(/^\\/+/, '').toLowerCase();
+    const idempotentActions = ['tuition_add', 'tuition_bulk_debt', 'expense_add', 'finance_transaction', 'cheque_review'];
+    // Send a client-generated operation ID so the server can replay a stored result
+    // when the same operation is retried with the same payload/request_id.
+    const requestId = payload.request_id || (idempotentActions.includes(action)
+      ? ((typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+          ? crypto.randomUUID()
+          : `req-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+      : undefined);
     const bodyData = JSON.stringify({
       ...payload,
+      ...(requestId ? { request_id: requestId } : {}),
       token: (typeof localStorage !== 'undefined' && localStorage.getItem('school_finance_auth_token')) || 'sync_direct',
       owner: OWNER_EMAIL,
     });
