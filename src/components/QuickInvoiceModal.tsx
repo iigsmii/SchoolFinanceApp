@@ -178,7 +178,6 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
                 {filteredStudents.length === 0 ? (
                   <div className="p-2.5 text-center text-gray-400">دانش‌آموزی یافت نشد</div>
                 ) : (
-                  {filteredStudents.length > 50 && (<div className="p-2 text-center text-[11px] text-amber-700 bg-amber-50">بیش از ۵۰ نتیجه وجود دارد؛ نام یا کد ملی دقیق‌تری وارد کنید.</div>)}
                   visibleStudents.map((st) => (
                     <button
                       key={st.id}
