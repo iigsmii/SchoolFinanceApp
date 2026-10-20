@@ -320,6 +320,7 @@ export const TuitionScreen: React.FC = () => {
               {availableStudents.length === 0 ? (
                 <div className="p-3 text-center text-xs text-gray-500">دانش‌آموزی پیدا نشد</div>
               ) : (
+                {availableStudents.length > 50 && (<div className="p-2 text-center text-[11px] text-amber-700 bg-amber-50">بیش از ۵۰ نتیجه وجود دارد؛ برای پیدا کردن دانش‌آموز، نام یا کد ملی دقیق‌تری وارد کنید.</div>)}
                 visibleStudents.map((st) => (
                   <button
                     key={st.id}
