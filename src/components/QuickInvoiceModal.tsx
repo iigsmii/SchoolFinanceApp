@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { Student, Transaction } from '../types';
 import { JalaliDatePicker } from './JalaliDatePicker';
 import { todayJalali, jalaliToIso, formatRial, latinDigits } from '../utils/jalali';
+import { matchesStudentSearch } from '../utils/studentSearch';
 import {
   FileText,
   Search,
@@ -65,12 +66,10 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
 
   if (!isOpen) return null;
 
-  const filteredStudents = availableStudents.filter((st) => {
-    if (!studentSearch.trim()) return true;
-    const normalize = (value: unknown) => String(value ?? '').toLocaleLowerCase('fa').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[\u200c\s]+/g, ' ').trim();
-    const q = normalize(studentSearch);
-    return normalize(st.name).includes(q) || normalize(st.national_id).includes(q) || normalize(st.grade).includes(q) || normalize(st.school_name).includes(q);
-  });
+  const filteredStudents = availableStudents.filter((st) =>
+    matchesStudentSearch(st, studentSearch)
+  );
+  const visibleStudents = filteredStudents.slice(0, 50);
 
   const studentBalance = selectedStudent ? getStudentBalance(selectedStudent.id) : null;
 
@@ -179,7 +178,7 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
                 {filteredStudents.length === 0 ? (
                   <div className="p-2.5 text-center text-gray-400">دانش‌آموزی یافت نشد</div>
                 ) : (
-                  filteredStudents.map((st) => (
+                  visibleStudents.map((st) => (
                     <button
                       key={st.id}
                       type="button"
