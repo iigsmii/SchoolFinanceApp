@@ -139,6 +139,10 @@ export const App: React.FC = () => {
         return <SmsScreen />;
       case 'staff':
         return <StaffScreen />;
+      case 'google_settings':
+        return currentUser?.role === 'senior' || currentUser?.role === 'admin'
+          ? <SettingsScreen googleOnly />
+          : <DashboardScreen />;
       case 'settings':
       case 'export':
         return <SettingsScreen />;
