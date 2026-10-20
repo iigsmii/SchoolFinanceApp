@@ -293,7 +293,6 @@ export const TuitionScreen: React.FC = () => {
   const displayedBulkStudents = bulkSchoolStudents.filter((st) =>
     matchesStudentSearch(st, bulkFilterQuery)
   );
-  const visibleBulkStudents = displayedBulkStudents.slice(0, 100);
 
   return (
     <div className="min-h-screen bg-[#f8f5f9] pb-12">
@@ -920,7 +919,7 @@ export const TuitionScreen: React.FC = () => {
                 </div>
 
                 <div className="flex-1 overflow-y-auto space-y-1.5">
-                  {visibleBulkStudents.map((st) => (
+                  {displayedBulkStudents.map((st) => (
                     <label
                       key={st.id}
                       className="flex items-center justify-between p-2 rounded-xl bg-white border border-[#e5dde8] text-xs cursor-pointer hover:bg-gray-50"
