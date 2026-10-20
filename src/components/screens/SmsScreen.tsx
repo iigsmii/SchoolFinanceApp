@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { formatRial, jalaliFromGregorian } from '../../utils/jalali';
+import { matchesStudentSearch } from '../../utils/studentSearch';
 import { calculateStudentOverdue, formatSmsTemplate } from '../../utils/debt';
 import { Student } from '../../types';
 import {
@@ -87,16 +88,7 @@ export const SmsScreen: React.FC = () => {
     if (targetRecipient === 'mothers' && !s.mother_phone) return false;
     if (targetRecipient === 'fathers' && !s.father_phone) return false;
 
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      const matchName = s.name.toLowerCase().includes(q);
-      const matchPhone =
-        s.phone.includes(q) ||
-        (s.father_phone && s.father_phone.includes(q)) ||
-        (s.mother_phone && s.mother_phone.includes(q));
-      const matchNid = s.national_id.includes(q);
-      if (!matchName && !matchPhone && !matchNid) return false;
-    }
+    if (!matchesStudentSearch(s, searchQuery)) return false;
     const { debt } = getStudentBalance(s.id);
     if (debt <= 0) return false;
 
@@ -469,7 +461,7 @@ export const SmsScreen: React.FC = () => {
                 </div>
               ) : (
                 <div className="divide-y divide-gray-100">
-                  {filteredStudents.map((st) => {
+                  {filteredStudents.slice(0, 50).map((st) => {
                     const balance = getStudentBalance(st.id);
                     const overdue = calculateStudentOverdue(st, transactions);
                     const fatherPhone = st.father_phone || st.phone;
