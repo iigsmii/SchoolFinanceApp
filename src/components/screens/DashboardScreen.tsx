@@ -236,7 +236,6 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
     { id: 'transactions', label: 'تراکنش‌ها', icon: ArrowLeftRight, color: 'text-indigo-600', bg: 'bg-indigo-50' },
     { id: 'statement', label: 'گردش حساب', icon: BookOpen, color: 'text-teal-600', bg: 'bg-teal-50' },
     { id: 'claim', label: 'طلب تن‌خواه', icon: Wallet, color: 'text-rose-600', bg: 'bg-rose-50' },
-    { id: 'report', label: 'گزارش مالی', icon: BarChart3, color: 'text-cyan-600', bg: 'bg-cyan-50' },
     { id: 'activity', label: 'فعالیت‌ها', icon: ClipboardList, color: 'text-slate-600', bg: 'bg-slate-50' },
     { id: 'settings', label: 'تنظیمات', icon: Settings, color: 'text-gray-600', bg: 'bg-gray-100' },
   ];
@@ -247,6 +246,7 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
     { id: 'bank', label: 'تطبیق بانک', icon: Landmark, color: 'text-emerald-600', bg: 'bg-emerald-50' },
     { id: 'managers', label: 'مدیران مدارس', icon: UserCog, color: 'text-indigo-600', bg: 'bg-indigo-50' },
     { id: 'schools', label: 'واحدهای آموزشی', icon: Building2, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { id: 'google_settings', label: 'تنظیمات گوگل', icon: Database, color: 'text-emerald-600', bg: 'bg-emerald-50' },
     { id: 'export', label: 'خروجی پارسیان', icon: FileSpreadsheet, color: 'text-teal-600', bg: 'bg-teal-50' },
     { id: 'messages', label: 'ارسال بخشنامه', icon: Megaphone, color: 'text-purple-600', bg: 'bg-purple-50' },
   ];
