@@ -27,7 +27,7 @@ const HEADERS = {
   Managers: ['id','name','username','password','school_id','role','active','created_at','petty_cash_card','petty_cash_bank','petty_cash_shaba','petty_cash_limit','petty_cash_balance','gender'],
   Schools: ['id','name','code','active','created_at','petty_cash_card','type','moeen_code'],
   Staff: ['id','school_id','school_name','name','national_id','phone','role_title','contract_type','hourly_rate','base_salary','insurance_employer_share','insurance_employee_share','bank_card_or_sheba','kol_code','moeen_code','tafsili_code','active','created_at'],
-  Students: ['id','name','grade','phone','national_id','school_id','kol_code','moeen_code','tafsili_code','active','created_at'],
+  Students: ['id','name','grade','phone','national_id','school_id','kol_code','moeen_code','tafsili_code','active','created_at','father_phone','mother_phone'],
   Tuition: ['id','date','student_id','school_id','type','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','payment_source'],
   Expenses: ['id','date','school_id','category','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','payment_source'],
   Transactions: ['id','date','school_id','kind','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','source_id','payment_source'],
@@ -552,15 +552,18 @@ function students_(b) {
     // Excel/Sheets can drop leading zeroes from numeric identifiers. Recover the
     // canonical 10-digit national ID and 11-digit mobile where the pattern is known.
     const nid=normalizeNationalId_(x.national_id||'');
-    const phone=normalizeImportedPhone_(x.phone||'');
+    const phone=normalizeImportedPhone_(x.phone||x.father_phone||x.mother_phone||'');
+    const fatherPhone=normalizeImportedPhone_(x.father_phone||phone||'');
+    const motherPhone=normalizeImportedPhone_(x.mother_phone||'');
     // Return normalized values only. Reads must never mutate spreadsheet data.
-    x.phone=phone;x.national_id=nid;
+    x.phone=phone;x.father_phone=fatherPhone;x.mother_phone=motherPhone;x.national_id=nid;
     if(u.role!=='senior' && String(x.school_id)!==String(u.school_id)) return;
     if(b.school_id && String(x.school_id)!==String(b.school_id)) return;
     if(b.id && String(x.id)!==String(b.id)) return;
     if(b.q) {
       const q=String(b.q).toLowerCase();
-      if(String(x.name).toLowerCase().indexOf(q)<0 && String(x.national_id).indexOf(q)<0 && String(x.phone||'').indexOf(q)<0) return;
+      const searchText=[x.name,x.national_id,x.phone,x.father_phone,x.mother_phone].join(' ').toLowerCase();
+      if(searchText.indexOf(q)<0) return;
     }
     data.push(x);
   });
@@ -584,17 +587,22 @@ function studentAdd_(b) {
 
     let nid=digits_(b.national_id || '');
     if(nid && nid.length < 10) nid = nid.padStart(10, '0');
-    let phone=normalizeImportedPhone_(b.phone || b.father_phone || b.mother_phone || '');
+    const fatherPhone=normalizeImportedPhone_(b.father_phone!==undefined ? b.father_phone : b.phone || '');
+    const motherPhone=normalizeImportedPhone_(b.mother_phone || '');
+    const phone=normalizeImportedPhone_(b.phone || fatherPhone || motherPhone || '');
+    [fatherPhone,motherPhone].forEach(p=>{ if(p && !/^0\d{10}$/.test(p)) throw new Error('شماره تلفن پدر یا مادر باید ۱۱ رقم و با ۰ شروع شود.'); });
 
     const existingRows=rows_('Students');
     const existing=nid ? existingRows.find(x=>normalizeNationalId_(x.obj.national_id || '')===nid) : null;
     if(existing) {
-      const sh=sheet_('Students');
-      sh.getRange(existing.row, 2).setValue(fullName);
-      if(b.grade) sh.getRange(existing.row, 3).setValue(normalizeGrade_(b.grade));
-      if(phone) sh.getRange(existing.row, 4).setValue(phone);
+      const old=existing.obj;
+      const grade=b.grade ? normalizeGrade_(b.grade) : old.grade;
+      const savedFather=b.father_phone!==undefined ? fatherPhone : normalizeImportedPhone_(old.father_phone || old.phone || fatherPhone || '');
+      const savedMother=b.mother_phone!==undefined ? motherPhone : normalizeImportedPhone_(old.mother_phone || '');
+      const primary=normalizeImportedPhone_(b.phone || savedFather || savedMother || old.phone || '');
+      updateRow_('Students',existing.row,[old.id,fullName,grade,primary,nid||old.national_id,old.school_id,old.kol_code,old.moeen_code,old.tafsili_code,old.active,old.created_at,savedFather,savedMother]);
       SpreadsheetApp.flush();
-      return {success:true, id:existing.obj.id, updated:true, message:'اطلاعات دانش‌آموز به‌روزرسانی شد.'};
+      return {success:true,id:old.id,updated:true,message:'اطلاعات دانش‌آموز به‌روزرسانی شد.'};
     }
 
     const requestedId=Number(b.id)||0;
@@ -603,19 +611,10 @@ function studentAdd_(b) {
     const codes=studentAccountCodes_(id, grade, schoolId, nid);
     const sh=sheet_('Students');
     try { sh.getRange(2, 2, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); sh.getRange(2, 4, Math.max(1, sh.getMaxRows() - 1), 2).setNumberFormat('@'); } catch(_) {}
-    sh.appendRow([
-      id,
-      fullName,
-      grade,
-      phone,
-      nid,
-      String(schoolId),
-      codes.kol,
-      codes.moeen,
-      codes.tafsili,
-      true,
-      now_()
-    ]);
+    const createdAt=now_();
+    sh.appendRow([id,fullName,grade,phone,nid,String(schoolId),codes.kol,codes.moeen,codes.tafsili,true,createdAt,fatherPhone,motherPhone]);
+    const appendedRow=sh.getLastRow();
+    try { sh.getRange(appendedRow,2).setNumberFormat('@').setValue(fullName); } catch(_) {}
     SpreadsheetApp.flush();
     return {
       success:true,
@@ -625,6 +624,8 @@ function studentAdd_(b) {
         name:fullName,
         grade:grade,
         phone:phone,
+        father_phone:fatherPhone,
+        mother_phone:motherPhone,
         national_id:nid,
         school_id:schoolId,
         kol_code:codes.kol,
@@ -944,15 +945,17 @@ function studentUpdate_(b) {
     if(!/^\d{10}$/.test(targetNid)) throw new Error('کد ملی باید دقیقاً ۱۰ رقم انگلیسی باشد.');
     const duplicate=rows_('Students').some(x=>String(x.obj.id)!==String(old.id) && normalizeNationalId_(x.obj.national_id||'')===targetNid);
     if(duplicate) throw new Error('این کد ملی قبلاً در سیستم برای یک دانش‌آموز ثبت شده است و در هیچ مدرسه دیگری نیز قابل ثبت نیست.');
-    const phone=normalizeImportedPhone_(b.phone!==undefined?b.phone:old.phone);
-    if(phone && !/^0\d{10}$/.test(phone)) throw new Error('شماره تلفن نامعتبر است.');
+    const fatherPhone=normalizeImportedPhone_(b.father_phone!==undefined?b.father_phone:old.father_phone||old.phone||'');
+    const motherPhone=normalizeImportedPhone_(b.mother_phone!==undefined?b.mother_phone:old.mother_phone||'');
+    const phone=normalizeImportedPhone_(b.phone!==undefined?b.phone:fatherPhone||motherPhone||old.phone||'');
+    [phone,fatherPhone,motherPhone].forEach(p=>{ if(p && !/^0\d{10}$/.test(p)) throw new Error('شماره تلفن پدر یا مادر باید ۱۱ رقم و با ۰ شروع شود.'); });
     const grade=normalizeGrade_(b.grade!==undefined?b.grade:old.grade);
     const codes=studentAccountCodes_(old.id,grade,targetSchool,targetNid);
     try { sheet_('Students').getRange(hit.row,2,1,1).setNumberFormat('@'); sheet_('Students').getRange(hit.row,4,1,2).setNumberFormat('@'); } catch(ignoreTextFormat) {}
     updateRow_('Students',hit.row,[
       old.id,fullName,grade,
       phone,targetNid,targetSchool,codes.kol,codes.moeen,codes.tafsili,
-      b.active!==undefined?b.active:old.active,old.created_at
+      b.active!==undefined?b.active:old.active,old.created_at,fatherPhone,motherPhone
     ]);
     return {success:true};
   } finally {
