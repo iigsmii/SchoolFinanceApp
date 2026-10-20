@@ -30,7 +30,7 @@ const THEME_NAMES = [
   { name: 'سبز فیروزه‌ای تیره', color: '#146a67' },
 ];
 
-export const SettingsScreen: React.FC = () => {
+export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly = false }) => {
   const {
     themeIndex,
     setThemeIndex,
@@ -102,9 +102,10 @@ export const SettingsScreen: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#f8f5f9] pb-12">
-      <Header title="تنظیمات سامانه" />
+      <Header title={googleOnly ? "تنظیمات اتصال گوگل" : "تنظیمات سامانه"} />
 
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-5">
+        {!googleOnly && <>
         {/* Check for updates banner matching Android */}
         <div className="bg-white rounded-3xl p-5 border border-[#e5dde8] shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div>
@@ -127,6 +128,8 @@ export const SettingsScreen: React.FC = () => {
           </div>
         )}
 
+        </>}
+        {googleOnly && isSenior && <>
         {/* Google Sheets Cloud Connection Section */}
         <div className="bg-white rounded-3xl p-6 border border-[#e5dde8] shadow-xs space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#e5dde8] pb-4">
@@ -352,6 +355,8 @@ export const SettingsScreen: React.FC = () => {
           </div>
         </div>
 
+        </>}
+        {!googleOnly && <>
         {/* Color Theme Selector matching Android themeIndex */}
         <div className="bg-white rounded-3xl p-6 border border-[#e5dde8] shadow-xs space-y-4">
           <div className="text-sm font-bold text-[#341648] flex items-center gap-2">
@@ -421,42 +426,6 @@ export const SettingsScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Parsian Export Section */}
-        {isSenior && (
-          <div className="bg-white rounded-3xl p-6 border border-[#e5dde8] shadow-xs space-y-4">
-            <div className="text-sm font-bold text-[#341648] flex items-center gap-2">
-              <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-              <span>خروجی فایل Excel استاندارد نرم‌افزار حسابداری پارسیان</span>
-            </div>
-            <p className="text-xs text-gray-500 leading-relaxed">
-              این ابزار تمام اسناد مالی، شهریه‌ها، هزینه‌ها و کدهای تفصیلی دانش‌آموزان را بر اساس الگوی رسمی پارسیان (کد کل ۶۷، معین مدرسه و تفصیلی کد ملی) استخراج و در قالب فایل Excel استاندارد آماده می‌کند.
-            </p>
-
-            <div className="flex flex-col sm:flex-row gap-3 items-center">
-              <select
-                value={exportSchoolId}
-                onChange={(e) => setExportSchoolId(Number(e.target.value))}
-                className="w-full sm:w-64 py-2.5 px-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735]"
-              >
-                <option value={0}>همه مدارس مجموعه</option>
-                {schools.map((sc) => (
-                  <option key={sc.id} value={sc.id}>
-                    {sc.name}
-                  </option>
-                ))}
-              </select>
-
-              <button
-                onClick={handleExportParsian}
-                className="w-full sm:w-auto py-2.5 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"
-              >
-                <FileSpreadsheet className="w-4 h-4" />
-                دانلود فایل Excel پارسیان
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Cloud & Service Architecture Note */}
         <div className="bg-[#fcfaff] rounded-3xl p-5 border border-[#ede5ef] space-y-2 text-xs text-gray-600 leading-relaxed">
           <div className="font-bold text-[#341648] flex items-center gap-2">
@@ -476,6 +445,12 @@ export const SettingsScreen: React.FC = () => {
           <LogOut className="w-5 h-5" />
           خروج از حساب کاربری
         </button>
+        </>}
+        {googleOnly && !isSenior && (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm font-bold text-rose-800">
+            این صفحه فقط برای مدیر ارشد قابل دسترسی است.
+          </div>
+        )}
       </main>
     </div>
   );
