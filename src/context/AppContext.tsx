@@ -1257,31 +1257,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addManager = (m: Omit<User, 'id'>) => {
     const newId = users.length > 0 ? Math.max(...users.map((u) => u.id)) + 1 : 1;
-    const sc = schools.find((s) => s.id === m.school_id);
+    const { password, ...safeManager } = m;
+    const sc = schools.find((s) => s.id === safeManager.school_id);
     const newUser: User = {
-      ...m,
+      ...safeManager,
       id: newId,
       school_name: sc?.name,
     };
     setUsers((prev) => [...prev, newUser]);
-    apiSaveManager(newUser, 'add').then((r) => { if (!r?.success) console.warn('ثبت مدیر در شیت ناموفق بود:', r?.error); }).catch((e) => console.warn('Manager cloud add failed:', e));
+    apiSaveManager({ ...newUser, ...(password ? { password } : {}) }, 'add').then((r) => { if (!r?.success) console.warn('ثبت مدیر در شیت ناموفق بود:', r?.error); }).catch((e) => console.warn('Manager cloud add failed:', e));
     logActivity('افزودن مدیر جدید', `ثبت مدیر ${m.name} برای ${sc?.name || 'مدرسه'}`, 'manager', newId);
   };
 
   const updateManager = (id: number, m: Partial<User>) => {
+    // Passwords are sent only to the authenticated server and never persisted in local state.
+    const { password, ...safeChanges } = m;
     setUsers((prev) =>
       prev.map((u) => {
         if (u.id !== id) return u;
-        const updated = { ...u, ...m };
-        if (m.school_id) {
-          const sc = schools.find((s) => s.id === m.school_id);
+        const updated = { ...u, ...safeChanges };
+        if (safeChanges.school_id) {
+          const sc = schools.find((s) => s.id === safeChanges.school_id);
           updated.school_name = sc?.name;
         }
         return updated;
       })
     );
     const existingManager = users.find((u) => u.id === id);
-    if (existingManager) apiSaveManager({ ...existingManager, ...m, id }, 'update').then((r) => { if (!r?.success) console.warn('ویرایش مدیر در شیت ناموفق بود:', r?.error); }).catch((e) => console.warn('Manager cloud update failed:', e));
+    if (existingManager) {
+      apiSaveManager({ ...existingManager, ...safeChanges, ...(password ? { password } : {}), id }, 'update')
+        .then((r) => { if (!r?.success) console.warn('ویرایش مدیر در شیت ناموفق بود:', r?.error); })
+        .catch((e) => console.warn('Manager cloud update failed:', e));
+    }
     logActivity('ویرایش مدیر', `ویرایش مشخصات مدیر شناسه ${id}`, 'manager', id);
   };
 
