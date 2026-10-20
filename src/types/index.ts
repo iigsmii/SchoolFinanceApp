@@ -2,6 +2,7 @@ export interface User {
   id: number;
   username: string;
   name: string;
+  gender?: 'male' | 'female';
   role: 'senior' | 'admin' | 'manager';
   school_id?: number;
   school_name?: string;
