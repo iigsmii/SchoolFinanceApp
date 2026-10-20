@@ -621,7 +621,7 @@ function studentAdd_(b) {
     const sh=sheet_('Students');
     try { sh.getRange(2, 2, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); sh.getRange(2, 4, Math.max(1, sh.getMaxRows() - 1), 2).setNumberFormat('@'); } catch(_) {}
     const createdAt=now_();
-    sh.appendRow(new Array(sh.getLastColumn()).fill(''));
+    sh.appendRow([id]);
     const appendedRow=sh.getLastRow();
     updateRow_('Students',appendedRow,[id,fullName,grade,phone,nid,String(schoolId),codes.kol,codes.moeen,codes.tafsili,true,createdAt,fatherPhone,motherPhone]);
     try { const nameCol=sh.getRange(1,1,1,sh.getLastColumn()).getDisplayValues()[0].indexOf('name')+1; if(nameCol>0) sh.getRange(appendedRow,nameCol).setNumberFormat('@').setValue(fullName); } catch(_) {}
