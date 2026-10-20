@@ -483,7 +483,9 @@ function ensureCoreData_() {
 function schools_(b) {
   ensureStructure_();
   const u=auth_(b);
-  const data=rows_('Schools').map(x=>x.obj).filter(x=>String(x.active)!=='false');
+  const posMap={};
+  rows_('Settings').forEach(x=>{const key=String(x.obj.key||'');if(key.indexOf('pos_terminal_')===0)posMap[key.slice('pos_terminal_'.length)]=String(x.obj.value||'');});
+  const data=rows_('Schools').map(x=>Object.assign({},x.obj,{pos_terminal_number:posMap[String(x.obj.id)]||''})).filter(x=>String(x.active)!=='false');
   if(u.role!=='senior' && u.role!=='admin') return {success:true,data:data.filter(x=>String(x.id)===String(u.school_id))};
   return {success:true,data:data};
 }
@@ -499,6 +501,7 @@ function schoolUpdate_(b){
   const hit=findRow_('Schools',b.id); if(!hit) throw new Error('مدرسه یافت نشد.');
   const r=hit.obj;
   updateRow_('Schools',hit.row,[r.id,b.name!==undefined?b.name:r.name,b.code!==undefined?b.code:r.code,b.active!==undefined?b.active:r.active,r.created_at,b.petty_cash_card!==undefined?b.petty_cash_card:(r.petty_cash_card||''),b.type!==undefined?b.type:(r.type||''),b.moeen_code!==undefined?b.moeen_code:(r.moeen_code||'')]);
+  if(b.pos_terminal_number!==undefined) saveSetting_('pos_terminal_'+String(r.id),String(b.pos_terminal_number||'').trim());
   return {success:true};
 }
 function schoolDelete_(b){ auth_(b,['senior','admin']); const hit=findRow_('Schools',b.id); if(!hit) throw new Error('مدرسه یافت نشد.'); sheet_('Schools').getRange(hit.row,4).setValue(false); return {success:true}; }
@@ -1415,8 +1418,27 @@ function bankReconcile_(b){
 }
 function bankUpload_(b){
   auth_(b,['senior','admin']);
+  if(Array.isArray(b.rows)){
+    if(b.rows.length>10000)throw new Error('حداکثر ۱۰٬۰۰۰ ردیف در هر بار ورود مجاز است.');
+    const schools=rows_('Schools').map(x=>x.obj);
+    const settings={};rows_('Settings').forEach(x=>{const k=String(x.obj.key||'');if(k.indexOf('pos_terminal_')===0)settings[k.slice(13)]=String(x.obj.value||'').replace(/\D/g,'').replace(/^0+/,'');});
+    let added=0,skipped=0;const existing=rows_('Bank').map(x=>x.obj);
+    b.rows.forEach(r=>{
+      const amount=Number(r.amount)||0,track=String(r.tracking_code||'').trim();
+      if(!amount||(!track&&!String(r.description||'').trim())){skipped++;return;}
+      const terminal=String(r.terminal_number||'').replace(/\D/g,'').replace(/^0+/,'');
+      let schoolId=String(r.school_id||'');
+      if(terminal){const match=schools.find(s=>settings[String(s.id)]===terminal);schoolId=match?String(match.id):'';}
+      const dup=existing.some(x=>Number(x.amount)===amount&&String(x.tracking_code||'').trim()===track&&String(x.school_id||'')===schoolId&&String(x.date||'')===String(r.date||''));
+      if(dup){skipped++;return;}
+      appendByHeaders_('Bank',[nextId_('Bank'),String(r.date||''),schoolId,amount,String(r.description||''),track,String(r.bank_account||r.card_number||''),now_(),'','false','false']);
+      existing.push({amount:amount,tracking_code:track,school_id:schoolId,date:String(r.date||'')});added++;
+    });
+    SpreadsheetApp.flush();
+    return {success:true,message:'فایل بانک پردازش شد.',count:added,skipped:skipped};
+  }
   if(!b.base64) throw new Error('فایل بانک ارسال نشده است.');
-  activeSchool_(b.school_id);
+  if(b.school_id) activeSchool_(b.school_id);
   if(String(b.base64).length>Math.ceil(5*1024*1024*4/3)+4)throw new Error('حداکثر حجم فایل بانک ۵ مگابایت است.');
   const name=String(b.file_name||'bank_upload.xlsx').toLowerCase();
   let result={added:0,skipped:0};
@@ -1847,6 +1869,13 @@ function activityLogs_(b){
   else if(!String(b.all||'').toLowerCase().match(/^(1|true|yes)$/)) data=data.filter(x=>String(x.user_id)===String(u.id));
   if(b.user_id) data=data.filter(x=>String(x.user_id)===String(b.user_id));
   return {success:true,data:data.slice(0,500)};
+}
+
+function saveSetting_(key,value){
+  const sh=sheet_('Settings');
+  const hit=rows_('Settings').find(x=>String(x.obj.key||'')===String(key));
+  if(hit) updateRow_('Settings',hit.row,[hit.obj.key,String(value),hit.obj.updated_at||now_()]);
+  else appendByHeaders_('Settings',[String(key),String(value),now_()]);
 }
 
 function appVersion_(b){ auth_(b); const settings={}; rows_('Settings').forEach(x=>settings[String(x.obj.key||'')]=String(x.obj.value||'')); return {success:true,version:settings['android_version']||'2.15.0',apk_url:settings['android_apk_url']||'',backend_version:'2.15.0'}; }
