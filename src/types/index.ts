@@ -23,6 +23,7 @@ export interface School {
   active: boolean;
   moeen_code?: number;
   petty_cash_card?: string;
+  pos_terminal_number?: string;
 }
 
 export interface Student {
@@ -111,6 +112,7 @@ export interface BankTransaction {
   direction?: 'deposit' | 'withdrawal' | 'unknown';
   balance?: number;
   card_number?: string;
+  terminal_number?: string;
   assigned_student_id?: number;
   assigned_student_name?: string;
   assigned_purpose?: string;
