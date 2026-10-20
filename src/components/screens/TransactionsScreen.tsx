@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { normalizeSearchText } from '../../utils/studentSearch';
 import { Header } from '../Header';
 import { formatRial, jalaliFromGregorian } from '../../utils/jalali';
 import { ArrowLeftRight, Trash2, Search, Filter } from 'lucide-react';
@@ -21,10 +22,10 @@ export const TransactionsScreen: React.FC = () => {
     if (filterKind === 'expense' && t.kind !== 'هزینه') return false;
 
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      const matchDesc = (t.description || t.comment || '').toLowerCase().includes(q);
-      const matchStudent = (t.student_name || '').toLowerCase().includes(q);
-      const matchCategory = (t.expense_category_name || '').toLowerCase().includes(q);
+      const q = normalizeSearchText(searchQuery);
+      const matchDesc = normalizeSearchText(t.description || t.comment || '').includes(q);
+      const matchStudent = normalizeSearchText(t.student_name || '').includes(q);
+      const matchCategory = normalizeSearchText(t.expense_category_name || '').includes(q);
       const matchTrack = (t.tracking_code || '').toLowerCase().includes(q);
       return matchDesc || matchStudent || matchCategory || matchTrack;
     }
