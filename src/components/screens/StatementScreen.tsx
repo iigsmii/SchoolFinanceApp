@@ -4,6 +4,7 @@ import { Header } from '../Header';
 import { Student, Transaction } from '../../types';
 import { InvoicePrintModal } from '../InvoicePrintModal';
 import { formatRial, jalaliFromGregorian } from '../../utils/jalali';
+import { matchesStudentSearch } from '../../utils/studentSearch';
 import {
   Search,
   FileText,
@@ -33,10 +34,9 @@ export const StatementScreen: React.FC = () => {
 
   const availableStudents = students.filter((s) => {
     if (!isSenior && s.school_id !== currentUser?.school_id) return false;
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase().trim();
-    return s.name.toLowerCase().includes(q) || s.national_id.includes(q) || s.grade.includes(q);
+    return matchesStudentSearch(s, searchQuery);
   });
+  const visibleStudents = availableStudents.slice(0, 50);
 
   const handleSelectStudent = (st: Student) => {
     setSelectedStudent(st);
@@ -96,7 +96,7 @@ export const StatementScreen: React.FC = () => {
               {availableStudents.length === 0 ? (
                 <div className="p-3 text-center text-xs text-gray-500">دانش‌آموزی پیدا نشد</div>
               ) : (
-                availableStudents.map((st) => (
+                visibleStudents.map((st) => (
                   <button
                     key={st.id}
                     onClick={() => handleSelectStudent(st)}
