@@ -1242,6 +1242,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     });
     setBankTransactions((prev) => [...newItems, ...prev]);
+    const matchedIds = new Set(newItems.filter((item) => item.reconciled && item.matched_transaction_id !== undefined).map((item) => Number(item.matched_transaction_id)));
+    if (matchedIds.size) {
+      setTransactions((prev) => prev.map((tx) => matchedIds.has(Number(tx.id)) ? { ...tx, reconciled: true } : tx));
+    }
     logActivity('ورود فایل صورتحساب بانک', `افزودن ${newItems.length} تراکنش بانکی جدید`);
     return newItems.length;
   };
