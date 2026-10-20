@@ -75,7 +75,7 @@ export const TuitionScreen: React.FC = () => {
 
   // Handle student search results
   const availableStudents = students.filter((s) => {
-    if (!s.active) return false;
+    if (s.active === false) return false;
     if (!isSenior && Number(s.school_id) !== Number(currentUser?.school_id)) return false;
     return matchesStudentSearch(s, searchQuery);
   });
@@ -126,7 +126,7 @@ export const TuitionScreen: React.FC = () => {
   const handleOpenBulk = () => {
     const targetSid = isSenior ? schools[0]?.id || 1 : currentUser?.school_id || 1;
     setBulkSchoolId(targetSid);
-    const targetStudents = students.filter((s) => Number(s.school_id) === Number(targetSid) && s.active);
+    const targetStudents = students.filter((s) => Number(s.school_id) === Number(targetSid) && s.active !== false);
     setBulkSelectedIds(new Set(targetStudents.map((s) => s.id)));
     setBulkAmount('');
     setBulkJalaliDate(todayJalali());
@@ -289,7 +289,7 @@ export const TuitionScreen: React.FC = () => {
   };
 
   // Bulk dialog school filtered students
-  const bulkSchoolStudents = students.filter((s) => Number(s.school_id) === Number(bulkSchoolId) && s.active);
+  const bulkSchoolStudents = students.filter((s) => Number(s.school_id) === Number(bulkSchoolId) && s.active !== false);
   const displayedBulkStudents = bulkSchoolStudents.filter((st) =>
     matchesStudentSearch(st, bulkFilterQuery)
   );
