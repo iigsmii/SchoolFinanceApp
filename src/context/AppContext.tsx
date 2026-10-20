@@ -266,11 +266,29 @@ function saveToStorage<T>(key: string, value: T) {
   }
 }
 
-// Cloud records win on duplicate IDs; local-only records survive partial/empty cloud responses.
+// Cloud records win on duplicate IDs, but missing cloud fields must not erase
+// locally captured student details while a legacy Apps Script deployment catches up.
 function mergeCloudAndLocal<T extends { id: string | number }>(remote: T[], local: T[]): T[] {
   const byId = new Map<string, T>();
   for (const item of local || []) byId.set(String(item.id), item);
-  for (const item of remote || []) byId.set(String(item.id), item);
+  for (const item of remote || []) {
+    const key = String(item.id);
+    const previous = byId.get(key);
+    if (previous && ('name' in item || 'phone' in item || 'father_phone' in item || 'mother_phone' in item)) {
+      const current = item as T & { name?: string; phone?: string; father_phone?: string; mother_phone?: string };
+      const prior = previous as T & { name?: string; phone?: string; father_phone?: string; mother_phone?: string };
+      byId.set(key, {
+        ...prior,
+        ...current,
+        name: current.name?.trim() ? current.name : prior.name,
+        phone: current.phone?.trim() ? current.phone : prior.phone,
+        father_phone: current.father_phone?.trim() ? current.father_phone : prior.father_phone,
+        mother_phone: current.mother_phone?.trim() ? current.mother_phone : prior.mother_phone,
+      } as T);
+    } else {
+      byId.set(key, item);
+    }
+  }
   return Array.from(byId.values());
 }
 
