@@ -254,7 +254,6 @@ export const StudentsScreen: React.FC = () => {
     return true;
   });
 
-  const visibleStudents = filteredStudents.slice(0, 50);
   const needsFixCount = students.filter((s) => s.needs_fix).length;
 
   return (
@@ -362,7 +361,7 @@ export const StudentsScreen: React.FC = () => {
               دانش‌آموزی با این مشخصات یافت نشد.
             </div>
           ) : (
-            visibleStudents.map((s) => (
+            filteredStudents.map((s) => (
               <div
                 key={s.id}
                 onClick={() => openEditModal(s)}
