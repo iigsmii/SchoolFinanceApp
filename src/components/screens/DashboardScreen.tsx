@@ -320,7 +320,7 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 text-xs font-bold text-[#341648]">
               <span className="truncate">
-                {isConnectedToGoogleSheets ? 'پایگاه داده Google Sheets' : 'اتصال به Google Sheets / اکسل'}
+                {'همگام‌سازی داده'}
               </span>
               <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold ${
                 isConnectedToGoogleSheets ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
