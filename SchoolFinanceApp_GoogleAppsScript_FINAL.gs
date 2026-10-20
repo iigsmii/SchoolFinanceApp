@@ -172,7 +172,9 @@ function doGet(e) {
   try {
     const params=(e&&e.parameter)||{};
     const action=String(params.action||'').replace(/^\/+|\/+$/g,'').toLowerCase();
-    const b={};
+    // Preserve query parameters (especially token/authToken) so GET fallback uses
+    // the same authenticated request context as POST. Handlers still enforce auth_.
+    const b=Object.assign({},params);
     if(action==='sync' || action==='all') {
       return json_({
         success: true,
@@ -182,7 +184,8 @@ function doGet(e) {
         expenses: (expenses_(b)||{}).data || [],
         cheques: (cheques_(b)||{}).data || [],
         categories: (categories_(b)||{}).data || [],
-        managers: (managers_(b)||{}).data || [],
+        // Manager records are restricted to senior/admin; ordinary managers still sync other data.
+        managers: (function(){ const u=auth_(b); return (u.role==='senior'||u.role==='admin') ? ((managers_(b)||{}).data||[]) : []; })(),
       });
     }
     if(action==='parsian_export') return json_(parsianExport_(b));
@@ -205,7 +208,7 @@ function doGet(e) {
     if(action==='my_claim') return json_(myClaim_(b));
     if(action==='app_version') return json_(appVersion_(b));
     if(action==='activity_logs')return json_(activityLogs_(b));
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.14.4-balance-invoice-leading-zero-fix',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.15.0',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 

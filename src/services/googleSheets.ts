@@ -75,26 +75,44 @@ export const postToAppsScript = async (
     const url = webAppUrl.trim();
     if (!url) return { success: false, error: 'آدرس وب‌اپ تعریف نشده است.' };
 
+    const action = String(payload.action || payload.endpoint || '').replace(/^\\/+/, '').toLowerCase();
+    const idempotentActions = ['tuition_add', 'tuition_bulk_debt', 'expense_add', 'finance_transaction', 'cheque_review'];
+    // Send a client-generated operation ID so the server can replay a stored result
+    // when the same operation is retried with the same payload/request_id.
+    const requestId = payload.request_id || (idempotentActions.includes(action)
+      ? ((typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+          ? crypto.randomUUID()
+          : `req-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+      : undefined);
     const bodyData = JSON.stringify({
       ...payload,
+      ...(requestId ? { request_id: requestId } : {}),
       token: (typeof localStorage !== 'undefined' && localStorage.getItem('school_finance_auth_token')) || 'sync_direct',
       owner: OWNER_EMAIL,
     });
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8',
-      },
-      body: bodyData,
-      mode: 'cors',
-    });
-
-    if (res.ok) {
-      const json = await res.json().catch(() => ({ success: false, error: 'پاسخ سرور قابل خواندن نیست.' }));
-      return json;
+    // Retry once with the exact same body/request_id. If the first response was
+    // lost after the server committed the write, Apps Script can return its stored result.
+    let lastError: any = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'text/plain;charset=utf-8',
+          },
+          body: bodyData,
+          mode: 'cors',
+        });
+        if (!res.ok) return { success: false, error: `خطای سرور (${res.status})` };
+        return await res.json();
+      } catch (err: any) {
+        lastError = err;
+        if (attempt === 0) continue;
+      }
     }
-    return { success: false, error: `خطای سرور (${res.status})` };
+    console.warn('Apps Script mutation failed after retry:', lastError);
+    return { success: false, error: lastError?.message || 'ارتباط با سرور برقرار نشد.' };
   } catch (err: any) {
     console.warn('Apps Script mutation failed:', err);
     return { success: false, error: err?.message || 'ارتباط با سرور برقرار نشد.' };
