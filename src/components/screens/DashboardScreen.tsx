@@ -287,7 +287,7 @@ export const DashboardScreen: React.FC = () => {
       >
         <div className="flex items-center gap-2">
           <span className="font-bold">
-            خوش آمدید، {currentUser?.name || 'مدیر محترم'}
+            خوش آمدید، {currentUser?.gender === 'female' ? 'سرکار خانم' : currentUser?.gender === 'male' ? 'جناب آقای' : ''}{currentUser?.gender ? ' ' : ''}{currentUser?.name || 'مدیر محترم'}
           </span>
           <span className="opacity-60 text-[10px]">|</span>
           <span className="text-[11px] text-purple-200">
