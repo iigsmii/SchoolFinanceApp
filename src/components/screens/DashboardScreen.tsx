@@ -260,6 +260,7 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
         </div>
       )}
       {!overviewOnly && (
+      <>
       {/* 1. Header Banner: Exactly on ONE single line */}
       <div
         className="rounded-2xl px-4 py-3 text-white shadow-md relative overflow-hidden border border-amber-400/30 flex items-center justify-between gap-3"
@@ -428,7 +429,11 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
       )}
       )}
 
+      </>
+      )}
+
       {overviewOnly && (
+      <>
       {/* 5. Dedicated Comprehensive School Financial Status Box */}
       <div className="bg-white rounded-3xl p-4 sm:p-5 border border-[#e5dde8] shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#f2eaf3] gap-2">
@@ -588,9 +593,11 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
         </div>
       </div>
 
+      </>
       )}
 
       {overviewOnly && (
+      <>
       {/* 6. Sortable Full Debtors List Section */}
       <div className="bg-white rounded-3xl p-4 sm:p-5 border border-[#e5dde8] shadow-xs space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-[#f2eaf3] gap-2">
@@ -731,9 +738,11 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
         )}
       </div>
 
+      </>
       )}
 
       {!overviewOnly && (
+      <>
       {/* 7. Quick Invoice Action Card */}
       <div className="bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-indigo-500/10 border border-amber-300/40 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
         <div className="flex items-center gap-2.5">
@@ -794,6 +803,7 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
         </div>
       )}
 
+      </>
       )}
 
       {/* Quick Invoice Modal */}
