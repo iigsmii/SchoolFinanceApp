@@ -660,6 +660,7 @@ export const loadDataFromAppsScript = async (
   const rawCheques = rawData.cheques || [];
   const rawManagers = rawData.managers || [];
   const rawBank = rawData.bank || rawData.bankTransactions || [];
+  const rawStaff = Array.isArray(rawData.staff) ? rawData.staff : [];
 
   const schools: School[] = rawSchools.map((sc: any) => ({
     id: Number(sc.id),
@@ -667,6 +668,8 @@ export const loadDataFromAppsScript = async (
     code: sc.code || '',
     active: sc.active !== false && String(sc.active) !== 'false',
     petty_cash_card: sc.petty_cash_card || '',
+    type: sc.type || '',
+    moeen_code: sc.moeen_code || '',
   }));
 
   const schoolMap = new Map<number, string>();
@@ -798,7 +801,7 @@ export const loadDataFromAppsScript = async (
     schools,
     transactions,
     cheques,
-    categories: [],
+    categories: Array.isArray(rawData.categories) ? rawData.categories.map((x: any) => ({ id: String(x.id), name: String(x.name || ''), active: x.active !== false && String(x.active) !== 'false' })).filter((x: ExpenseCategory) => x.name) : [],
     managers,
     bankTransactions: rawBank.map((b: any, idx: number) => ({
       id: Number(b.id) || idx + 1, date: dateFromExcelSerial(b.date) || todayGregorian(),
@@ -808,7 +811,26 @@ export const loadDataFromAppsScript = async (
       description: String(b.description || ''), reconciled: b.matched === true || String(b.matched) === 'true',
       matched_transaction_id: b.matched_transaction_id ? Number(b.matched_transaction_id) : undefined,
     })),
-    staff: [],
+    staff: rawStaff.map((st: any, idx: number) => ({
+      id: Number(st.id) || idx + 1,
+      school_id: Number(st.school_id) || 1,
+      school_name: st.school_name || schoolMap.get(Number(st.school_id) || 1) || 'مدرسه',
+      name: String(st.name || '').trim(),
+      national_id: String(st.national_id || ''),
+      phone: String(st.phone || ''),
+      role_title: String(st.role_title || 'آموزگار'),
+      contract_type: (['hourly', 'monthly', 'session'].includes(String(st.contract_type)) ? String(st.contract_type) : 'hourly') as StaffMember['contract_type'],
+      hourly_rate: Number(st.hourly_rate || 0),
+      base_salary: Number(st.base_salary || 0),
+      insurance_employer_share: Number(st.insurance_employer_share || 0),
+      insurance_employee_share: Number(st.insurance_employee_share || 0),
+      bank_card_or_sheba: String(st.bank_card_or_sheba || ''),
+      kol_code: String(st.kol_code || ''),
+      moeen_code: String(st.moeen_code || ''),
+      tafsili_code: String(st.tafsili_code || ''),
+      active: st.active !== false && String(st.active) !== 'false',
+      created_at: String(st.created_at || ''),
+    })).filter((st: StaffMember) => st.name && st.active),
     stats: {
       studentsCount: students.length,
       transactionsCount: transactions.length,
