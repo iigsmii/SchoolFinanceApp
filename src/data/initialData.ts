@@ -25,7 +25,7 @@ export const INITIAL_SCHOOLS: School[] = [
   { id: 8, name: 'مهدالرضا(علیه‌السلام) شعبه‌ی منظریه', code: 'MAHD_MN', type: 'مهدالرضا(ع) و پیش‌دبستانی', active: true, moeen_code: 14, petty_cash_card: '۶۰۳۷-۶۹۱۹-۷۷۸۸-۹۹۰۰' },
   { id: 9, name: 'مهدالرضا(علیه‌السلام) شعبه‌ی سروستان', code: 'MAHD_SR', type: 'مهدالرضا(ع) و پیش‌دبستانی', active: true, moeen_code: 9, petty_cash_card: '۵۰۲۲-۲۹۱۰-۲۲۳۳-۴۴۵۵' },
   { id: 10, name: 'مهدالرضا(علیه‌السلام) شعبه‌ی تبیان ۲', code: 'MAHD_T2', type: 'مهدالرضا(ع) و پیش‌دبستانی', active: true, moeen_code: 15, petty_cash_card: '۵۰۲۲-۲۹۱۰-۳۳۴۴-۵۵۶۶' },
-  { id: 11, name: 'مهدالرضا(علیه‌السلام) شعبه‌ی برهان', code: 'BORHAN', type: 'مهدالرضا(ع) و پیش‌دبستانی', active: true, moeen_code: 13, petty_cash_card: '۵۰۲۲-۲۹۱۰-۶۶۷۷-۸۸۹۹' },
+  { id: 11, name: 'مهدالرضا(علیه‌السلام) شعبه‌ی برهان', code: 'MAHD6', type: 'مهدالرضا(ع) و پیش‌دبستانی', active: true, moeen_code: 13, petty_cash_card: '۵۰۲۲-۲۹۱۰-۶۶۷۷-۸۸۹۹' },
 ];
 
 export const INITIAL_USERS: User[] = [
