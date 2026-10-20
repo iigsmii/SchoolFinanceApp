@@ -95,7 +95,9 @@ export const StudentsScreen: React.FC = () => {
     const cleanName = formName.normalize('NFC').trim();
     const cleanFatherPhone = formFatherPhone.trim();
     const cleanMotherPhone = formMotherPhone.trim();
-    const cleanNid = formNationalId.trim();
+    const cleanNid = formNationalId.trim()
+      .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+      .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
 
     if (!cleanName) {
       setFormError('نام و نام خانوادگی دانش‌آموز را وارد کنید.');
@@ -115,6 +117,18 @@ export const StudentsScreen: React.FC = () => {
     }
     if (!/^\d{10}$/.test(cleanNid)) {
       setFormError('کد ملی باید دقیقاً ۱۰ رقم باشد.');
+      return;
+    }
+
+    const duplicateNationalId = students.some((student) =>
+      String(student.national_id ?? '')
+        .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+        .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+        .trim() === cleanNid &&
+      (!editingStudent || String(student.id) !== String(editingStudent.id))
+    );
+    if (duplicateNationalId) {
+      setFormError('این کد ملی قبلاً برای دانش‌آموز دیگری ثبت شده است.');
       return;
     }
 
