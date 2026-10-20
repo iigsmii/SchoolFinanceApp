@@ -9,14 +9,18 @@ export const normalizeSearchText = (value: unknown): string =>
   String(value ?? '')
     .normalize('NFKC')
     .toLocaleLowerCase('fa')
+    // Fold Arabic/Persian spelling variants before comparing.
     .replace(/[يىئ]/g, 'ی')
     .replace(/ك/g, 'ک')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/[ۀة]/g, 'ه')
+    .replace(/ؤ/g, 'و')
     .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
     .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
-    .replace(/[\u064B-\u065F\u0670\u0640\u200c\u200d\u200e\u200f\ufeff]/g, '')
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+    // Ignore diacritics, tatweel, zero-width and bidirectional formatting marks.
+    .replace(/[\u064B-\u065F\u0670\u0640\u200b-\u200f\u202a-\u202e\ufeff]/g, '')
+    // Ignore spaces and punctuation so «علی محمدی», «علی‌محمدی» and «علیمحمدی» match.
+    .replace(/[^\p{L}\p{N}]/gu, '');
 
 export const matchesStudentSearch = (student: Partial<Student>, query: string): boolean => {
   const normalizedQuery = normalizeSearchText(query);
