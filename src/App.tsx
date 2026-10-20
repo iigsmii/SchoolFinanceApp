@@ -105,6 +105,8 @@ export const App: React.FC = () => {
 
   const renderScreen = () => {
     switch (currentScreen) {
+      case 'finance_overview':
+        return <DashboardScreen overviewOnly />;
       case 'students':
         return <StudentsScreen />;
       case 'tuition':
