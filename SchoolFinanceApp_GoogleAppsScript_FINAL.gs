@@ -24,7 +24,7 @@ const CFG = {
 
 const HEADERS = {
   Requests: ['id','user_id','action','payload_hash','status','result','created_at'],
-  Managers: ['id','name','username','password','school_id','role','active','created_at','petty_cash_card','petty_cash_bank','petty_cash_shaba','petty_cash_limit','petty_cash_balance'],
+  Managers: ['id','name','username','password','school_id','role','active','created_at','petty_cash_card','petty_cash_bank','petty_cash_shaba','petty_cash_limit','petty_cash_balance','gender'],
   Schools: ['id','name','code','active','created_at','petty_cash_card','type','moeen_code'],
   Staff: ['id','school_id','school_name','name','national_id','phone','role_title','contract_type','hourly_rate','base_salary','insurance_employer_share','insurance_employee_share','bank_card_or_sheba','kol_code','moeen_code','tafsili_code','active','created_at'],
   Students: ['id','name','grade','phone','national_id','school_id','kol_code','moeen_code','tafsili_code','active','created_at'],
@@ -219,7 +219,7 @@ function doGet(e) {
 function ensureStructure_() {
   const cache=CacheService.getScriptCache();
   const ss = SpreadsheetApp.openById(CFG.SPREADSHEET_ID);
-  if(cache.get('structure_ready_v216')==='1' && ss.getSheetByName('Requests')) return;
+  if(cache.get('structure_ready_v217')==='1' && ss.getSheetByName('Requests')) return;
   CFG.SHEETS.forEach(name => {
     let sh = ss.getSheetByName(name);
     if (!sh) sh = ss.insertSheet(name);
