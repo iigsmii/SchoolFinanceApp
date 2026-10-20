@@ -1,4 +1,5 @@
 import React from 'react';
+import appLogo from '../assets/images/quran_school_finance_logo_1792312844966.jpg';
 import { useApp } from '../context/AppContext';
 import { ArrowRight, UserCircle, Settings, Cloud, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -43,7 +44,7 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack = true }) => {
             </button>
           )}
           <img
-            src="/src/assets/images/quran_school_finance_logo_1792312844966.jpg"
+            src={appLogo}
             alt="لوگوی سیستم مالی مدرسة القرآن"
             referrerPolicy="no-referrer"
             className="w-10 h-10 rounded-xl object-cover shadow-2xs border border-amber-300/60 shrink-0"

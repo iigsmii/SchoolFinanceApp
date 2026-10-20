@@ -270,7 +270,7 @@ export const DashboardScreen: React.FC = () => {
       >
         <div className="flex items-center gap-2.5 min-w-0">
           <img
-            src="/src/assets/images/quran_school_finance_logo_1792312844966.jpg"
+            src="/app-logo.jpg"
             alt="لوگو"
             referrerPolicy="no-referrer"
             className="w-8 h-8 rounded-lg object-cover border border-amber-300/40 shrink-0 shadow-xs"
@@ -731,7 +731,7 @@ export const DashboardScreen: React.FC = () => {
             <Sparkles className="w-4 h-4 text-amber-300" />
           </div>
           <div>
-            <h4 className="text-xs sm:text-sm font-bold text-[#341648]">صدور سریع فاکتور شهریه دانش‌آموز</h4>
+            <h4 className="text-xs sm:text-sm font-bold text-[#341648]">صدور سریع فاکتور پرداخت شهریه دانش‌آموز</h4>
             <p className="text-[11px] text-gray-500">انتخاب آنی دانش‌آموز، مبلغ و صدور سند چاپی رسمی</p>
           </div>
         </div>
@@ -741,7 +741,7 @@ export const DashboardScreen: React.FC = () => {
           style={{ backgroundColor: accentColor }}
         >
           <FileText className="w-3.5 h-3.5 text-amber-300" />
-          <span>صدور فاکتور شهریه</span>
+          <span>صدور فاکتور پرداخت شهریه</span>
         </button>
       </div>
 
@@ -787,6 +787,7 @@ export const DashboardScreen: React.FC = () => {
         onClose={() => setIsQuickInvoiceOpen(false)}
         students={baseStudents}
         accentColor={accentColor}
+        onIssueInvoice={(student) => setInvoiceStudent(student)}
       />
 
       {/* Full Official Invoice Print Modal */}

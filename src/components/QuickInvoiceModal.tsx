@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Student, Transaction } from '../types';
 import { JalaliDatePicker } from './JalaliDatePicker';
@@ -46,9 +46,16 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
   });
 
   const [studentSearch, setStudentSearch] = useState('');
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(
-    availableStudents[0] || null
-  );
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+
+  // Each opening starts with a clean student selection and fresh invoice fields.
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedStudent(null);
+      setStudentSearch('');
+      setError('');
+    }
+  }, [isOpen]);
 
   const [tuitionAmount, setTuitionAmount] = useState('180,000,000');
   const [invoiceDate, setInvoiceDate] = useState(todayJalali());
@@ -60,8 +67,9 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
 
   const filteredStudents = availableStudents.filter((st) => {
     if (!studentSearch.trim()) return true;
-    const q = studentSearch.toLowerCase().trim();
-    return st.name.toLowerCase().includes(q) || st.national_id.includes(q) || st.grade.includes(q);
+    const normalize = (value: unknown) => String(value ?? '').toLocaleLowerCase('fa').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[\u200c\s]+/g, ' ').trim();
+    const q = normalize(studentSearch);
+    return normalize(st.name).includes(q) || normalize(st.national_id).includes(q) || normalize(st.grade).includes(q) || normalize(st.school_name).includes(q);
   });
 
   const studentBalance = selectedStudent ? getStudentBalance(selectedStudent.id) : null;
@@ -130,7 +138,7 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
               <Sparkles className="w-5 h-5 text-amber-300" />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-black text-[#341648]">صدور سریع فاکتور شهریه</h2>
+              <h2 className="text-base sm:text-lg font-black text-[#341648]">صدور سریع فاکتور پرداخت شهریه</h2>
               <p className="text-xs text-gray-400">انتخاب دانش‌آموز، مبلغ و صدور فوری فاکتور رسمی PDF</p>
             </div>
           </div>

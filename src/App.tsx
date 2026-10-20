@@ -37,6 +37,8 @@ export const App: React.FC = () => {
     const handlePopState = (e: PopStateEvent) => {
       e.preventDefault();
       goBack();
+      // Keep a same-document history entry so Android/browser Back stays inside the app.
+      try { window.history.pushState({ screen: 'app-back-guard' }, '', window.location.href); } catch {}
     };
 
     const handleHardwareBack = (e: Event) => {
@@ -49,7 +51,7 @@ export const App: React.FC = () => {
 
     // Capacitor App listener if running in native APK
     let capacitorListenerRemove: (() => void) | null = null;
-    const capacitorApp = (window as any).Capacitor?.Plugins?.App;
+    const capacitorApp = (window as any).Capacitor?.Plugins?.App || (window as any).Capacitor?.App;
     if (capacitorApp && typeof capacitorApp.addListener === 'function') {
       capacitorApp
         .addListener('backButton', () => {
@@ -77,7 +79,7 @@ export const App: React.FC = () => {
   const handleExitApp = () => {
     setShowExitModal(false);
     // If native Capacitor Android app, exit gracefully
-    const capacitorApp = (window as any).Capacitor?.Plugins?.App;
+    const capacitorApp = (window as any).Capacitor?.Plugins?.App || (window as any).Capacitor?.App;
     if (capacitorApp && typeof capacitorApp.exitApp === 'function') {
       capacitorApp.exitApp();
     } else {

@@ -163,22 +163,36 @@ export const StudentsScreen: React.FC = () => {
         const getCell = (row: any, aliases: string[]) => {
           const keys = Object.keys(row || {});
           const targets = aliases.map(normalizeHeader);
-          const key = keys.find((k) => targets.includes(normalizeHeader(k))) || keys.find((k) => targets.some((a) => normalizeHeader(k).includes(a)));
+          const key = keys.find((k) => targets.includes(normalizeHeader(k))) || keys.find((k) => targets.some((a) => a.length >= 5 && normalizeHeader(k).includes(a)));
           return key ? row[key] : '';
         };
         const normalizeDigits = (v: unknown) => String(v ?? '').replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
         const newStudents: Array<Omit<Student, 'id' | 'parsian_code'>> = [];
+        const headerKeys = Object.keys(data[0] || {}).map(normalizeHeader);
+        const hasSchoolColumn = headerKeys.some((h) => ['مدرسه','ناممدرسه','school','schoolname','کدمدرسه','schoolcode'].some((a) => h.includes(normalizeHeader(a))));
+        let chosenSchoolId = currentUser?.school_id || 1;
+        if (isSenior && !hasSchoolColumn) {
+          const choices = schools.map((sc) => `${sc.id}: ${sc.name}`).join('\n');
+          const answer = window.prompt(`این فایل ستون مدرسه ندارد. شناسه مدرسه مقصد را وارد کنید:\n${choices}`, String(selectedSchoolFilter || schools[0]?.id || 1));
+          if (answer === null) { setImportSummary('ورود اکسل لغو شد.'); return; }
+          const requestedId = Number(normalizeDigits(answer).trim());
+          if (!schools.some((sc) => sc.id === requestedId)) { setImportSummary('شناسه مدرسه معتبر نیست؛ ورود انجام نشد.'); return; }
+          chosenSchoolId = requestedId;
+        }
 
         data.forEach((row: any) => {
-          const name = getCell(row, ['نام و نام خانوادگی','نام خانوادگی و نام','نام دانش آموز','نام','name','student name']);
+          const fullName = getCell(row, ['نام و نام خانوادگی','نام خانوادگی و نام','نام دانش آموز','نام کامل','نام دانش‌آموز','student name','full name','fullname']);
+          const firstName = getCell(row, ['نام','نام کوچک','first name','firstname']);
+          const lastName = getCell(row, ['نام خانوادگی','فامیلی','نام فامیل','last name','lastname','surname']);
+          const name = String(fullName || [firstName, lastName].filter(Boolean).join(' ')).trim();
           let grade = String(getCell(row, ['پایه','کلاس','grade','class']) || 'اول').trim();
           if (grade === 'مهد') grade = 'پیش یک';
 
           const fatherP = normalizeDigits(getCell(row, ['شماره پدر','تلفن پدر','موبایل پدر','شماره همراه پدر','تلفن','phone','father phone'])).replace(/\D/g, '');
           const motherP = normalizeDigits(getCell(row, ['شماره مادر','تلفن مادر','موبایل مادر','شماره همراه مادر','mother phone'])).replace(/\D/g, '');
-          const nid = normalizeDigits(getCell(row, ['کد ملی','کدملی','شماره ملی','national_id','national id'])).replace(/\D/g, '');
+          const nid = normalizeDigits(getCell(row, ['کد ملی','کدملی','شماره ملی','شماره کد ملی','کد شناسایی ملی','national_id','national id','national code','nid'])).replace(/\D/g, '');
 
-          let schoolId = currentUser?.school_id || 1;
+          let schoolId = chosenSchoolId;
           const schoolName = String(getCell(row, ['مدرسه','نام مدرسه','school','school name']) || '');
           const schoolCode = String(getCell(row, ['کد مدرسه','school code']) || '');
           if (schoolCode || schoolName) {

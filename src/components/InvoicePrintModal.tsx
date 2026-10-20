@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import appLogo from '../assets/images/quran_school_finance_logo_1792312844966.jpg';
 import { Student, Transaction } from '../types';
 import { jalaliFromGregorian, todayJalali, formatRial } from '../utils/jalali';
 import { Printer, Download, X, Sparkles, PenTool } from 'lucide-react';
@@ -30,7 +31,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
   const totalCredit = studentTxs.reduce((sum, t) => sum + (t.credit || 0), 0);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
+    <div className="invoice-print-root fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-[#e5dde8] overflow-hidden my-auto">
         {/* Modal Controls Bar (Hidden during print) */}
         <div className="no-print flex items-center justify-between px-6 py-4 border-b border-[#e5dde8] bg-[#f8f5f9]">
@@ -83,7 +84,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
           <div className="bg-[#1b365d] text-white p-6 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 shadow-md">
             <div className="flex items-center gap-3">
               <img
-                src="/src/assets/images/quran_school_finance_logo_1792312844966.jpg"
+                src={appLogo}
                 alt="لوگوی سیستم مالی مدرسة القرآن"
                 referrerPolicy="no-referrer"
                 className="w-12 h-12 rounded-xl object-cover border border-amber-300/40 shrink-0 shadow-xs"
