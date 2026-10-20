@@ -70,7 +70,7 @@ const cleanHeader = (h: any) =>
 export const postToAppsScript = async (
   payload: Record<string, any>,
   webAppUrl: string = DEFAULT_WEBAPP_URL
-): Promise<{ success: boolean; error?: string; data?: any; count?: number; skipped?: number; message?: string; matched?: number; unmatched?: number }> => {
+): Promise<{ success: boolean; error?: string; data?: any; id?: number; count?: number; skipped?: number; message?: string; matched?: number; unmatched?: number }> => {
   try {
     const url = webAppUrl.trim();
     if (!url) return { success: false, error: 'آدرس وب‌اپ تعریف نشده است.' };
@@ -172,6 +172,27 @@ export const apiSaveManager = async (manager: Partial<User> & { id?: number }, a
   };
   return postToAppsScript(payload);
 };
+
+export const apiSaveSchool = async (school: Partial<School> & { id?: number }, action: 'add' | 'update' | 'delete' = 'update') =>
+  postToAppsScript({
+    action: action === 'add' ? 'school_add' : action === 'delete' ? 'school_delete' : 'school_update',
+    id: school.id, name: school.name, code: school.code, type: school.type,
+    moeen_code: school.moeen_code, petty_cash_card: school.petty_cash_card, active: school.active,
+  });
+
+export const apiSaveStaffMember = async (staff: Partial<StaffMember> & { id?: number }, action: 'add' | 'update' | 'delete' = 'update') =>
+  postToAppsScript({
+    action: action === 'add' ? 'staff_add' : action === 'delete' ? 'staff_delete' : 'staff_update',
+    id: staff.id, school_id: staff.school_id, school_name: staff.school_name,
+    name: staff.name, national_id: staff.national_id, phone: staff.phone,
+    role_title: staff.role_title, contract_type: staff.contract_type,
+    hourly_rate: staff.hourly_rate, base_salary: staff.base_salary,
+    insurance_employer_share: staff.insurance_employer_share,
+    insurance_employee_share: staff.insurance_employee_share,
+    bank_card_or_sheba: staff.bank_card_or_sheba, kol_code: staff.kol_code,
+    moeen_code: staff.moeen_code, tafsili_code: staff.tafsili_code, active: staff.active,
+  });
+
 
 /**
  * Save Tuition (Payment or Debt) on Google Sheet via Apps Script
@@ -639,6 +660,7 @@ export const loadDataFromAppsScript = async (
   const rawCheques = rawData.cheques || [];
   const rawManagers = rawData.managers || [];
   const rawBank = rawData.bank || rawData.bankTransactions || [];
+  const rawStaff = Array.isArray(rawData.staff) ? rawData.staff : [];
 
   const schools: School[] = rawSchools.map((sc: any) => ({
     id: Number(sc.id),
@@ -646,6 +668,8 @@ export const loadDataFromAppsScript = async (
     code: sc.code || '',
     active: sc.active !== false && String(sc.active) !== 'false',
     petty_cash_card: sc.petty_cash_card || '',
+    type: sc.type || '',
+    moeen_code: sc.moeen_code || '',
   }));
 
   const schoolMap = new Map<number, string>();
@@ -777,7 +801,7 @@ export const loadDataFromAppsScript = async (
     schools,
     transactions,
     cheques,
-    categories: [],
+    categories: Array.isArray(rawData.categories) ? rawData.categories.map((x: any) => ({ id: String(x.id), name: String(x.name || ''), active: x.active !== false && String(x.active) !== 'false' })).filter((x: ExpenseCategory) => x.name) : [],
     managers,
     bankTransactions: rawBank.map((b: any, idx: number) => ({
       id: Number(b.id) || idx + 1, date: dateFromExcelSerial(b.date) || todayGregorian(),
@@ -787,7 +811,26 @@ export const loadDataFromAppsScript = async (
       description: String(b.description || ''), reconciled: b.matched === true || String(b.matched) === 'true',
       matched_transaction_id: b.matched_transaction_id ? Number(b.matched_transaction_id) : undefined,
     })),
-    staff: [],
+    staff: rawStaff.map((st: any, idx: number) => ({
+      id: Number(st.id) || idx + 1,
+      school_id: Number(st.school_id) || 1,
+      school_name: st.school_name || schoolMap.get(Number(st.school_id) || 1) || 'مدرسه',
+      name: String(st.name || '').trim(),
+      national_id: String(st.national_id || ''),
+      phone: String(st.phone || ''),
+      role_title: String(st.role_title || 'آموزگار'),
+      contract_type: (['hourly', 'monthly', 'session'].includes(String(st.contract_type)) ? String(st.contract_type) : 'hourly') as StaffMember['contract_type'],
+      hourly_rate: Number(st.hourly_rate || 0),
+      base_salary: Number(st.base_salary || 0),
+      insurance_employer_share: Number(st.insurance_employer_share || 0),
+      insurance_employee_share: Number(st.insurance_employee_share || 0),
+      bank_card_or_sheba: String(st.bank_card_or_sheba || ''),
+      kol_code: String(st.kol_code || ''),
+      moeen_code: String(st.moeen_code || ''),
+      tafsili_code: String(st.tafsili_code || ''),
+      active: st.active !== false && String(st.active) !== 'false',
+      created_at: String(st.created_at || ''),
+    })).filter((st: StaffMember) => st.name && st.active),
     stats: {
       studentsCount: students.length,
       transactionsCount: transactions.length,

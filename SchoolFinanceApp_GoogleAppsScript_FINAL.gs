@@ -18,14 +18,15 @@ const CFG = {
   SESSION_HOURS: 6,
   SHEETS: [
     'Managers','Schools','Students','Tuition','Expenses','Transactions',
-    'Bank','ExpenseCategories','Messages','Attachments','ParsianAccounts','Settings','ActivityLogs','Cheques','Requests'
+    'Bank','ExpenseCategories','Messages','Attachments','ParsianAccounts','Settings','ActivityLogs','Cheques','Requests','Staff'
   ]
 };
 
 const HEADERS = {
   Requests: ['id','user_id','action','payload_hash','status','result','created_at'],
   Managers: ['id','name','username','password','school_id','role','active','created_at','petty_cash_card','petty_cash_bank','petty_cash_shaba','petty_cash_limit','petty_cash_balance'],
-  Schools: ['id','name','code','active','created_at','petty_cash_card'],
+  Schools: ['id','name','code','active','created_at','petty_cash_card','type','moeen_code'],
+  Staff: ['id','school_id','school_name','name','national_id','phone','role_title','contract_type','hourly_rate','base_salary','insurance_employer_share','insurance_employee_share','bank_card_or_sheba','kol_code','moeen_code','tafsili_code','active','created_at'],
   Students: ['id','name','grade','phone','national_id','school_id','kol_code','moeen_code','tafsili_code','active','created_at'],
   Tuition: ['id','date','student_id','school_id','type','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','payment_source'],
   Expenses: ['id','date','school_id','category','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','payment_source'],
@@ -181,6 +182,7 @@ function doGet(e) {
         success: true,
         students: (students_(b)||{}).data || [],
         schools: (schools_(b)||{}).data || [],
+        staff: (staff_(b)||{}).data || [],
         tuition: (tuition_(b)||{}).data || [],
         expenses: (expenses_(b)||{}).data || [],
         cheques: (cheques_(b)||{}).data || [],
@@ -194,6 +196,7 @@ function doGet(e) {
     if(action==='transactions') return json_(transactions_(b));
     if(action==='students'){ return json_(students_(b)); }
     if(action==='schools') return json_(schools_(b));
+    if(action==='staff') return json_(staff_(b));
     if(action==='managers') return json_(managers_(b));
     if(action==='expenses') return json_(expenses_(b));
     if(action==='bank') return json_(bank_(b));
@@ -216,7 +219,7 @@ function doGet(e) {
 function ensureStructure_() {
   const cache=CacheService.getScriptCache();
   const ss = SpreadsheetApp.openById(CFG.SPREADSHEET_ID);
-  if(cache.get('structure_ready_v215')==='1' && ss.getSheetByName('Requests')) return;
+  if(cache.get('structure_ready_v216')==='1' && ss.getSheetByName('Requests')) return;
   CFG.SHEETS.forEach(name => {
     let sh = ss.getSheetByName(name);
     if (!sh) sh = ss.insertSheet(name);
@@ -228,7 +231,7 @@ function ensureStructure_() {
     }
     sh.setFrozenRows(1);
   });
-  cache.put('structure_ready_v215','1',300);
+  cache.put('structure_ready_v216','1',300);
 }
 
 let writeLockHeld_=false;
@@ -252,6 +255,7 @@ function doPost(e) {
         success: true,
         students: (students_(body)||{}).data || [],
         schools: (schools_(body)||{}).data || [],
+        staff: (staff_(body)||{}).data || [],
         tuition: (tuition_(body)||{}).data || [],
         expenses: (expenses_(body)||{}).data || [],
         cheques: (cheques_(body)||{}).data || [],
@@ -264,7 +268,7 @@ function doPost(e) {
     }
 
     // POST carries tokens in its body, but read-only actions do not need a write lock.
-    const reads={schools:schools_,students:students_,tuition:tuition_,expenses:expenses_,transactions:transactions_,bank:bank_,bank_review:bankReview_,categories:categories_,messages:messages_,managers:managers_,cheques:cheques_,cheque_list:chequeList_,cheque_alerts:chequeAlerts_,summary:summary_,my_claim:myClaim_,app_version:appVersion_,activity_logs:activityLogs_,parsian_export:parsianExport_,parsian_school_map:parsianSchoolMap_,parsian_student_accounts:parsianStudentAccounts_,attachment_read:attachmentRead_};
+    const reads={schools:schools_,staff:staff_,students:students_,tuition:tuition_,expenses:expenses_,transactions:transactions_,bank:bank_,bank_review:bankReview_,categories:categories_,messages:messages_,managers:managers_,cheques:cheques_,cheque_list:chequeList_,cheque_alerts:chequeAlerts_,summary:summary_,my_claim:myClaim_,app_version:appVersion_,activity_logs:activityLogs_,parsian_export:parsianExport_,parsian_school_map:parsianSchoolMap_,parsian_student_accounts:parsianStudentAccounts_,attachment_read:attachmentRead_};
     if(reads[action])return json_(reads[action](body));
     lock.waitLock(30000);locked=true;writeLockHeld_=true;
     ensureStructure_();
@@ -297,6 +301,10 @@ function doPost(e) {
       case 'school_add': result=schoolAdd_(body); break;
       case 'school_update': result=schoolUpdate_(body); break;
       case 'school_delete': result=schoolDelete_(body); break;
+      case 'staff': result=staff_(body); break;
+      case 'staff_add': result=staffAdd_(body); break;
+      case 'staff_update': result=staffUpdate_(body); break;
+      case 'staff_delete': result=staffDelete_(body); break;
       case 'students': result=students_(body); break;
       case 'student_add': result=studentAdd_(body); break;
       case 'students_import': result=studentsImport_(body); break;
@@ -473,15 +481,64 @@ function ensureCoreData_() {
 /* ---------- SCHOOLS ---------- */
 
 function schools_(b) {
+  ensureStructure_();
   const u=auth_(b);
   const data=rows_('Schools').map(x=>x.obj).filter(x=>String(x.active)!=='false');
   if(u.role!=='senior' && u.role!=='admin') return {success:true,data:data.filter(x=>String(x.id)===String(u.school_id))};
   return {success:true,data:data};
 }
 
-function schoolAdd_(b){ auth_(b,['senior','admin']); const id=nextId_('Schools'); sheet_('Schools').appendRow([id,String(b.name||''),String(b.code||''),b.active!==false,now_()]); return {success:true,id:id}; }
-function schoolUpdate_(b){ auth_(b,['senior','admin']); const hit=findRow_('Schools',b.id); if(!hit) throw new Error('مدرسه یافت نشد.'); const r=hit.obj; updateRow_('Schools',hit.row,[r.id,b.name!==undefined?b.name:r.name,b.code!==undefined?b.code:r.code,b.active!==undefined?b.active:r.active,r.created_at]); return {success:true}; }
+function schoolAdd_(b){
+  auth_(b,['senior','admin']); ensureStructure_();
+  const id=nextId_('Schools');
+  const row=[id,String(b.name||''),String(b.code||''),b.active!==false,now_(),String(b.petty_cash_card||''),String(b.type||''),String(b.moeen_code||'')];
+  sheet_('Schools').appendRow(row); return {success:true,id:id};
+}
+function schoolUpdate_(b){
+  auth_(b,['senior','admin']); ensureStructure_();
+  const hit=findRow_('Schools',b.id); if(!hit) throw new Error('مدرسه یافت نشد.');
+  const r=hit.obj;
+  updateRow_('Schools',hit.row,[r.id,b.name!==undefined?b.name:r.name,b.code!==undefined?b.code:r.code,b.active!==undefined?b.active:r.active,r.created_at,b.petty_cash_card!==undefined?b.petty_cash_card:(r.petty_cash_card||''),b.type!==undefined?b.type:(r.type||''),b.moeen_code!==undefined?b.moeen_code:(r.moeen_code||'')]);
+  return {success:true};
+}
 function schoolDelete_(b){ auth_(b,['senior','admin']); const hit=findRow_('Schools',b.id); if(!hit) throw new Error('مدرسه یافت نشد.'); sheet_('Schools').getRange(hit.row,4).setValue(false); return {success:true}; }
+
+function staff_(b){
+  ensureStructure_();
+  const u=auth_(b);
+  const data=rows_('Staff').map(x=>x.obj).filter(x=>String(x.active)!=='false').map(x=>{
+    x.id=Number(x.id);x.school_id=Number(x.school_id);
+    ['hourly_rate','base_salary','insurance_employer_share','insurance_employee_share'].forEach(k=>x[k]=Number(x[k]||0));
+    x.active=x.active!==false && String(x.active)!=='false';
+    if(u.role!=='senior' && u.role!=='admin' && String(x.school_id)!==String(u.school_id)) return null;
+    x.school_name=x.school_name||schoolName_(x.school_id);
+    return x;
+  }).filter(Boolean);
+  return {success:true,data:data};
+}
+function staffAdd_(b){
+  const u=auth_(b,['senior','admin']);
+  const schoolId=String(b.school_id||'');
+  if(!schoolId || !String(b.name||'').trim()) throw new Error('مدرسه و نام معلم/پرسنل الزامی است.');
+  const id=nextId_('Staff'), schoolName=schoolName_(schoolId);
+  sheet_('Staff').appendRow([id,schoolId,schoolName,String(b.name||'').trim(),String(b.national_id||''),String(b.phone||''),String(b.role_title||''),String(b.contract_type||'hourly'),Number(b.hourly_rate||0),Number(b.base_salary||0),Number(b.insurance_employer_share||0),Number(b.insurance_employee_share||0),String(b.bank_card_or_sheba||''),String(b.kol_code||''),String(b.moeen_code||''),String(b.tafsili_code||''),b.active!==false,now_()]);
+  return {success:true,id:id};
+}
+function staffUpdate_(b){
+  const u=auth_(b,['senior','admin']);
+  const hit=findRow_('Staff',b.id); if(!hit) throw new Error('معلم/پرسنل یافت نشد.');
+  const r=hit.obj, schoolId=b.school_id!==undefined?String(b.school_id):String(r.school_id||'');
+  const schoolName=schoolName_(schoolId);
+  const v=k=>b[k]!==undefined?b[k]:(r[k]!==undefined?r[k]:'');
+  updateRow_('Staff',hit.row,[r.id,schoolId,schoolName,v('name'),v('national_id'),v('phone'),v('role_title'),v('contract_type'),Number(v('hourly_rate')||0),Number(v('base_salary')||0),Number(v('insurance_employer_share')||0),Number(v('insurance_employee_share')||0),v('bank_card_or_sheba'),v('kol_code'),v('moeen_code'),v('tafsili_code'),v('active')!==false && String(v('active'))!=='false',r.created_at||now_()]);
+  return {success:true};
+}
+function staffDelete_(b){
+  auth_(b,['senior','admin']);
+  const hit=findRow_('Staff',b.id); if(!hit) throw new Error('معلم/پرسنل یافت نشد.');
+  const h=HEADERS.Staff.indexOf('active')+1; sheet_('Staff').getRange(hit.row,h).setValue(false);
+  return {success:true};
+}
 
 /* ---------- STUDENTS ---------- */
 

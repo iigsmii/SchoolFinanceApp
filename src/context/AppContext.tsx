@@ -48,6 +48,8 @@ import {
   apiSaveExpense,
   apiSaveCheque,
   apiSaveManager,
+  apiSaveSchool,
+  apiSaveStaffMember,
 } from '../services/googleSheets';
 import {
   playSuccessSound,
@@ -581,6 +583,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (gasResult.managers && gasResult.managers.length > 0) {
           const mergedManagers = mergeCloudAndLocal(gasResult.managers, loadFromStorage<User[]>('users', []));
           setUsers(mergedManagers); saveToStorage('users', mergedManagers);
+        }
+
+        if (Array.isArray(gasResult.staff) && gasResult.staff.length > 0) {
+          const mergedStaff = mergeCloudAndLocal(gasResult.staff, loadFromStorage<StaffMember[]>('staff_members', []));
+          setStaffMembers(mergedStaff);
+          saveToStorage('staff_members', mergedStaff);
         }
 
         setSyncStats(gasResult.stats);
@@ -1260,16 +1268,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newId = schools.length > 0 ? Math.max(...schools.map((sc) => sc.id)) + 1 : 1;
     const newSchool: School = { ...s, id: newId };
     setSchools((prev) => [...prev, newSchool]);
+    saveToStorage('schools', [...schools, newSchool]);
+    apiSaveSchool(newSchool, 'add').then((result) => {
+      if (result?.success && result.id && Number(result.id) !== newId) {
+        setSchools((prev) => prev.map((sc) => sc.id === newId ? { ...sc, id: Number(result.id) } : sc));
+      } else if (!result?.success) {
+        console.warn('ثبت مدرسه در Google Sheets ناموفق بود:', result?.error);
+      }
+    }).catch((error) => console.warn('School cloud add failed:', error));
     logActivity('افزودن مدرسه جدید', `ثبت مرکز/مدرسه ${s.name}`, 'school', newId);
   };
 
   const updateSchool = (id: number, s: Partial<School>) => {
-    setSchools((prev) => prev.map((sc) => (sc.id === id ? { ...sc, ...s } : sc)));
+    setSchools((prev) => {
+      const updated = prev.map((sc) => (sc.id === id ? { ...sc, ...s } : sc));
+      saveToStorage('schools', updated);
+      return updated;
+    });
+    apiSaveSchool({ ...schools.find((sc) => sc.id === id), ...s, id }, 'update')
+      .then((result) => { if (!result?.success) console.warn('ویرایش مدرسه در Google Sheets ناموفق بود:', result?.error); })
+      .catch((error) => console.warn('School cloud update failed:', error));
     logActivity('ویرایش اطلاعات مدرسه', `ویرایش مرکز شناسه ${id}`, 'school', id);
   };
 
   const deleteSchool = (id: number) => {
-    setSchools((prev) => prev.filter((sc) => sc.id !== id));
+    apiSaveSchool({ id }, 'delete').then((result) => {
+      if (!result?.success) console.warn('حذف مدرسه از Google Sheets ناموفق بود:', result?.error);
+    }).catch((error) => console.warn('School cloud delete failed:', error));
+    setSchools((prev) => {
+      const updated = prev.filter((sc) => sc.id !== id);
+      saveToStorage('schools', updated);
+      return updated;
+    });
     logActivity('حذف مدرسه', `حذف مدرسه شناسه ${id}`, 'school', id);
   };
 
@@ -1373,34 +1403,58 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addStaffMember = (staffData: Omit<StaffMember, 'id'>): StaffMember => {
     const newId = staffMembers.length > 0 ? Math.max(...staffMembers.map((s) => s.id)) + 1 : 1;
     const school = schools.find((sc) => sc.id === staffData.school_id);
-    const newStaff: StaffMember = {
-      ...staffData,
-      id: newId,
-      school_name: school?.name || staffData.school_name || 'مدرسه',
-    };
-    setStaffMembers((prev) => [newStaff, ...prev]);
+    const newStaff: StaffMember = { ...staffData, id: newId, school_name: school?.name || staffData.school_name || 'مدرسه' };
+    setStaffMembers((prev) => {
+      const updated = [newStaff, ...prev];
+      saveToStorage('staff_members', updated);
+      return updated;
+    });
+    apiSaveStaffMember(newStaff, 'add').then((result) => {
+      if (result?.success && result.id && Number(result.id) !== newId) {
+        setStaffMembers((prev) => {
+          const updated = prev.map((item) => item.id === newId ? { ...item, id: Number(result.id) } : item);
+          saveToStorage('staff_members', updated);
+          return updated;
+        });
+      } else if (!result?.success) {
+        console.warn('ثبت معلم/پرسنل در Google Sheets ناموفق بود:', result?.error);
+      }
+    }).catch((error) => console.warn('Staff cloud add failed:', error));
     logActivity('ثبت پرسنل/معلم جدید', `ثبت ${newStaff.name} (${newStaff.role_title}) در ${newStaff.school_name}`);
     return newStaff;
   };
 
   const updateStaffMember = (id: number, data: Partial<StaffMember>) => {
-    setStaffMembers((prev) =>
-      prev.map((s) => {
+    const existing = staffMembers.find((item) => item.id === id);
+    setStaffMembers((prev) => {
+      const updated = prev.map((s) => {
         if (s.id !== id) return s;
-        const updated = { ...s, ...data };
+        const item = { ...s, ...data };
         if (data.school_id) {
           const sc = schools.find((x) => x.id === data.school_id);
-          if (sc) updated.school_name = sc.name;
+          if (sc) item.school_name = sc.name;
         }
-        return updated;
-      })
-    );
+        return item;
+      });
+      saveToStorage('staff_members', updated);
+      return updated;
+    });
+    if (existing) apiSaveStaffMember({ ...existing, ...data, id }, 'update').then((result) => {
+      if (!result?.success) console.warn('ویرایش معلم/پرسنل در Google Sheets ناموفق بود:', result?.error);
+    }).catch((error) => console.warn('Staff cloud update failed:', error));
     logActivity('ویرایش اطلاعات پرسنل', `به‌روزرسانی پرسنل شناسه ${id}`);
   };
 
   const deleteStaffMember = (id: number) => {
     const found = staffMembers.find((s) => s.id === id);
-    setStaffMembers((prev) => prev.filter((s) => s.id !== id));
+    apiSaveStaffMember({ id }, 'delete').then((result) => {
+      if (!result?.success) console.warn('حذف معلم/پرسنل از Google Sheets ناموفق بود:', result?.error);
+    }).catch((error) => console.warn('Staff cloud delete failed:', error));
+    setStaffMembers((prev) => {
+      const updated = prev.filter((s) => s.id !== id);
+      saveToStorage('staff_members', updated);
+      return updated;
+    });
     logActivity('حذف پرسنل', `حذف پرسنل ${found?.name || id}`);
   };
 
