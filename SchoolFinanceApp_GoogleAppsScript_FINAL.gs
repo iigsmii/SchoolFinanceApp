@@ -219,7 +219,7 @@ function doGet(e) {
 function ensureStructure_() {
   const cache=CacheService.getScriptCache();
   const ss = SpreadsheetApp.openById(CFG.SPREADSHEET_ID);
-  if(cache.get('structure_ready_v215')==='1' && ss.getSheetByName('Requests')) return;
+  if(cache.get('structure_ready_v216')==='1' && ss.getSheetByName('Requests')) return;
   CFG.SHEETS.forEach(name => {
     let sh = ss.getSheetByName(name);
     if (!sh) sh = ss.insertSheet(name);
@@ -231,7 +231,7 @@ function ensureStructure_() {
     }
     sh.setFrozenRows(1);
   });
-  cache.put('structure_ready_v215','1',300);
+  cache.put('structure_ready_v216','1',300);
 }
 
 let writeLockHeld_=false;
@@ -481,6 +481,7 @@ function ensureCoreData_() {
 /* ---------- SCHOOLS ---------- */
 
 function schools_(b) {
+  ensureStructure_();
   const u=auth_(b);
   const data=rows_('Schools').map(x=>x.obj).filter(x=>String(x.active)!=='false');
   if(u.role!=='senior' && u.role!=='admin') return {success:true,data:data.filter(x=>String(x.id)===String(u.school_id))};
@@ -503,6 +504,7 @@ function schoolUpdate_(b){
 function schoolDelete_(b){ auth_(b,['senior','admin']); const hit=findRow_('Schools',b.id); if(!hit) throw new Error('مدرسه یافت نشد.'); sheet_('Schools').getRange(hit.row,4).setValue(false); return {success:true}; }
 
 function staff_(b){
+  ensureStructure_();
   const u=auth_(b);
   const data=rows_('Staff').map(x=>x.obj).filter(x=>String(x.active)!=='false').map(x=>{
     x.id=Number(x.id);x.school_id=Number(x.school_id);
