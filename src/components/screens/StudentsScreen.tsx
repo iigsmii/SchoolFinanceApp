@@ -159,13 +159,23 @@ export const StudentsScreen: React.FC = () => {
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
         const data = XLSX.utils.sheet_to_json<any>(ws, { defval: '', raw: false });
-        const normalizeHeader = (v: unknown) => String(v ?? '').trim().toLowerCase().replace(/[\u200c\u200f\u202a-\u202e\s_\-]/g, '').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک');
+        const normalizeHeader = (v: unknown) => String(v ?? '')
+          .replace(/[\u200c\u200f\u202a-\u202e\ufeff]/g, '')
+          .trim().toLowerCase().replace(/[\s_\-\u0640]/g, '')
+          .replace(/[يى]/g, 'ی').replace(/ك/g, 'ک');
         const getCell = (row: any, aliases: string[]) => {
           const keys = Object.keys(row || {});
-          const targets = aliases.map(normalizeHeader);
-          const key = keys.find((k) => targets.includes(normalizeHeader(k))) || keys.find((k) => targets.some((a) => a.length >= 5 && normalizeHeader(k).includes(a)));
-          return key ? row[key] : '';
+          const targets = aliases.map(normalizeHeader).filter(Boolean);
+          // Exact header match first; only then allow conservative containment matching.
+          const exact = keys.find((k) => targets.includes(normalizeHeader(k)));
+          if (exact !== undefined) return row[exact];
+          const key = keys.find((k) => {
+            const header = normalizeHeader(k);
+            return targets.some((a) => a.length >= 5 && (header.startsWith(a) || header.endsWith(a)));
+          });
+          return key !== undefined ? row[key] : '';
         };
+        const cleanText = (v: unknown) => String(v ?? '').replace(/[\u200c\u200f\ufeff]/g, '').replace(/\s+/g, ' ').trim();
         const normalizeDigits = (v: unknown) => String(v ?? '').replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
         const newStudents: Array<Omit<Student, 'id' | 'parsian_code'>> = [];
         const headerKeys = Object.keys(data[0] || {}).map(normalizeHeader);
@@ -181,10 +191,12 @@ export const StudentsScreen: React.FC = () => {
         }
 
         data.forEach((row: any) => {
-          const fullName = getCell(row, ['نام و نام خانوادگی','نام خانوادگی و نام','نام دانش آموز','نام کامل','نام دانش‌آموز','student name','full name','fullname']);
-          const firstName = getCell(row, ['نام','نام کوچک','first name','firstname']);
-          const lastName = getCell(row, ['نام خانوادگی','فامیلی','نام فامیل','last name','lastname','surname']);
-          const name = String(fullName || [firstName, lastName].filter(Boolean).join(' ')).trim();
+          const firstName = cleanText(getCell(row, ['نام کوچک','نام','اسم','first name','firstname','given name']));
+          const lastName = cleanText(getCell(row, ['نام خانوادگی','نام‌خانوادگی','نام خانوادگي','فامیلی','فامیل','نام فامیل','نام خانوادگی دانش آموز','نام خانوادگی دانش‌آموز','last name','lastname','surname','family name']));
+          const fullName = cleanText(getCell(row, ['نام و نام خانوادگی','نام‌ونام‌خانوادگی','نام کامل','نام کامل دانش آموز','نام کامل دانش‌آموز','نام دانش آموز','نام دانش‌آموز','student name','full name','fullname']));
+          // Separate first/last-name columns are authoritative. This avoids importing only the first name
+          // when a workbook contains both a full-name column and distinct surname column.
+          const name = [firstName, lastName].filter(Boolean).join(' ') || fullName;
           let grade = String(getCell(row, ['پایه','کلاس','grade','class']) || 'اول').trim();
           if (grade === 'مهد') grade = 'پیش یک';
 

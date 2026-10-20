@@ -32,37 +32,43 @@ export const App: React.FC = () => {
     accentColor,
   } = useApp();
 
-  // Listen to Phone Hardware Back button & Browser popstate
+  // Keep Android/browser Back inside the app. A guard entry is installed on mount
+  // and replenished after every popstate so WebView does not navigate away from the app.
   useEffect(() => {
-    const handlePopState = (e: PopStateEvent) => {
-      e.preventDefault();
-      goBack();
-      // Keep a same-document history entry so Android/browser Back stays inside the app.
+    const installBackGuard = () => {
       try { window.history.pushState({ screen: 'app-back-guard' }, '', window.location.href); } catch {}
+    };
+    installBackGuard();
+
+    let handlingBack = false;
+    const handlePopState = () => {
+      if (handlingBack) return;
+      handlingBack = true;
+      try { goBack(); } finally {
+        installBackGuard();
+        // Release on the next microtask without relying on browser timers.
+        Promise.resolve().then(() => { handlingBack = false; });
+      }
     };
 
     const handleHardwareBack = (e: Event) => {
       e.preventDefault();
-      goBack();
+      handlePopState();
     };
 
     window.addEventListener('popstate', handlePopState);
     document.addEventListener('backbutton', handleHardwareBack);
 
-    // Capacitor App listener if running in native APK
+    // Capacitor's App plugin must be present in the Android build to intercept native Back.
     let capacitorListenerRemove: (() => void) | null = null;
     const capacitorApp = (window as any).Capacitor?.Plugins?.App || (window as any).Capacitor?.App;
     if (capacitorApp && typeof capacitorApp.addListener === 'function') {
-      capacitorApp
-        .addListener('backButton', () => {
-          goBack();
-        })
-        .then((handler: any) => {
-          if (handler && typeof handler.remove === 'function') {
-            capacitorListenerRemove = () => handler.remove();
-          }
-        })
-        .catch(() => {});
+      Promise.resolve(capacitorApp.addListener('backButton', (event: any) => {
+        event?.preventDefault?.();
+        handlePopState();
+      })).then((handler: any) => {
+        if (handler && typeof handler.remove === 'function') capacitorListenerRemove = () => handler.remove();
+      }).catch(() => {});
     }
 
     return () => {
