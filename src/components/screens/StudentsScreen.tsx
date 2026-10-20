@@ -484,7 +484,10 @@ export const StudentsScreen: React.FC = () => {
                   value={formName}
                   maxLength={200}
                   autoComplete="name"
-                  onChange={(e) => setFormName(e.target.value)}
+                  onChange={(e) => setFormName(e.currentTarget.value)}
+                  onInput={(e) => setFormName(e.currentTarget.value)}
+                  onCompositionEnd={(e) => setFormName(e.currentTarget.value)}
+                  onBlur={(e) => setFormName(e.currentTarget.value)}
                   placeholder="مثال: علی‌رضا کمالی"
                   className="w-full px-3.5 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs sm:text-sm text-[#302735] focus:outline-hidden focus:border-[#62205f]"
                 />
