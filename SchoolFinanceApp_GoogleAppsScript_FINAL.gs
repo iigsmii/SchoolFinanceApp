@@ -575,12 +575,21 @@ function students_(b) {
 
 function normalizeStudentName_(value){ return String(value===undefined||value===null?'':value).normalize('NFC').replace(/\s+/g,' ').trim(); }
 
+function ensureStudentPhoneColumns_(){
+  const sh=sheet_('Students');
+  let headers=sh.getRange(1,1,1,Math.max(1,sh.getLastColumn())).getDisplayValues()[0].map(h=>String(h||'').trim());
+  ['father_phone','mother_phone'].forEach(name=>{
+    if(headers.indexOf(name)<0){ const col=sh.getLastColumn()+1; sh.getRange(1,col).setValue(name); headers.push(name); }
+  });
+}
+
 function studentAdd_(b) {
   const lock=writeLock_();
   lock.waitLock(30000);
   try {
     const u=auth_(b);
     ensureCoreData_();
+    ensureStudentPhoneColumns_();
     const schoolId=Number(b.school_id) || (u.school_id ? Number(u.school_id) : 1);
     const fullName=normalizeStudentName_(b.name);
     if(!fullName) throw new Error('نام و نام خانوادگی دانش‌آموز الزامی است.');
@@ -612,9 +621,10 @@ function studentAdd_(b) {
     const sh=sheet_('Students');
     try { sh.getRange(2, 2, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); sh.getRange(2, 4, Math.max(1, sh.getMaxRows() - 1), 2).setNumberFormat('@'); } catch(_) {}
     const createdAt=now_();
-    sh.appendRow([id,fullName,grade,phone,nid,String(schoolId),codes.kol,codes.moeen,codes.tafsili,true,createdAt,fatherPhone,motherPhone]);
+    sh.appendRow(new Array(sh.getLastColumn()).fill(''));
     const appendedRow=sh.getLastRow();
-    try { sh.getRange(appendedRow,2).setNumberFormat('@').setValue(fullName); } catch(_) {}
+    updateRow_('Students',appendedRow,[id,fullName,grade,phone,nid,String(schoolId),codes.kol,codes.moeen,codes.tafsili,true,createdAt,fatherPhone,motherPhone]);
+    try { const nameCol=sh.getRange(1,1,1,sh.getLastColumn()).getDisplayValues()[0].indexOf('name')+1; if(nameCol>0) sh.getRange(appendedRow,nameCol).setNumberFormat('@').setValue(fullName); } catch(_) {}
     SpreadsheetApp.flush();
     return {
       success:true,
