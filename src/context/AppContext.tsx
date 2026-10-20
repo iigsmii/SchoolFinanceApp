@@ -411,7 +411,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   } | null>(() => loadFromStorage('sync_stats', null));
 
   useEffect(() => saveToStorage('theme_index', themeIndex), [themeIndex]);
-  useEffect(() => saveToStorage('font_scale', fontScale), [fontScale]);
+  useEffect(() => {
+    saveToStorage('font_scale', fontScale);
+    const previous = document.documentElement.style.fontSize;
+    document.documentElement.style.fontSize = `${16 * fontScale}px`;
+    return () => { document.documentElement.style.fontSize = previous; };
+  }, [fontScale]);
   useEffect(() => saveToStorage('current_user', currentUser), [currentUser]);
   useEffect(() => saveToStorage('schools', schools), [schools]);
   useEffect(() => saveToStorage('users', users), [users]);
