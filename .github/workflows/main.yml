@@ -35,8 +35,9 @@ jobs:
 
       - name: Prepare school logo icons
         run: |
-          python -m pip install --user Pillow
-          python scripts/generate-icons.py
+          python -m venv .icon-venv
+          .icon-venv/bin/pip install Pillow
+          .icon-venv/bin/python scripts/generate-icons.py
 
       - name: Build (typecheck + bundle)
         run: npm run build
