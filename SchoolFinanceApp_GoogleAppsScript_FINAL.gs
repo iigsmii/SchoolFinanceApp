@@ -807,11 +807,17 @@ function readStudentXlsx_(base64) {
     const last=String(r[lastCol]||'').trim();
     if(!first && !last) continue;
     const name=[first,last].filter(Boolean).join(' ').replace(/\s+/g,' ').trim();
+    const rawNid=String(r[nidCol]||'').trim();
+    const nationalId=digits_(rawNid);
+    // A non-empty national-ID cell containing no digits usually means the source row
+    // is malformed or its columns shifted. Do not create a misleading student record.
+    if(rawNid && !nationalId) continue;
+    if(nationalId.length>10) continue;
     out.push({
       first_name:first,
       last_name:last,
       name:name,
-      national_id:digits_(r[nidCol]||''),
+      national_id:nationalId,
       phone:phoneCol?normalizeImportedPhone_(r[phoneCol]):'',
       grade:gradeCol?String(r[gradeCol]||'').trim():'',
       birth_date:birthCol?String(r[birthCol]||'').trim():'',
