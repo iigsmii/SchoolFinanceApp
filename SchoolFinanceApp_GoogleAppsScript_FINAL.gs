@@ -510,6 +510,8 @@ function students_(b) {
   return {success:true,data:data};
 }
 
+function normalizeStudentName_(value){ return String(value===undefined||value===null?'':value).normalize('NFC').replace(/\s+/g,' ').trim(); }
+
 function studentAdd_(b) {
   const lock=writeLock_();
   lock.waitLock(30000);
@@ -517,7 +519,7 @@ function studentAdd_(b) {
     const u=auth_(b);
     ensureCoreData_();
     const schoolId=Number(b.school_id) || (u.school_id ? Number(u.school_id) : 1);
-    const fullName=String(b.name || '').trim();
+    const fullName=normalizeStudentName_(b.name);
     if(!fullName) throw new Error('نام و نام خانوادگی دانش‌آموز الزامی است.');
 
     let nid=digits_(b.national_id || '');
@@ -540,7 +542,7 @@ function studentAdd_(b) {
     const grade=normalizeGrade_(b.grade || 'اول');
     const codes=studentAccountCodes_(id, grade, schoolId, nid);
     const sh=sheet_('Students');
-    try { sh.getRange(2, 4, Math.max(1, sh.getMaxRows() - 1), 2).setNumberFormat('@'); } catch(_) {}
+    try { sh.getRange(2, 2, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('@'); sh.getRange(2, 4, Math.max(1, sh.getMaxRows() - 1), 2).setNumberFormat('@'); } catch(_) {}
     sh.appendRow([
       id,
       fullName,
@@ -877,7 +879,7 @@ function studentUpdate_(b) {
     if(u.role!=='senior' && String(old.school_id)!==String(u.school_id)) throw new Error('دسترسی مجاز نیست.');
     const targetSchool=(u.role==='senior' || u.role==='admin') ? String(b.school_id!==undefined?b.school_id:old.school_id) : String(u.school_id);
     activeSchool_(targetSchool);
-    if(!String(b.name!==undefined?b.name:old.name).trim())throw new Error('نام دانش‌آموز الزامی است.');
+    const fullName=normalizeStudentName_(b.name!==undefined?b.name:old.name); if(!fullName)throw new Error('نام دانش‌آموز الزامی است.');
     const targetNid=b.national_id!==undefined?digits_(b.national_id):normalizeNationalId_(old.national_id);
     if(!/^\d{10}$/.test(targetNid)) throw new Error('کد ملی باید دقیقاً ۱۰ رقم انگلیسی باشد.');
     const duplicate=rows_('Students').some(x=>String(x.obj.id)!==String(old.id) && normalizeNationalId_(x.obj.national_id||'')===targetNid);
@@ -886,9 +888,9 @@ function studentUpdate_(b) {
     if(phone && !/^0\d{10}$/.test(phone)) throw new Error('شماره تلفن نامعتبر است.');
     const grade=normalizeGrade_(b.grade!==undefined?b.grade:old.grade);
     const codes=studentAccountCodes_(old.id,grade,targetSchool,targetNid);
-    try { sheet_('Students').getRange(hit.row,4,1,2).setNumberFormat('@'); } catch(ignoreTextFormat) {}
+    try { sheet_('Students').getRange(hit.row,2,1,1).setNumberFormat('@'); sheet_('Students').getRange(hit.row,4,1,2).setNumberFormat('@'); } catch(ignoreTextFormat) {}
     updateRow_('Students',hit.row,[
-      old.id,b.name!==undefined?b.name:old.name,grade,
+      old.id,fullName,grade,
       phone,targetNid,targetSchool,codes.kol,codes.moeen,codes.tafsili,
       b.active!==undefined?b.active:old.active,old.created_at
     ]);
