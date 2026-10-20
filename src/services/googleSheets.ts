@@ -313,6 +313,8 @@ export const parseExcelWorkbook = (
     const nameIdx = headers.indexOf('name') >= 0 ? headers.indexOf('name') : headers.indexOf('نام');
     const gradeIdx = headers.indexOf('grade') >= 0 ? headers.indexOf('grade') : headers.indexOf('پایه');
     const phoneIdx = headers.indexOf('phone') >= 0 ? headers.indexOf('phone') : headers.indexOf('تلفن');
+    const fatherPhoneIdx = headers.indexOf('fatherphone');
+    const motherPhoneIdx = headers.indexOf('motherphone');
     const nidIdx = headers.indexOf('nationalid') >= 0 ? headers.indexOf('nationalid') : headers.indexOf('کدملی');
     const schoolIdx = headers.indexOf('schoolid') >= 0 ? headers.indexOf('schoolid') : headers.indexOf('مدرسه');
     const kolIdx = headers.indexOf('kolcode') >= 0 ? headers.indexOf('kolcode') : headers.indexOf('کدکل');
@@ -339,8 +341,8 @@ export const parseExcelWorkbook = (
         name,
         grade,
         phone,
-        father_phone: phone,
-        mother_phone: '',
+        father_phone: String(row[fatherPhoneIdx >= 0 ? fatherPhoneIdx : -1] || phone).trim() || phone,
+        mother_phone: String(row[motherPhoneIdx >= 0 ? motherPhoneIdx : -1] || '').trim(),
         national_id,
         school_id,
         school_name: schoolMap.get(school_id) || 'مدرسه',
