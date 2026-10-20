@@ -236,6 +236,7 @@ export type ScreenType =
   | 'report'
   | 'activity'
   | 'settings'
+  | 'google_settings'
   | 'bank'
   | 'managers'
   | 'schools'
