@@ -539,7 +539,7 @@ export const loadDataFromAppsScript = async (
   let rawData: any = null;
   const authToken = typeof localStorage !== 'undefined' ? (localStorage.getItem('school_finance_auth_token') || '') : '';
   if (!authToken) {
-    return { success: false, students: [], schools: [], transactions: [], cheques: [], categories: [], managers: [], bankTransactions: [], stats: { studentsCount: 0, transactionsCount: 0, chequesCount: 0, expensesCount: 0 }, error: 'ابتدا وارد سامانه شوید.' };
+    return { success: false, students: [], schools: [], transactions: [], cheques: [], categories: [], managers: [], bankTransactions: [], staff: [], stats: { studentsCount: 0, transactionsCount: 0, chequesCount: 0, expensesCount: 0 }, error: 'ابتدا وارد سامانه شوید.' };
   }
 
   // 1. Try POST action: 'sync' with the authenticated session token.
