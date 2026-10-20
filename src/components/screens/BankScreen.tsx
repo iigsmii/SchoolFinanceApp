@@ -233,7 +233,7 @@ export const BankScreen: React.FC = () => {
             action: 'bank_upload', file_name: file.name, school_id: currentUser?.school_id || 1,
             rows: uploadRows
           });
-          if (upload?.success) cloudMessage = `ذخیره در Google Sheets تأیید شد (${upload.count ?? count} ردیف؛ ${upload.skipped || 0} تکراری/نامعتبر).`;
+          if (upload?.success) cloudMessage = `ذخیره در Google Sheets تأیید شد (${upload.count ?? count} ردیف؛ ${upload.matched ?? 0} تطبیق خودکار؛ ${upload.unmatched ?? 0} نیازمند بررسی؛ ${upload.skipped || 0} تکراری/نامعتبر).`;
           else if (upload?.error) cloudMessage += ` علت: ${upload.error}`;
         } catch (cloudError) {
           console.warn('Cloud bank upload failed; local import remains available:', cloudError);
@@ -489,7 +489,8 @@ export const BankScreen: React.FC = () => {
                         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-1">
                           <div className="min-w-0">
                             <div className="font-bold text-gray-800">{b.description || 'تراکنش بانکی'}</div>
-                            <div className="text-gray-500">{b.date} · پیگیری: {b.tracking_code || '—'} · حساب/کارت: {b.card_number || b.bank_account || '—'}</div>
+                            <div className="text-gray-600 font-semibold">مدرسه: {b.school_name || schools.find((sc) => sc.id === b.school_id)?.name || (b.terminal_number ? 'شماره پایانه تعریف‌نشده' : 'مدرسه نامشخص')}</div>
+                            <div className="text-gray-500">{b.date} · پیگیری: {b.tracking_code || '—'} · پایانه: {b.terminal_number || '—'} · حساب/کارت: {b.card_number || b.bank_account || '—'}</div>
                             <div className="mt-1 flex flex-wrap gap-2 text-[11px]">
                               <span className={b.direction === 'deposit' ? 'text-emerald-700 font-bold' : b.direction === 'withdrawal' ? 'text-rose-700 font-bold' : 'text-gray-500'}>{b.direction === 'deposit' ? 'واریز' : b.direction === 'withdrawal' ? 'برداشت' : 'نوع نامشخص'}</span>
                               {b.balance !== undefined && <span className="text-gray-500">مانده پس از تراکنش: {formatRial(b.balance)} ریال</span>}
