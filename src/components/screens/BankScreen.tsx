@@ -469,7 +469,7 @@ export const BankScreen: React.FC = () => {
                             return matchedManager ? <span className="rounded-lg bg-purple-50 border border-purple-200 px-2 py-1 text-[10px] font-bold text-purple-800">کارت تن‌خواه: {matchedManager.name}</span> : null;
                           })()}
                           {(isSenior || b.school_id === currentUser?.school_id) && (
-                            <button type="button" onClick={() => {
+                            <button type="button" onClick={async () => {
                               const choices = students.filter((s) => s.school_id === b.school_id || isSenior).map((s) => s.name);
                               const chosenName = window.prompt('نام کامل دانش‌آموز را وارد کنید:\n' + choices.slice(0, 100).join('، '), b.assigned_student_name || '');
                               if (chosenName === null) return;
@@ -477,11 +477,30 @@ export const BankScreen: React.FC = () => {
                               if (chosenName.trim() && !student) { alert('دانش‌آموزی با این نام دقیق پیدا نشد. نام را از فهرست وارد کنید.'); return; }
                               const purpose = window.prompt('این تراکنش بابت چه موردی بوده است؟', b.assigned_purpose || '');
                               if (purpose === null) return;
-                              updateBankTransaction(b.id, {
+                              const annotation = {
                                 assigned_student_id: student?.id,
                                 assigned_student_name: student?.name || '',
                                 assigned_purpose: purpose.trim(),
+                                direction: b.direction || 'unknown',
+                                balance: b.balance,
+                                card_number: b.card_number || b.bank_account,
+                              };
+                              updateBankTransaction(b.id, annotation);
+                              const saved = await postToAppsScript({
+                                action: 'bank_annotation',
+                                school_id: b.school_id,
+                                date: b.date,
+                                amount: b.amount,
+                                tracking_code: b.tracking_code || '',
+                                bank_account: b.bank_account || '',
+                                card_number: b.card_number || b.bank_account || '',
+                                direction: b.direction || 'unknown',
+                                balance: b.balance,
+                                student_id: student?.id || '',
+                                student_name: student?.name || '',
+                                purpose: purpose.trim(),
                               });
+                              if (!saved?.success) alert('اطلاعات روی همین دستگاه ثبت شد، اما ذخیره در Google Sheets انجام نشد: ' + (saved?.error || 'خطای ارتباط'));
                             }} className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-[11px] font-bold text-indigo-800">
                               {b.assigned_student_name || b.assigned_purpose ? 'ویرایش دانش‌آموز / بابت' : 'تعیین دانش‌آموز و بابت'}
                             </button>
