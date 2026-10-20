@@ -10,6 +10,7 @@ export const ManagersScreen: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingManager, setEditingManager] = useState<User | null>(null);
   const [formName, setFormName] = useState('');
+  const [formGender, setFormGender] = useState<'male' | 'female'>('male');
   const [formUsername, setFormUsername] = useState('');
   const [formPassword, setFormPassword] = useState('');
   const [formSchoolId, setFormSchoolId] = useState<number>(schools[0]?.id || 1);
@@ -19,6 +20,7 @@ export const ManagersScreen: React.FC = () => {
   const openAddModal = () => {
     setEditingManager(null);
     setFormName('');
+    setFormGender('male');
     setFormUsername('');
     setFormPassword('');
     setFormSchoolId(schools[0]?.id || 1);
@@ -30,6 +32,7 @@ export const ManagersScreen: React.FC = () => {
   const openEditModal = (m: User) => {
     setEditingManager(m);
     setFormName(m.name);
+    setFormGender(m.gender || 'male');
     setFormUsername(m.username);
     setFormPassword('');
     setFormSchoolId(m.school_id || schools[0]?.id || 1);
@@ -54,6 +57,7 @@ export const ManagersScreen: React.FC = () => {
     if (editingManager) {
       updateManager(editingManager.id, {
         name: formName.trim(),
+        gender: formGender,
         username: formUsername.trim().toLowerCase(),
         school_id: formRole === 'senior' ? undefined : formSchoolId,
         role: formRole,
@@ -61,6 +65,7 @@ export const ManagersScreen: React.FC = () => {
     } else {
       addManager({
         name: formName.trim(),
+        gender: formGender,
         username: formUsername.trim().toLowerCase(),
         school_id: formRole === 'senior' ? undefined : formSchoolId,
         role: formRole,
@@ -166,6 +171,13 @@ export const ManagersScreen: React.FC = () => {
             )}
 
             <form onSubmit={handleSave} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-[#341648] mb-1.5">جنسیت مدیر</label>
+                <select value={formGender} onChange={(e) => setFormGender(e.target.value as 'male' | 'female')} className="w-full rounded-xl border border-gray-200 p-3 text-sm bg-white">
+                  <option value="male">آقا</option>
+                  <option value="female">خانم</option>
+                </select>
+              </div>
               <div>
                 <label className="block text-xs font-bold text-[#341648] mb-1.5">
                   نام و نام خانوادگی مدیر <span className="text-rose-500">*</span>
