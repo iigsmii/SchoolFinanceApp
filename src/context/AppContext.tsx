@@ -42,6 +42,7 @@ import {
   loadDataFromExcelFile,
   loadDataFromPublicGoogleSheet,
   extractSpreadsheetId,
+  apiLogin,
   apiSaveStudent,
   apiSaveTuition,
   apiSaveExpense,
@@ -217,7 +218,7 @@ interface AppContextType {
   };
 
   // Auth
-  login: (username: string, pass?: string) => boolean;
+  login: (username: string, pass?: string) => Promise<boolean>;
   logout: () => void;
 }
 
@@ -297,17 +298,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return name.replace(/حاج‌آقا\s*مهدی\s*گلزاری|حاجاقامهدی\s*گلزاری/g, 'سیدمهدی گلزاری');
   };
 
-  const [currentUser, setCurrentUserState] = useState<User | null>(() => {
-    const u = loadFromStorage('current_user', INITIAL_USERS[0]);
-    if (u) {
-      return {
-        ...u,
-        name: normalizeUserName(u.name),
-        school_name: u.school_name ? normalizeSchoolName(u.school_name) : undefined,
-      };
-    }
-    return INITIAL_USERS[0];
-  });
+  // Require explicit login on every fresh app session; never trust a previously cached role alone.
+  const [currentUser, setCurrentUserState] = useState<User | null>(null);
 
   const [currentScreen, setCurrentScreenState] = useState<ScreenType>('dashboard');
   const [screenHistory, setScreenHistory] = useState<ScreenType[]>([]);
@@ -460,15 +452,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const isConnectedToGoogleSheets = !!(spreadsheetId && (lastSyncTime || syncStats));
   const accentColor = THEME_ACCENTS[themeIndex] || THEME_ACCENTS[0];
 
-  // Automatic background synchronization on app startup (No login required)
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      syncWithGoogleSheets(spreadsheetId).catch((err) => {
-        console.log('Background auto-sync status:', err);
-      });
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, []);
+  // Cloud synchronization starts only after an authenticated login.
 
   const logActivity = (action: string, description: string, entity_type?: string, entity_id?: string | number) => {
     if (!currentUser) return;
@@ -541,19 +525,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const gasResult = await loadDataFromAppsScript(DEFAULT_WEBAPP_URL);
       if (gasResult && gasResult.success) {
-        setStudents(gasResult.students);
-        saveToStorage('students', gasResult.students);
+        const remoteStudents = Array.isArray(gasResult.students) ? gasResult.students : [];
+        const localStudents = loadFromStorage<Student[]>('students', []);
+        // An empty remote response is not permission to erase a non-empty local roster.
+        const studentsToKeep = remoteStudents.length === 0 && localStudents.length > 0 ? localStudents : remoteStudents;
+        setStudents(studentsToKeep);
+        saveToStorage('students', studentsToKeep);
+        if (remoteStudents.length === 0 && localStudents.length > 0) {
+          console.warn('Cloud roster is empty; preserving local students rather than deleting them.');
+        }
+        // Retry only records explicitly marked as locally-created pending uploads; never upload demo/seed data.
+        const pendingStudents = loadFromStorage<Student[]>('pending_student_uploads', []);
+        for (const pendingStudent of pendingStudents) {
+          const saveResult = await apiSaveStudent(pendingStudent, 'add');
+          if (saveResult?.success) {
+            saveToStorage('pending_student_uploads', loadFromStorage<Student[]>('pending_student_uploads', []).filter((item) => String(item.id) !== String(pendingStudent.id)));
+          }
+        }
 
         if (gasResult.schools && gasResult.schools.length > 0) {
           setSchools(gasResult.schools);
           saveToStorage('schools', gasResult.schools);
         }
 
-        setTransactions(gasResult.transactions);
-        saveToStorage('transactions', gasResult.transactions);
+        const remoteTransactions = Array.isArray(gasResult.transactions) ? gasResult.transactions : [];
+        const localTransactions = loadFromStorage<Transaction[]>('transactions', []);
+        const transactionsToKeep = remoteTransactions.length === 0 && localTransactions.length > 0 ? localTransactions : remoteTransactions;
+        setTransactions(transactionsToKeep);
+        saveToStorage('transactions', transactionsToKeep);
 
-        setCheques(gasResult.cheques);
-        saveToStorage('cheques', gasResult.cheques);
+        const remoteCheques = Array.isArray(gasResult.cheques) ? gasResult.cheques : [];
+        const localCheques = loadFromStorage<Cheque[]>('cheques', []);
+        const chequesToKeep = remoteCheques.length === 0 && localCheques.length > 0 ? localCheques : remoteCheques;
+        setCheques(chequesToKeep);
+        saveToStorage('cheques', chequesToKeep);
 
         if (gasResult.categories && gasResult.categories.length > 0) {
           setCategories(gasResult.categories);
@@ -586,19 +591,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const result = await loadDataFromPublicGoogleSheet(sId);
       if (result.success) {
-        setStudents(result.students);
-        saveToStorage('students', result.students);
+        const remoteStudents = Array.isArray(result.students) ? result.students : [];
+        const localStudents = loadFromStorage<Student[]>('students', []);
+        const studentsToKeep = remoteStudents.length === 0 && localStudents.length > 0 ? localStudents : remoteStudents;
+        setStudents(studentsToKeep);
+        saveToStorage('students', studentsToKeep);
 
         if (result.schools && result.schools.length > 0) {
           setSchools(result.schools);
           saveToStorage('schools', result.schools);
         }
 
-        setTransactions(result.transactions);
-        saveToStorage('transactions', result.transactions);
+        const remoteTransactions = Array.isArray(result.transactions) ? result.transactions : [];
+        const localTransactions = loadFromStorage<Transaction[]>('transactions', []);
+        const transactionsToKeep = remoteTransactions.length === 0 && localTransactions.length > 0 ? localTransactions : remoteTransactions;
+        setTransactions(transactionsToKeep);
+        saveToStorage('transactions', transactionsToKeep);
 
-        setCheques(result.cheques);
-        saveToStorage('cheques', result.cheques);
+        const remoteCheques = Array.isArray(result.cheques) ? result.cheques : [];
+        const localCheques = loadFromStorage<Cheque[]>('cheques', []);
+        const chequesToKeep = remoteCheques.length === 0 && localCheques.length > 0 ? localCheques : remoteCheques;
+        setCheques(chequesToKeep);
+        saveToStorage('cheques', chequesToKeep);
 
         if (result.categories && result.categories.length > 0) {
           setCategories(result.categories);
@@ -660,8 +674,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setStudents((prev) => [newStudent, ...prev]);
     logActivity('افزودن دانش‌آموز', `ثبت دانش‌آموز ${newStudent.name} در ${newStudent.school_name}`, 'student', newId);
 
-    // Save directly to Google Apps Script / Google Sheet
-    apiSaveStudent(newStudent, 'add').catch((err) => console.warn('Cloud sync student notice:', err));
+    // Persist a retry queue before network I/O so failed writes can be retried safely.
+    const pending = loadFromStorage<Student[]>('pending_student_uploads', []);
+    saveToStorage('pending_student_uploads', [...pending.filter((item) => String(item.id) !== String(newStudent.id)), newStudent]);
+    apiSaveStudent(newStudent, 'add').then((result) => {
+      if (result?.success) {
+        saveToStorage('pending_student_uploads', loadFromStorage<Student[]>('pending_student_uploads', []).filter((item) => String(item.id) !== String(newStudent.id)));
+      } else {
+        console.error('ذخیره دانش‌آموز در گوگل‌شیت انجام نشد:', result?.error || 'خطای نامشخص');
+      }
+    }).catch((err) => console.warn('Cloud sync student notice:', err));
 
     return newStudent;
   };
@@ -727,7 +749,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       addedList.push(newSt);
       added++;
-      apiSaveStudent(newSt, 'add').catch((err) => console.warn('Cloud import student notice:', err));
+      const pending = loadFromStorage<Student[]>('pending_student_uploads', []);
+      saveToStorage('pending_student_uploads', [...pending.filter((item) => String(item.id) !== String(newSt.id)), newSt]);
+      apiSaveStudent(newSt, 'add').then((result) => {
+        if (result?.success) saveToStorage('pending_student_uploads', loadFromStorage<Student[]>('pending_student_uploads', []).filter((item) => String(item.id) !== String(newSt.id)));
+        else console.error('ذخیره دانش‌آموز واردشده از اکسل ناموفق بود:', result?.error || 'خطای نامشخص');
+      }).catch((err) => console.warn('Cloud import student notice:', err));
     });
 
     setStudents((prev) => [...addedList, ...prev]);
@@ -1431,46 +1458,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setPayrollPayments((prev) => prev.filter((p) => p.id !== id));
   };
 
-  const login = (username: string, pass?: string) => {
-    const cleanUser = username.toLowerCase().trim();
-    const found = users.find((u) => u.username.toLowerCase() === cleanUser && u.active);
-
-    if (found) {
-      // If user has a password defined in Google Sheets
-      if (found.password && found.password.trim() !== '') {
-        if (!pass || pass.trim() === '') {
-          return false;
-        }
-        const entered = pass.trim();
-        const stored = found.password.trim();
-        const match = stored === entered || stored.toLowerCase() === entered.toLowerCase();
-        if (!match) {
-          return false;
-        }
-      }
-      setCurrentUser(found);
-      setCurrentScreen('dashboard');
-      logActivity('ورود به سیستم', `ورود کاربر ${found.name}`);
-      return true;
+  const login = async (username: string, pass?: string): Promise<boolean> => {
+    if (!username.trim() || !pass) return false;
+    const result = await apiLogin(username.trim(), pass);
+    if (!result.success || !result.user) {
+      console.warn('Login rejected:', result.error || 'invalid credentials');
+      return false;
     }
-
-    // Fallback: if username is 'admin', log in as senior admin
-    if (cleanUser === 'admin') {
-      const senior = users[0];
-      if (senior?.password && senior.password.trim() !== '') {
-        if (!pass || pass.trim() !== senior.password.trim()) {
-          return false;
-        }
-      }
-      setCurrentUser(senior);
-      setCurrentScreen('dashboard');
-      logActivity('ورود به سیستم', `ورود کاربر ارشد سامانه`);
-      return true;
-    }
-    return false;
+    const backendUser = result.user as User;
+    const matchedSchool = schools.find((school) => String(school.id) === String(backendUser.school_id));
+    const authenticatedUser: User = {
+      ...backendUser,
+      active: true,
+      role: backendUser.role === 'admin' ? 'senior' : backendUser.role,
+      school_name: backendUser.school_name || matchedSchool?.name,
+    };
+    setCurrentUser(authenticatedUser);
+    setCurrentScreen('dashboard');
+    logActivity('ورود به سیستم', `ورود کاربر ${authenticatedUser.name}`);
+    // Load server data using the newly-created session. A sync failure must not undo a valid login.
+    try { await syncWithGoogleSheets(spreadsheetId); } catch (err) { console.warn('Post-login sync failed:', err); }
+    return true;
   };
 
   const logout = () => {
+    try { localStorage.removeItem('school_finance_auth_token'); } catch {}
+    saveToStorage('current_user', null);
     setCurrentUser(null);
     setCurrentScreen('dashboard');
   };

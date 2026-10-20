@@ -77,7 +77,7 @@ export const postToAppsScript = async (
 
     const bodyData = JSON.stringify({
       ...payload,
-      token: 'sync_direct',
+      token: (typeof localStorage !== 'undefined' && localStorage.getItem('school_finance_auth_token')) || 'sync_direct',
       owner: OWNER_EMAIL,
     });
 
@@ -91,13 +91,33 @@ export const postToAppsScript = async (
     });
 
     if (res.ok) {
-      const json = await res.json().catch(() => ({ success: true }));
+      const json = await res.json().catch(() => ({ success: false, error: 'پاسخ سرور قابل خواندن نیست.' }));
       return json;
     }
-    return { success: true };
+    return { success: false, error: `خطای سرور (${res.status})` };
   } catch (err: any) {
-    console.warn('Apps Script mutation sent (network notice):', err);
-    return { success: true };
+    console.warn('Apps Script mutation failed:', err);
+    return { success: false, error: err?.message || 'ارتباط با سرور برقرار نشد.' };
+  }
+};
+
+/** Authenticate against the Apps Script Managers table. Password hashes never leave the server. */
+export const apiLogin = async (username: string, password: string): Promise<{ success: boolean; token?: string; user?: User; error?: string }> => {
+  try {
+    const res = await fetch(DEFAULT_WEBAPP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'login', username: username.trim(), password }),
+      mode: 'cors',
+    });
+    const result = await res.json();
+    if (!res.ok || !result?.success || !result?.token || !result?.user) {
+      return { success: false, error: result?.error || 'نام کاربری یا رمز عبور نامعتبر است.' };
+    }
+    if (typeof localStorage !== 'undefined') localStorage.setItem('school_finance_auth_token', result.token);
+    return { success: true, token: result.token, user: result.user };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'ارتباط با سرور ورود برقرار نشد.' };
   }
 };
 
@@ -517,8 +537,12 @@ export const loadDataFromAppsScript = async (
   const cleanUrl = webAppUrl.trim().replace(/\/+$/, '');
 
   let rawData: any = null;
+  const authToken = typeof localStorage !== 'undefined' ? (localStorage.getItem('school_finance_auth_token') || '') : '';
+  if (!authToken) {
+    return { success: false, students: [], schools: [], transactions: [], cheques: [], categories: [], managers: [], bankTransactions: [], stats: { studentsCount: 0, transactionsCount: 0, chequesCount: 0, expensesCount: 0 }, error: 'ابتدا وارد سامانه شوید.' };
+  }
 
-  // 1. Try POST action: 'sync'
+  // 1. Try POST action: 'sync' with the authenticated session token.
   try {
     const postRes = await fetch(cleanUrl, {
       method: 'POST',
@@ -527,7 +551,7 @@ export const loadDataFromAppsScript = async (
       },
       body: JSON.stringify({
         action: 'sync',
-        token: 'sync_direct',
+        token: authToken,
         owner: OWNER_EMAIL,
       }),
       mode: 'cors',
@@ -545,7 +569,7 @@ export const loadDataFromAppsScript = async (
   // 2. Fallback to GET action: 'sync'
   if (!rawData) {
     try {
-      const getRes = await fetch(`${cleanUrl}?action=sync&token=sync_direct&owner=${encodeURIComponent(OWNER_EMAIL)}`);
+      const getRes = await fetch(`${cleanUrl}?action=sync&token=${encodeURIComponent(authToken)}&owner=${encodeURIComponent(OWNER_EMAIL)}`);
       if (getRes.ok) {
         const json = await getRes.json();
         if (json && (json.success || Array.isArray(json.students))) {
@@ -560,11 +584,11 @@ export const loadDataFromAppsScript = async (
   // 3. Fallback to separate endpoints if unified sync wasn't deployed yet
   if (!rawData || (!Array.isArray(rawData.students) && !Array.isArray(rawData.tuition))) {
     const [studentsRes, schoolsRes, tuitionRes, expensesRes, chequesRes] = await Promise.all([
-      fetch(`${cleanUrl}?action=students&token=sync_direct`).then((r) => r.json()).catch(() => ({ data: [] })),
-      fetch(`${cleanUrl}?action=schools&token=sync_direct`).then((r) => r.json()).catch(() => ({ data: [] })),
-      fetch(`${cleanUrl}?action=tuition&token=sync_direct`).then((r) => r.json()).catch(() => ({ data: [] })),
-      fetch(`${cleanUrl}?action=expenses&token=sync_direct`).then((r) => r.json()).catch(() => ({ data: [] })),
-      fetch(`${cleanUrl}?action=cheques&token=sync_direct`).then((r) => r.json()).catch(() => ({ data: [] })),
+      fetch(`${cleanUrl}?action=students&token=${encodeURIComponent(authToken)}`).then((r) => r.json()).catch(() => ({ data: [] })),
+      fetch(`${cleanUrl}?action=schools&token=${encodeURIComponent(authToken)}`).then((r) => r.json()).catch(() => ({ data: [] })),
+      fetch(`${cleanUrl}?action=tuition&token=${encodeURIComponent(authToken)}`).then((r) => r.json()).catch(() => ({ data: [] })),
+      fetch(`${cleanUrl}?action=expenses&token=${encodeURIComponent(authToken)}`).then((r) => r.json()).catch(() => ({ data: [] })),
+      fetch(`${cleanUrl}?action=cheques&token=${encodeURIComponent(authToken)}`).then((r) => r.json()).catch(() => ({ data: [] })),
     ]);
 
     rawData = {

@@ -242,6 +242,8 @@ function doPost(e) {
     action = actionAliases[action] || action;
 
     if (action === 'sync' || action === 'all') {
+      const sessionUser = auth_(body);
+      const managerData = (sessionUser.role === 'senior' || sessionUser.role === 'admin') ? ((managers_(body)||{}).data || []) : [];
       return json_({
         success: true,
         students: (students_(body)||{}).data || [],
@@ -250,7 +252,7 @@ function doPost(e) {
         expenses: (expenses_(body)||{}).data || [],
         cheques: (cheques_(body)||{}).data || [],
         categories: (categories_(body)||{}).data || [],
-        managers: (managers_(body)||{}).data || [],
+        managers: managerData,
       });
     }
 
@@ -367,7 +369,9 @@ function login_(b) {
   for (let i=0;i<rows.length;i++) {
     const r=rows[i].obj;
     if (String(r.username)===username && String(r.active)!=='false') {
-      if (String(r.password) !== sha256_(password)) {
+      const storedPassword=String(r.password||'');
+      const passwordMatches = storedPassword === sha256_(password) || storedPassword === password;
+      if (!passwordMatches) {
         loginCache.put(attemptKey,String(attempts+1),900);
         return {success:false,error:'نام کاربری یا رمز عبور اشتباه است.'};
       }
@@ -395,25 +399,13 @@ function logout_(b) {
 
 function auth_(b, roles) {
   const token = String(b.token || b.authToken || '');
-  // Allow direct app sync and mutations without session errors
+  // Fail closed: syncing or writing data requires a real login session.
   if (!token || token === 'sync_direct' || token === 'guest') {
-    return {
-      id: 1,
-      name: 'سیدمهدی گلزاری (مدیریت ارشد)',
-      username: 'admin',
-      role: 'senior',
-      school_id: b.school_id ? Number(b.school_id) : undefined,
-    };
+    throw new Error('برای ادامه ابتدا با نام کاربری و رمز عبور وارد سامانه شوید.');
   }
   const raw = CacheService.getScriptCache().get('sess_' + token);
   if (!raw) {
-    return {
-      id: 1,
-      name: 'سیدمهدی گلزاری (مدیریت ارشد)',
-      username: 'admin',
-      role: 'senior',
-      school_id: b.school_id ? Number(b.school_id) : undefined,
-    };
+    throw new Error('نشست ورود معتبر نیست یا منقضی شده است؛ دوباره وارد سامانه شوید.');
   }
   try {
     const u = JSON.parse(raw);
@@ -424,15 +416,12 @@ function auth_(b, roles) {
       u.name = current.obj.name;
     }
     if (u.role === 'admin') u.role = 'senior';
+    if (roles && roles.length && roles.indexOf(u.role) < 0) {
+      throw new Error('شما مجوز انجام این عملیات را ندارید.');
+    }
     return u;
   } catch (_) {
-    return {
-      id: 1,
-      name: 'سیدمهدی گلزاری (مدیریت ارشد)',
-      username: 'admin',
-      role: 'senior',
-      school_id: b.school_id ? Number(b.school_id) : undefined,
-    };
+    throw new Error('نشست ورود قابل بررسی نیست؛ دوباره وارد سامانه شوید.');
   }
 }
 
@@ -537,7 +526,8 @@ function studentAdd_(b) {
       return {success:true, id:existing.obj.id, updated:true, message:'اطلاعات دانش‌آموز به‌روزرسانی شد.'};
     }
 
-    const id=nextId_('Students');
+    const requestedId=Number(b.id)||0;
+    const id=(requestedId>0 && !existingRows.some(x=>String(x.obj.id)===String(requestedId))) ? requestedId : nextId_('Students');
     const grade=normalizeGrade_(b.grade || 'اول');
     const codes=studentAccountCodes_(id, grade, schoolId, nid);
     const sh=sheet_('Students');
