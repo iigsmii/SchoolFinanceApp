@@ -709,7 +709,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newId = students.length > 0 ? Math.max(...students.map((s) => s.id)) + 1 : 1;
     const schoolObj = schools.find((s) => s.id === data.school_id);
     const parsian = buildParsianCode(data.national_id, data.school_id);
-    const cleanFullName = String(data.name || '').trim();
+    const cleanFullName = String(data.name ?? '').normalize('NFC').trim();
 
     const newStudent: Student = {
       ...data,
@@ -745,7 +745,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const updated = {
           ...s,
           ...data,
-          name: data.name !== undefined ? String(data.name).trim() : s.name,
+          name: data.name !== undefined ? String(data.name).normalize('NFC').trim() : s.name,
         };
         if (data.national_id || data.school_id) {
           const sid = data.school_id ?? s.school_id;
