@@ -1435,7 +1435,8 @@ function bankUpload_(b){
       existing.push({amount:amount,tracking_code:track,school_id:schoolId,date:String(r.date||'')});added++;
     });
     SpreadsheetApp.flush();
-    return {success:true,message:'فایل بانک پردازش شد.',count:added,skipped:skipped};
+    const reconciliation=bankReconcile_(b);
+    return {success:true,message:'فایل بانک پردازش شد.',count:added,skipped:skipped,matched:reconciliation.matched,unmatched:reconciliation.unmatched};
   }
   if(!b.base64) throw new Error('فایل بانک ارسال نشده است.');
   if(b.school_id) activeSchool_(b.school_id);
