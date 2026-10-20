@@ -1,4 +1,4 @@
-name: Release Android APK (Signed)
+name: Publish Android Release APK
 
 on:
   workflow_dispatch:
@@ -11,60 +11,62 @@ permissions:
 
 jobs:
   release-apk:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '24'
-          cache: 'npm'
+          node-version: '20'
+          cache: npm
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci
 
-      - name: Build web app
+      - name: Build app bundle
         run: npm run build
 
-      - name: Add Capacitor
-        run: npm install --no-audit --no-fund @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+      - name: Install Capacitor Android tooling
+        run: npm install --no-save --no-audit --no-fund @capacitor/cli@6 @capacitor/android@6
 
-      - name: Create & Sync Android project
+      - name: Create and sync Android project
         run: |
-          if [ ! -f capacitor.config.json ] && [ ! -f capacitor.config.ts ]; then
-            npx cap init "سیستم مالی مدرسه القرآن" "com.iigsmii.schoolfinance" --web-dir dist
-          fi
+          set -euo pipefail
           if [ ! -d android ]; then
             npx cap add android
           fi
           npx cap sync android
 
-      - name: Setup Java 17
-        uses: actions/setup-java@v6
+      - name: Set up Java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Update Android Version Code & Name
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set version
         shell: bash
         run: |
-          # Extract version from package.json
-          APP_VERSION=$(node -p "require('./package.json').version || '2.16.0'")
-          # Calculate unique incrementing versionCode
-          BUILD_NUM=${{ github.run_number }}
-          VERSION_CODE=$((21600 + BUILD_NUM))
-          echo "Setting VersionName=$APP_VERSION, VersionCode=$VERSION_CODE"
-
+          set -euo pipefail
+          APP_VERSION="$(node -p "require('./package.json').version")"
+          VERSION_CODE=$((21600 + GITHUB_RUN_NUMBER))
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
           GRADLE_FILE="android/app/build.gradle"
-          if [ -f "$GRADLE_FILE" ]; then
-            sed -i "s/versionCode [0-9]*/versionCode $VERSION_CODE/g" "$GRADLE_FILE"
-            sed -i "s/versionName \".*\"/versionName \"$APP_VERSION\"/g" "$GRADLE_FILE"
-          fi
+          test -f "$GRADLE_FILE"
+          sed -i -E "s/versionCode[[:space:]]+[0-9]+/versionCode $VERSION_CODE/" "$GRADLE_FILE"
+          sed -i -E "s/versionName[[:space:]]+\"[^\"]*\"/versionName \"$APP_VERSION\"/" "$GRADLE_FILE"
 
-      - name: Prepare Signing Keystore
+      - name: Validate release signing secrets
         shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -72,78 +74,66 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing required GitHub Actions secret: $name"
+              exit 1
+            fi
+          done
           KEYSTORE_PATH="$RUNNER_TEMP/school-finance-release.jks"
-          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
-            echo "Using repository configured release keystore..."
-            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
-            echo "KS_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
-            echo "KS_PASS=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
-            echo "KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
-            echo "KEY_PASS=$KEY_PASSWORD" >> "$GITHUB_ENV"
-          else
-            echo "Generating consistent release keystore for updates..."
-            keytool -genkeypair -v \
-              -keystore "$KEYSTORE_PATH" \
-              -alias "schoolfinance" \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -storepass "SchoolFinance2026SecureKey" \
-              -keypass "SchoolFinance2026SecureKey" \
-              -dname "CN=MadresatAlQuran, OU=Finance, O=QuranSchool, L=Shahreza, ST=Isfahan, C=IR"
-            echo "KS_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
-            echo "KS_PASS=SchoolFinance2026SecureKey" >> "$GITHUB_ENV"
-            echo "KEY_ALIAS=schoolfinance" >> "$GITHUB_ENV"
-            echo "KEY_PASS=SchoolFinance2026SecureKey" >> "$GITHUB_ENV"
-          fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH"
+          keytool -list -keystore "$KEYSTORE_PATH" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          echo "KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
 
-      - name: Build Release APK
+      - name: Build release APK
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew --no-daemon clean assembleRelease
 
-      - name: Sign & Align Release APK
+      - name: Sign and verify release APK
         shell: bash
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -euo pipefail
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
-          BUILD_TOOLS="$(find "$SDK_ROOT/build-tools" -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)"
-          echo "Using Build Tools: $BUILD_TOOLS"
-
-          UNSIGNED_APK="$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)"
-          if [ -z "$UNSIGNED_APK" ] || [ ! -f "$UNSIGNED_APK" ]; then
-            echo "::error::Release APK not found."
+          BUILD_TOOLS="$(find "$SDK_ROOT/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -n 1)"
+          UNSIGNED_APK="$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' ! -name '*unaligned*' -print -quit)"
+          if [ -z "$UNSIGNED_APK" ] || [ ! -s "$UNSIGNED_APK" ]; then
+            echo "::error::Release APK was not produced"
             exit 1
           fi
-
-          ALIGNED_APK="$RUNNER_TEMP/app-aligned.apk"
-          SIGNED_APK="SchoolFinanceApp-v${{ github.ref_name || '2.16.0' }}-release.apk"
-
-          "$BUILD_TOOLS/zipalign" -v -p 4 "$UNSIGNED_APK" "$ALIGNED_APK" || cp "$UNSIGNED_APK" "$ALIGNED_APK"
-
+          ALIGNED_APK="$RUNNER_TEMP/app-release-aligned.apk"
+          SIGNED_APK="SchoolFinanceApp-${APP_VERSION}-release.apk"
+          "$BUILD_TOOLS/zipalign" -f -p 4 "$UNSIGNED_APK" "$ALIGNED_APK"
           "$BUILD_TOOLS/apksigner" sign \
-            --ks "$KS_PATH" \
+            --ks "$KEYSTORE_PATH" \
             --ks-key-alias "$KEY_ALIAS" \
-            --ks-pass "pass:$KS_PASS" \
-            --key-pass "pass:$KEY_PASS" \
-            --out "$SIGNED_APK" \
-            "$ALIGNED_APK"
+            --ks-pass env:KEYSTORE_PASSWORD \
+            --key-pass env:KEY_PASSWORD \
+            --out "$SIGNED_APK" "$ALIGNED_APK"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED_APK"
+          "$BUILD_TOOLS/zipalign" -c -v 4 "$SIGNED_APK"
+          mkdir -p output
+          cp "$SIGNED_APK" output/
 
-          "$BUILD_TOOLS/apksigner" verify --verbose "$SIGNED_APK"
-          echo "FINAL_APK=$SIGNED_APK" >> "$GITHUB_ENV"
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v7
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: SchoolFinanceApp-Release
-          path: ${{ env.FINAL_APK }}
+          name: SchoolFinanceApp-release-${{ github.run_number }}
+          path: output/SchoolFinanceApp-*-release.apk
+          if-no-files-found: error
           retention-days: 30
 
-      - name: Create GitHub Release
+      - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.FINAL_APK }}
+          files: output/SchoolFinanceApp-*-release.apk
           generate_release_notes: true
-          name: سیستم مالی مدرسه القرآن ${{ github.ref_name }}
+          name: SchoolFinanceApp ${{ github.ref_name }}
