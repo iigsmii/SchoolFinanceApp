@@ -585,6 +585,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           setUsers(mergedManagers); saveToStorage('users', mergedManagers);
         }
 
+        if (Array.isArray(gasResult.staff) && gasResult.staff.length > 0) {
+          const mergedStaff = mergeCloudAndLocal(gasResult.staff, loadFromStorage<StaffMember[]>('staff_members', []));
+          setStaffMembers(mergedStaff);
+          saveToStorage('staff_members', mergedStaff);
+        }
+
         setSyncStats(gasResult.stats);
         saveToStorage('sync_stats', gasResult.stats);
 
