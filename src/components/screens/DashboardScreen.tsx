@@ -58,7 +58,7 @@ import { playClickSound } from '../../utils/soundEffects';
 
 const CHART_COLORS = ['#62205f', '#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6', '#f43f5e'];
 
-export const DashboardScreen: React.FC = () => {
+export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overviewOnly = false }) => {
   const {
     currentUser,
     setCurrentScreen,
@@ -253,6 +253,13 @@ export const DashboardScreen: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto px-3 sm:px-4 py-3 sm:py-4 space-y-3.5 sm:space-y-4">
+      {overviewOnly && (
+        <div className="bg-white rounded-2xl border border-[#e5dde8] p-3 flex items-center justify-between gap-3">
+          <div><h2 className="font-black text-[#341648] text-base">گزارش مالی و بدهکاران</h2><p className="text-xs text-gray-500 mt-1">صورت وضعیت مالی، عملکرد و فهرست بدهکاران شهریه</p></div>
+          <button onClick={() => setCurrentScreen('dashboard')} className="px-3 py-2 rounded-xl bg-purple-50 border border-purple-200 text-[#62205f] text-xs font-bold">بازگشت</button>
+        </div>
+      )}
+      {!overviewOnly && (
       {/* 1. Header Banner: Exactly on ONE single line */}
       <div
         className="rounded-2xl px-4 py-3 text-white shadow-md relative overflow-hidden border border-amber-400/30 flex items-center justify-between gap-3"
@@ -414,6 +421,14 @@ export const DashboardScreen: React.FC = () => {
         </div>
       </div>
 
+      {!overviewOnly && (
+        <button onClick={() => { playClickSound(); setCurrentScreen('finance_overview'); }} className="w-full flex items-center justify-between gap-3 p-4 rounded-2xl bg-white border border-[#e5dde8] hover:border-[#62205f] shadow-xs transition-all active:scale-[0.99]">
+          <div className="flex items-center gap-3 text-right"><div className="w-10 h-10 rounded-xl bg-purple-100 text-[#62205f] flex items-center justify-center"><TrendingUp className="w-5 h-5" /></div><div><div className="font-black text-sm text-[#341648]">گزارش مالی و لیست بدهکاران</div><div className="text-xs text-gray-500 mt-1">مشاهده صورت وضعیت مالی، عملکرد و بدهکاران شهریه</div></div></div><ChevronLeft className="w-5 h-5 text-[#62205f] shrink-0" />
+        </button>
+      )}
+      )}
+
+      {overviewOnly && (
       {/* 5. Dedicated Comprehensive School Financial Status Box */}
       <div className="bg-white rounded-3xl p-4 sm:p-5 border border-[#e5dde8] shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#f2eaf3] gap-2">
@@ -573,6 +588,9 @@ export const DashboardScreen: React.FC = () => {
         </div>
       </div>
 
+      )}
+
+      {overviewOnly && (
       {/* 6. Sortable Full Debtors List Section */}
       <div className="bg-white rounded-3xl p-4 sm:p-5 border border-[#e5dde8] shadow-xs space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-[#f2eaf3] gap-2">
@@ -713,6 +731,9 @@ export const DashboardScreen: React.FC = () => {
         )}
       </div>
 
+      )}
+
+      {!overviewOnly && (
       {/* 7. Quick Invoice Action Card */}
       <div className="bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-indigo-500/10 border border-amber-300/40 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
         <div className="flex items-center gap-2.5">
@@ -773,17 +794,19 @@ export const DashboardScreen: React.FC = () => {
         </div>
       )}
 
+      )}
+
       {/* Quick Invoice Modal */}
-      <QuickInvoiceModal
+      {!overviewOnly && <QuickInvoiceModal
         isOpen={isQuickInvoiceOpen}
         onClose={() => setIsQuickInvoiceOpen(false)}
         students={baseStudents}
         accentColor={accentColor}
         onIssueInvoice={(student) => setInvoiceStudent(student)}
-      />
+      />}
 
       {/* Full Official Invoice Print Modal */}
-      {invoiceStudent && (
+      {!overviewOnly && invoiceStudent && (
         <InvoicePrintModal
           student={invoiceStudent}
           transactions={transactions}
