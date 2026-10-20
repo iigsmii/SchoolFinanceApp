@@ -43,7 +43,7 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
   // Filter available students
   const availableStudents = students.filter((s) => {
     if (!isSenior && Number(s.school_id) !== Number(currentUser?.school_id)) return false;
-    return s.active;
+    return s.active !== false;
   });
 
   const [studentSearch, setStudentSearch] = useState('');
