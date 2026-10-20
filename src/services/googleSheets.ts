@@ -75,7 +75,7 @@ export const postToAppsScript = async (
     const url = webAppUrl.trim();
     if (!url) return { success: false, error: 'آدرس وب‌اپ تعریف نشده است.' };
 
-    const action = String(payload.action || payload.endpoint || '').replace(/^\\/+/, '').toLowerCase();
+    const action = String(payload.action || payload.endpoint || '').replace(/^\/+/, '').toLowerCase();
     const idempotentActions = ['tuition_add', 'tuition_bulk_debt', 'expense_add', 'finance_transaction', 'cheque_review'];
     // Send a client-generated operation ID so the server can replay a stored result
     // when the same operation is retried with the same payload/request_id.
