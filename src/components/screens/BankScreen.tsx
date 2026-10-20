@@ -184,6 +184,7 @@ export const BankScreen: React.FC = () => {
             tracking_code: track,
             bank_account: account || 'حساب بانکی',
             card_number: account.replace(/\D/g, ''),
+            terminal_number: terminal,
             balance: balance || undefined,
             direction: debit > 0 ? 'withdrawal' as const : credit > 0 ? 'deposit' as const : 'unknown' as const,
             description: desc || (debit ? 'برداشت بانکی' : credit ? 'واریز بانکی' : 'تراکنش بانکی'),
