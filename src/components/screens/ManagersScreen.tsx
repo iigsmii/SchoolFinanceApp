@@ -53,6 +53,14 @@ export const ManagersScreen: React.FC = () => {
       setFormError('نام کاربری را وارد کنید.');
       return;
     }
+    if (!editingManager && !formPassword.trim()) {
+      setFormError('برای مدیر جدید رمز عبور تعیین کنید.');
+      return;
+    }
+    if (formPassword.trim() && formPassword.trim().length < 8) {
+      setFormError('رمز عبور باید حداقل ۸ نویسه باشد.');
+      return;
+    }
 
     if (editingManager) {
       updateManager(editingManager.id, {
@@ -61,6 +69,7 @@ export const ManagersScreen: React.FC = () => {
         username: formUsername.trim().toLowerCase(),
         school_id: formRole === 'senior' ? undefined : formSchoolId,
         role: formRole,
+        ...(formPassword.trim() ? { password: formPassword.trim() } : {}),
       });
     } else {
       addManager({
@@ -70,6 +79,7 @@ export const ManagersScreen: React.FC = () => {
         school_id: formRole === 'senior' ? undefined : formSchoolId,
         role: formRole,
         active: true,
+        password: formPassword.trim(),
       });
     }
     setIsModalOpen(false);
@@ -203,6 +213,25 @@ export const ManagersScreen: React.FC = () => {
                   className="w-full px-4 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left focus:outline-hidden"
                   dir="ltr"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#341648] mb-1.5">
+                  {editingManager ? 'تغییر رمز عبور (اختیاری)' : 'رمز عبور ورود'}
+                  {!editingManager && <span className="text-rose-500"> *</span>}
+                </label>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={formPassword}
+                  onChange={(e) => setFormPassword(e.target.value)}
+                  placeholder={editingManager ? 'برای حفظ رمز فعلی خالی بگذارید' : 'حداقل ۸ نویسه'}
+                  className="w-full px-4 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left focus:outline-hidden"
+                  dir="ltr"
+                  minLength={8}
+                  required={!editingManager}
+                />
+                {editingManager && <p className="mt-1 text-[11px] text-gray-500">در صورت وارد کردن رمز جدید، در Google Sheets به‌صورت هش‌شده ذخیره می‌شود.</p>}
               </div>
 
               <div>
