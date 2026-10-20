@@ -180,6 +180,7 @@ interface AppContextType {
   reconcileBank: () => { matched: number; unmatched: number };
   manualReviewTransaction: (id: number, approve: boolean, note?: string) => void;
   importBankTransactions: (txs: Array<Omit<BankTransaction, 'id' | 'reconciled'>>) => number;
+  updateBankTransaction: (id: number, data: Partial<BankTransaction>) => void;
 
   // Managers & Schools ops
   addManager: (m: Omit<User, 'id'>) => void;
@@ -1155,12 +1156,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     updatedBank.forEach((bt) => {
       if (bt.reconciled) return;
-      const matchIndex = updatedTxs.findIndex(
-        (t) =>
-          !t.reconciled &&
-          (t.amount === bt.amount || (t.debit === bt.amount && t.credit === 0)) &&
-          (t.tracking_code && bt.tracking_code && t.tracking_code.trim() === bt.tracking_code.trim())
-      );
+      const bankCard = String(bt.card_number || bt.bank_account || '').replace(/\D/g, '');
+      const cardManager = bankCard.length >= 4
+        ? users.find((u) => {
+            const managerCard = String(u.petty_cash_card || '').replace(/\D/g, '');
+            return u.role === 'manager' && managerCard.length >= 4 &&
+              (bankCard.endsWith(managerCard) || managerCard.endsWith(bankCard));
+          })
+        : undefined;
+      const matchIndex = updatedTxs.findIndex((t) => {
+        if (t.reconciled || Number(t.amount) !== Number(bt.amount)) return false;
+        const sameReference = Boolean(t.tracking_code && bt.tracking_code &&
+          t.tracking_code.trim() === bt.tracking_code.trim());
+        if (sameReference) return true;
+        // A card-number match is strong enough for petty-cash matching only when
+        // school, manager card, transaction type and amount also agree.
+        if (!cardManager || t.payment_source !== 'petty_cash' ||
+            Number(t.school_id) !== Number(cardManager.school_id) ||
+            (bt.school_id && Number(t.school_id) !== Number(bt.school_id))) return false;
+        if (bt.direction === 'withdrawal' && t.kind !== 'هزینه') return false;
+        if (bt.direction === 'deposit' && t.kind === 'هزینه') return false;
+        return true;
+      });
       if (matchIndex !== -1) {
         bt.reconciled = true;
         bt.matched_transaction_id = updatedTxs[matchIndex].id;
@@ -1196,6 +1213,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setBankTransactions((prev) => [...newItems, ...prev]);
     logActivity('ورود فایل صورتحساب بانک', `افزودن ${newItems.length} تراکنش بانکی جدید`);
     return newItems.length;
+  };
+
+  const updateBankTransaction = (id: number, data: Partial<BankTransaction>) => {
+    setBankTransactions((prev) => prev.map((item) => item.id === id ? { ...item, ...data } : item));
+    logActivity('تخصیص تراکنش بانکی', `به‌روزرسانی توضیحات/تخصیص تراکنش بانکی شناسه ${id}`, 'bank_transaction', id);
   };
 
   const addManager = (m: Omit<User, 'id'>) => {
@@ -1602,6 +1624,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         reconcileBank,
         manualReviewTransaction,
         importBankTransactions,
+        updateBankTransaction,
         addManager,
         updateManager,
         deleteManager,

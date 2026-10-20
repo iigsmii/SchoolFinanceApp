@@ -107,6 +107,13 @@ export interface BankTransaction {
   description?: string;
   reconciled: boolean;
   matched_transaction_id?: number;
+  direction?: 'deposit' | 'withdrawal' | 'unknown';
+  balance?: number;
+  card_number?: string;
+  assigned_student_id?: number;
+  assigned_student_name?: string;
+  assigned_purpose?: string;
+  matched_manager_id?: number;
 }
 
 export interface SeniorMessage {
