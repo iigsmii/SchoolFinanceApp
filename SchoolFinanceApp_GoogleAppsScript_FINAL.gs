@@ -31,7 +31,7 @@ const HEADERS = {
   Expenses: ['id','date','school_id','category','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','payment_source'],
   Transactions: ['id','date','school_id','kind','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','source_id','payment_source'],
   Bank: ['id','date','school_id','amount','description','tracking_code','bank_account','created_at','matched_transaction_id','matched','approved'],
-  BankAnnotations: ['id','school_id','date','amount','tracking_code','bank_account','student_id','student_name','purpose','manager_id','updated_at'],
+  BankAnnotations: ['id','school_id','date','amount','tracking_code','bank_account','student_id','student_name','purpose','manager_id','updated_at','direction','balance','card_number'],
   ExpenseCategories: ['id','name','active','created_at'],
   Messages: ['id','message','created_by','created_at','active','target_school_id','target_role'],
   Attachments: ['id','source_type','source_id','file_name','mime_type','drive_file_id','url','created_by','created_at'],
@@ -1181,7 +1181,7 @@ function bank_(b) {
   let data=rows_('Bank').map(x=>x.obj);
   const annotations=rows_('BankAnnotations').map(x=>x.obj);
   const byKey={}; annotations.forEach(a=>byKey[bankAnnotationKey_(a)]=a);
-  data=data.map(x=>{const a=byKey[bankAnnotationKey_(x)];return a?Object.assign({},x,{assigned_student_id:a.student_id?Number(a.student_id):undefined,assigned_student_name:a.student_name||'',assigned_purpose:a.purpose||'',annotation_updated_at:a.updated_at}):x;});
+  data=data.map(x=>{const a=byKey[bankAnnotationKey_(x)];return a?Object.assign({},x,{assigned_student_id:a.student_id?Number(a.student_id):undefined,assigned_student_name:a.student_name||'',assigned_purpose:a.purpose||'',annotation_updated_at:a.updated_at,direction:a.direction||'unknown',balance:a.balance!==''&&a.balance!==undefined?Number(a.balance):undefined,card_number:a.card_number||a.bank_account||''}):x;});
   if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>String(x.school_id)===String(u.school_id));
   return {success:true,data:data};
 }
@@ -1196,7 +1196,7 @@ function bankAnnotationSave_(b){
   const hit=rows_('BankAnnotations').find(x=>bankAnnotationKey_(x.obj)===key);
   const studentId=String(b.student_id||'');
   if(studentId){const student=findRow_('Students',studentId);if(!student)throw new Error('دانش‌آموز انتخاب‌شده یافت نشد.');if(u.role!=='senior'&&String(student.obj.school_id)!==String(u.school_id))throw new Error('دانش‌آموز متعلق به مدرسه دیگری است.');}
-  const values=[hit?hit.obj.id:Utilities.getUuid(),schoolId,date,amount,tracking,account,studentId,String(b.student_name||''),String(b.purpose||''),u.id,now_()];
+  const values=[hit?hit.obj.id:Utilities.getUuid(),schoolId,date,amount,tracking,account,studentId,String(b.student_name||''),String(b.purpose||''),u.id,now_(),String(b.direction||'unknown'),b.balance===undefined?'':Number(b.balance||0),String(b.card_number||account)];
   if(hit) updateRow_('BankAnnotations',hit.row,values); else sh.appendRow(values);
   return {success:true,message:'تخصیص تراکنش بانکی ذخیره شد.'};
 }
