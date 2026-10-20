@@ -581,7 +581,7 @@ function students_(b) {
   return {success:true,data:data};
 }
 
-function normalizeStudentName_(value){ return String(value===undefined||value===null?'':value).normalize('NFC').replace(/\s+/g,' ').trim(); }
+function normalizeStudentName_(value){ return String(value===undefined||value===null?'':value).normalize('NFC').trim(); }
 
 function ensureStudentPhoneColumns_(){
   const sh=sheet_('Students');
