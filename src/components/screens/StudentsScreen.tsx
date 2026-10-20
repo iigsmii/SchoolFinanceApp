@@ -92,7 +92,7 @@ export const StudentsScreen: React.FC = () => {
     e.preventDefault();
     setFormError('');
 
-    const cleanName = formName.normalize('NFC').replace(/\s+/g, ' ').trim();
+    const cleanName = formName.normalize('NFC').trim();
     const cleanFatherPhone = formFatherPhone.trim();
     const cleanMotherPhone = formMotherPhone.trim();
     const cleanNid = formNationalId.trim();
