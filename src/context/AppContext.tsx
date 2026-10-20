@@ -47,6 +47,7 @@ import {
   apiSaveTuition,
   apiSaveExpense,
   apiSaveCheque,
+  apiSaveManager,
 } from '../services/googleSheets';
 import {
   playSuccessSound,
@@ -115,6 +116,7 @@ interface AppContextType {
   addStudent: (data: Omit<Student, 'id' | 'parsian_code'>) => Student;
   updateStudent: (id: number, data: Partial<Student>) => void;
   deleteStudent: (id: number) => void;
+  withdrawStudent: (id: number) => void;
   importStudents: (newStudents: Array<Omit<Student, 'id' | 'parsian_code'>>) => { added: number; skipped: number; invalid: number };
 
   // Tuition & Transactions ops
@@ -259,6 +261,14 @@ function saveToStorage<T>(key: string, value: T) {
   } catch (e) {
     console.error(`Failed to save ${key} to localStorage`, e);
   }
+}
+
+// Cloud records win on duplicate IDs; local-only records survive partial/empty cloud responses.
+function mergeCloudAndLocal<T extends { id: string | number }>(remote: T[], local: T[]): T[] {
+  const byId = new Map<string, T>();
+  for (const item of local || []) byId.set(String(item.id), item);
+  for (const item of remote || []) byId.set(String(item.id), item);
+  return Array.from(byId.values());
 }
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -452,6 +462,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const isConnectedToGoogleSheets = !!(spreadsheetId && (lastSyncTime || syncStats));
   const accentColor = THEME_ACCENTS[themeIndex] || THEME_ACCENTS[0];
 
+  // Retry synchronization when connectivity returns; never replace local data with an empty sheet response.
+  useEffect(() => {
+    const onOnline = () => {
+      if (currentUser) void syncWithGoogleSheets(spreadsheetId);
+    };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, [currentUser, spreadsheetId]);
+
   // Cloud synchronization starts only after an authenticated login.
 
   const logActivity = (action: string, description: string, entity_type?: string, entity_id?: string | number) => {
@@ -528,7 +547,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const remoteStudents = Array.isArray(gasResult.students) ? gasResult.students : [];
         const localStudents = loadFromStorage<Student[]>('students', []);
         // An empty remote response is not permission to erase a non-empty local roster.
-        const studentsToKeep = remoteStudents.length === 0 && localStudents.length > 0 ? localStudents : remoteStudents;
+        const studentsToKeep = mergeCloudAndLocal(remoteStudents, localStudents);
         setStudents(studentsToKeep);
         saveToStorage('students', studentsToKeep);
         if (remoteStudents.length === 0 && localStudents.length > 0) {
@@ -544,30 +563,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         if (gasResult.schools && gasResult.schools.length > 0) {
-          setSchools(gasResult.schools);
-          saveToStorage('schools', gasResult.schools);
+          const mergedSchools = mergeCloudAndLocal(gasResult.schools, loadFromStorage<School[]>('schools', []));
+          setSchools(mergedSchools); saveToStorage('schools', mergedSchools);
         }
 
         const remoteTransactions = Array.isArray(gasResult.transactions) ? gasResult.transactions : [];
         const localTransactions = loadFromStorage<Transaction[]>('transactions', []);
-        const transactionsToKeep = remoteTransactions.length === 0 && localTransactions.length > 0 ? localTransactions : remoteTransactions;
+        const transactionsToKeep = mergeCloudAndLocal(remoteTransactions, localTransactions);
         setTransactions(transactionsToKeep);
         saveToStorage('transactions', transactionsToKeep);
 
+        const remoteBank = Array.isArray(gasResult.bankTransactions) ? gasResult.bankTransactions : [];
+        const localBank = loadFromStorage<BankTransaction[]>('bank_txs', []);
+        const bankToKeep = mergeCloudAndLocal(remoteBank, localBank);
+        setBankTransactions(bankToKeep);
+        saveToStorage('bank_txs', bankToKeep);
+
         const remoteCheques = Array.isArray(gasResult.cheques) ? gasResult.cheques : [];
         const localCheques = loadFromStorage<Cheque[]>('cheques', []);
-        const chequesToKeep = remoteCheques.length === 0 && localCheques.length > 0 ? localCheques : remoteCheques;
+        const chequesToKeep = mergeCloudAndLocal(remoteCheques, localCheques);
         setCheques(chequesToKeep);
         saveToStorage('cheques', chequesToKeep);
 
         if (gasResult.categories && gasResult.categories.length > 0) {
-          setCategories(gasResult.categories);
-          saveToStorage('categories', gasResult.categories);
+          const mergedCategories = mergeCloudAndLocal(gasResult.categories, loadFromStorage<ExpenseCategory[]>('categories', []));
+          setCategories(mergedCategories); saveToStorage('categories', mergedCategories);
         }
 
         if (gasResult.managers && gasResult.managers.length > 0) {
-          setUsers(gasResult.managers);
-          saveToStorage('users', gasResult.managers);
+          const mergedManagers = mergeCloudAndLocal(gasResult.managers, loadFromStorage<User[]>('users', []));
+          setUsers(mergedManagers); saveToStorage('users', mergedManagers);
         }
 
         setSyncStats(gasResult.stats);
@@ -593,35 +618,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (result.success) {
         const remoteStudents = Array.isArray(result.students) ? result.students : [];
         const localStudents = loadFromStorage<Student[]>('students', []);
-        const studentsToKeep = remoteStudents.length === 0 && localStudents.length > 0 ? localStudents : remoteStudents;
+        const studentsToKeep = mergeCloudAndLocal(remoteStudents, localStudents);
         setStudents(studentsToKeep);
         saveToStorage('students', studentsToKeep);
 
         if (result.schools && result.schools.length > 0) {
-          setSchools(result.schools);
-          saveToStorage('schools', result.schools);
+          const mergedSchools = mergeCloudAndLocal(result.schools, loadFromStorage<School[]>('schools', []));
+          setSchools(mergedSchools); saveToStorage('schools', mergedSchools);
         }
 
         const remoteTransactions = Array.isArray(result.transactions) ? result.transactions : [];
         const localTransactions = loadFromStorage<Transaction[]>('transactions', []);
-        const transactionsToKeep = remoteTransactions.length === 0 && localTransactions.length > 0 ? localTransactions : remoteTransactions;
+        const transactionsToKeep = mergeCloudAndLocal(remoteTransactions, localTransactions);
         setTransactions(transactionsToKeep);
         saveToStorage('transactions', transactionsToKeep);
 
+        const remoteBank = Array.isArray(result.bankTransactions) ? result.bankTransactions : [];
+        const localBank = loadFromStorage<BankTransaction[]>('bank_txs', []);
+        const bankToKeep = mergeCloudAndLocal(remoteBank, localBank);
+        setBankTransactions(bankToKeep);
+        saveToStorage('bank_txs', bankToKeep);
+
         const remoteCheques = Array.isArray(result.cheques) ? result.cheques : [];
         const localCheques = loadFromStorage<Cheque[]>('cheques', []);
-        const chequesToKeep = remoteCheques.length === 0 && localCheques.length > 0 ? localCheques : remoteCheques;
+        const chequesToKeep = mergeCloudAndLocal(remoteCheques, localCheques);
         setCheques(chequesToKeep);
         saveToStorage('cheques', chequesToKeep);
 
         if (result.categories && result.categories.length > 0) {
-          setCategories(result.categories);
-          saveToStorage('categories', result.categories);
+          const mergedCategories = mergeCloudAndLocal(result.categories, loadFromStorage<ExpenseCategory[]>('categories', []));
+          setCategories(mergedCategories); saveToStorage('categories', mergedCategories);
         }
 
         if (result.managers && result.managers.length > 0) {
-          setUsers(result.managers);
-          saveToStorage('users', result.managers);
+          const mergedManagers = mergeCloudAndLocal(result.managers, loadFromStorage<User[]>('users', []));
+          setUsers(mergedManagers); saveToStorage('users', mergedManagers);
         }
 
         if (result.staff && result.staff.length > 0) {
@@ -713,9 +744,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteStudent = (id: number) => {
     const student = students.find((s) => s.id === id);
+    if (!student) return;
+    const hasTransactions = transactions.some((t) => Number(t.student_id) === Number(id));
+    if (hasTransactions) {
+      console.warn(`دانش‌آموز ${id} دارای گردش مالی است و حذف فیزیکی مجاز نیست.`);
+      return;
+    }
     setStudents((prev) => prev.filter((s) => s.id !== id));
-    apiSaveStudent({ id }, 'delete').catch((err) => console.warn('Cloud delete student notice:', err));
-    logActivity('حذف دانش‌آموز', `حذف دانش‌آموز ${student?.name || id}`, 'student', id);
+    apiSaveStudent({ id }, 'delete').then((r) => { if (!r?.success) console.warn('حذف دانش‌آموز در سرور ثبت نشد:', r?.error); }).catch((err) => console.warn('Cloud delete student notice:', err));
+    logActivity('حذف دانش‌آموز', `حذف دانش‌آموز ${student.name}`, 'student', id);
+  };
+
+  const withdrawStudent = (id: number) => {
+    const student = students.find((s) => s.id === id);
+    if (!student) return;
+    const updated = { ...student, active: false };
+    setStudents((prev) => prev.map((s) => s.id === id ? updated : s));
+    apiSaveStudent(updated, 'update').then((r) => { if (!r?.success) console.warn('انصراف دانش‌آموز در سرور ثبت نشد:', r?.error); }).catch((err) => console.warn('Cloud withdrawal notice:', err));
+    logActivity('انصراف از مدرسه', `دانش‌آموز ${student.name} غیرفعال شد`, 'student', id);
   };
 
   const importStudents = (newStudents: Array<Omit<Student, 'id' | 'parsian_code'>>) => {
@@ -1174,6 +1220,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       school_name: sc?.name,
     };
     setUsers((prev) => [...prev, newUser]);
+    apiSaveManager(newUser, 'add').then((r) => { if (!r?.success) console.warn('ثبت مدیر در شیت ناموفق بود:', r?.error); }).catch((e) => console.warn('Manager cloud add failed:', e));
     logActivity('افزودن مدیر جدید', `ثبت مدیر ${m.name} برای ${sc?.name || 'مدرسه'}`, 'manager', newId);
   };
 
@@ -1189,11 +1236,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return updated;
       })
     );
+    const existingManager = users.find((u) => u.id === id);
+    if (existingManager) apiSaveManager({ ...existingManager, ...m, id }, 'update').then((r) => { if (!r?.success) console.warn('ویرایش مدیر در شیت ناموفق بود:', r?.error); }).catch((e) => console.warn('Manager cloud update failed:', e));
     logActivity('ویرایش مدیر', `ویرایش مشخصات مدیر شناسه ${id}`, 'manager', id);
   };
 
   const deleteManager = (id: number) => {
-    setUsers((prev) => prev.filter((u) => u.id !== id));
+    apiSaveManager({ id }, 'delete').then((r) => { if (!r?.success) console.warn('غیرفعال‌سازی مدیر در شیت ناموفق بود:', r?.error); }).catch((e) => console.warn('Manager cloud delete failed:', e));
+    setUsers((prev) => prev.map((u) => u.id === id ? { ...u, active: false } : u));
     logActivity('حذف مدیر', `حذف مدیر شناسه ${id}`, 'manager', id);
   };
 
@@ -1476,8 +1526,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentUser(authenticatedUser);
     setCurrentScreen('dashboard');
     logActivity('ورود به سیستم', `ورود کاربر ${authenticatedUser.name}`);
-    // Load server data using the newly-created session. A sync failure must not undo a valid login.
-    try { await syncWithGoogleSheets(spreadsheetId); } catch (err) { console.warn('Post-login sync failed:', err); }
+    // Do not block navigation on cloud sync; the dashboard opens immediately and sync continues in background.
+    void syncWithGoogleSheets(spreadsheetId).catch((err) => console.warn('Post-login sync failed:', err));
     return true;
   };
 
@@ -1540,6 +1590,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addStudent,
         updateStudent,
         deleteStudent,
+        withdrawStudent,
         importStudents,
         addTuitionDebt,
         addTuitionPayment,

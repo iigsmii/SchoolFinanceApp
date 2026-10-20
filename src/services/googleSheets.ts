@@ -138,8 +138,21 @@ export const apiSaveStudent = async (
     mother_phone: student.mother_phone,
     national_id: student.national_id,
     school_id: student.school_id,
-    active: action !== 'delete',
+    active: action === 'delete' ? false : student.active !== false,
   });
+};
+
+
+export const apiSaveManager = async (manager: Partial<User> & { id?: number }, action: 'add' | 'update' | 'delete' = 'update') => {
+  const payload: Record<string, any> = {
+    action: action === 'add' ? 'manager_add' : action === 'delete' ? 'manager_delete' : 'manager_update',
+    id: manager.id, name: manager.name, username: manager.username, password: manager.password,
+    school_id: manager.school_id, role: manager.role, active: manager.active,
+    petty_cash_card: manager.petty_cash_card, petty_cash_bank: manager.petty_cash_bank,
+    petty_cash_shaba: manager.petty_cash_shaba, petty_cash_limit: manager.petty_cash_limit,
+    petty_cash_balance: manager.petty_cash_balance,
+  };
+  return postToAppsScript(payload);
 };
 
 /**
@@ -607,12 +620,14 @@ export const loadDataFromAppsScript = async (
   const rawExpenses = rawData.expenses || [];
   const rawCheques = rawData.cheques || [];
   const rawManagers = rawData.managers || [];
+  const rawBank = rawData.bank || rawData.bankTransactions || [];
 
   const schools: School[] = rawSchools.map((sc: any) => ({
     id: Number(sc.id),
     name: sc.name,
     code: sc.code || '',
     active: sc.active !== false && String(sc.active) !== 'false',
+    petty_cash_card: sc.petty_cash_card || '',
   }));
 
   const schoolMap = new Map<number, string>();
@@ -731,6 +746,11 @@ export const loadDataFromAppsScript = async (
     school_id: m.school_id ? Number(m.school_id) : undefined,
     school_name: m.school_id ? schoolMap.get(Number(m.school_id)) : undefined,
     active: m.active !== false && String(m.active) !== 'false',
+    petty_cash_card: String(m.petty_cash_card || ''),
+    petty_cash_bank: String(m.petty_cash_bank || ''),
+    petty_cash_shaba: String(m.petty_cash_shaba || ''),
+    petty_cash_limit: Number(m.petty_cash_limit || 0),
+    petty_cash_balance: Number(m.petty_cash_balance || 0),
   }));
 
   return {
@@ -741,7 +761,14 @@ export const loadDataFromAppsScript = async (
     cheques,
     categories: [],
     managers,
-    bankTransactions: [],
+    bankTransactions: rawBank.map((b: any, idx: number) => ({
+      id: Number(b.id) || idx + 1, date: dateFromExcelSerial(b.date) || todayGregorian(),
+      school_id: Number(b.school_id) || 1, school_name: schoolMap.get(Number(b.school_id) || 1),
+      amount: Number(String(b.amount || 0).replace(/[^\d.-]/g, '')) || 0,
+      tracking_code: String(b.tracking_code || ''), bank_account: String(b.bank_account || ''),
+      description: String(b.description || ''), reconciled: b.matched === true || String(b.matched) === 'true',
+      matched_transaction_id: b.matched_transaction_id ? Number(b.matched_transaction_id) : undefined,
+    })),
     staff: [],
     stats: {
       studentsCount: students.length,

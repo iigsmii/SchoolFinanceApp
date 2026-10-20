@@ -1,13 +1,23 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Lock, User, Eye, EyeOff, ShieldCheck, School } from 'lucide-react';
+import { Lock, User, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 
 export const LoginScreen: React.FC = () => {
   const { login, accentColor } = useApp();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
+  const [remember, setRemember] = useState(() => { try { return localStorage.getItem('schoolfinance_remember_login') === '1'; } catch { return false; } });
   const [error, setError] = useState('');
+
+  React.useEffect(() => {
+    try {
+      if (localStorage.getItem('schoolfinance_remember_login') === '1') {
+        setUsername(localStorage.getItem('schoolfinance_saved_username') || '');
+        setPassword(localStorage.getItem('schoolfinance_saved_password') || '');
+      }
+    } catch {}
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,6 +29,13 @@ export const LoginScreen: React.FC = () => {
     try {
       const success = await login(username.trim(), password);
       if (!success) setError('نام کاربری یا رمز عبور نامعتبر است یا حساب غیرفعال شده است');
+      else {
+        try {
+          localStorage.setItem('schoolfinance_remember_login', remember ? '1' : '0');
+          if (remember) { localStorage.setItem('schoolfinance_saved_username', username.trim()); localStorage.setItem('schoolfinance_saved_password', password); }
+          else { localStorage.removeItem('schoolfinance_saved_username'); localStorage.removeItem('schoolfinance_saved_password'); }
+        } catch {}
+      }
     } catch (err: any) {
       setError(err?.message || 'ارتباط با سرور ورود برقرار نشد. اینترنت و آدرس وب‌اپ را بررسی کنید.');
     }
@@ -30,11 +47,8 @@ export const LoginScreen: React.FC = () => {
       <div className="max-w-md w-full">
         {/* Header Branding */}
         <div className="text-center mb-6">
-          <div
-            className="inline-flex items-center justify-center w-16 h-16 rounded-2xl text-white shadow-xl mb-4"
-            style={{ backgroundColor: accentColor }}
-          >
-            <School className="w-9 h-9" />
+          <div className="inline-flex items-center justify-center mb-4">
+            <img src="/app-logo.jpg" alt="لوگوی سامانه" className="w-20 h-20 rounded-2xl object-contain shadow-xl bg-white" />
           </div>
           <div className="text-xs font-bold text-[#62205f] tracking-wide mb-1" style={{ color: accentColor }}>
             مجموعه مدرسة القرآن الکریم شهرضا
@@ -95,6 +109,11 @@ export const LoginScreen: React.FC = () => {
               </div>
             </div>
 
+            <label className="flex items-center gap-2 text-xs text-gray-600 select-none">
+              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="accent-purple-800" />
+              ذخیره نام کاربری و رمز عبور در این دستگاه
+            </label>
+            <p className="text-[10px] text-amber-700">این گزینه را فقط روی دستگاه شخصی و محافظت‌شده فعال کنید.</p>
             <button
               type="submit"
               className="w-full py-3.5 px-4 rounded-xl text-white font-bold text-sm bg-[#62205f] hover:opacity-95 active:scale-98 transition-all shadow-md mt-2 flex items-center justify-center gap-2"

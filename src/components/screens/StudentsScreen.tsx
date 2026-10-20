@@ -31,6 +31,8 @@ export const StudentsScreen: React.FC = () => {
     addStudent,
     updateStudent,
     deleteStudent,
+    withdrawStudent,
+    transactions,
     importStudents,
   } = useApp();
 
@@ -156,22 +158,31 @@ export const StudentsScreen: React.FC = () => {
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json<any>(ws);
-
+        const data = XLSX.utils.sheet_to_json<any>(ws, { defval: '', raw: false });
+        const normalizeHeader = (v: unknown) => String(v ?? '').trim().toLowerCase().replace(/[\u200c\u200f\u202a-\u202e\s_\-]/g, '').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک');
+        const getCell = (row: any, aliases: string[]) => {
+          const keys = Object.keys(row || {});
+          const targets = aliases.map(normalizeHeader);
+          const key = keys.find((k) => targets.includes(normalizeHeader(k))) || keys.find((k) => targets.some((a) => normalizeHeader(k).includes(a)));
+          return key ? row[key] : '';
+        };
+        const normalizeDigits = (v: unknown) => String(v ?? '').replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
         const newStudents: Array<Omit<Student, 'id' | 'parsian_code'>> = [];
 
         data.forEach((row: any) => {
-          const name = row['نام و نام خانوادگی'] || row['نام'] || row['name'] || '';
-          let grade = String(row['پایه'] || row['کلاس'] || row['grade'] || 'اول').trim();
+          const name = getCell(row, ['نام و نام خانوادگی','نام خانوادگی و نام','نام دانش آموز','نام','name','student name']);
+          let grade = String(getCell(row, ['پایه','کلاس','grade','class']) || 'اول').trim();
           if (grade === 'مهد') grade = 'پیش یک';
 
-          const fatherP = String(row['شماره پدر'] || row['تلفن پدر'] || row['موبایل پدر'] || row['تلفن'] || row['phone'] || '').replace(/\D/g, '');
-          const motherP = String(row['شماره مادر'] || row['تلفن مادر'] || row['موبایل مادر'] || '').replace(/\D/g, '');
-          const nid = String(row['کد ملی'] || row['کدملی'] || row['national_id'] || '').replace(/\D/g, '');
+          const fatherP = normalizeDigits(getCell(row, ['شماره پدر','تلفن پدر','موبایل پدر','شماره همراه پدر','تلفن','phone','father phone'])).replace(/\D/g, '');
+          const motherP = normalizeDigits(getCell(row, ['شماره مادر','تلفن مادر','موبایل مادر','شماره همراه مادر','mother phone'])).replace(/\D/g, '');
+          const nid = normalizeDigits(getCell(row, ['کد ملی','کدملی','شماره ملی','national_id','national id'])).replace(/\D/g, '');
 
           let schoolId = currentUser?.school_id || 1;
-          if (row['کد مدرسه'] || row['مدرسه']) {
-            const sc = schools.find((s) => s.name.includes(row['مدرسه']) || s.code === row['کد مدرسه']);
+          const schoolName = String(getCell(row, ['مدرسه','نام مدرسه','school','school name']) || '');
+          const schoolCode = String(getCell(row, ['کد مدرسه','school code']) || '');
+          if (schoolCode || schoolName) {
+            const sc = schools.find((s) => (schoolName && normalizeHeader(s.name).includes(normalizeHeader(schoolName))) || (schoolCode && s.code === schoolCode));
             if (sc) schoolId = sc.id;
           }
 
@@ -522,6 +533,18 @@ export const StudentsScreen: React.FC = () => {
                 </div>
               )}
 
+              {editingStudent && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+                  <button type="button" onClick={() => {
+                    const hasHistory = transactions.some((t) => Number(t.student_id) === Number(editingStudent.id));
+                    if (hasHistory) { alert('برای این دانش‌آموز گردش مالی ثبت شده است؛ حذف مجاز نیست. از گزینه انصراف از مدرسه استفاده کنید.'); return; }
+                    if (window.confirm('دانش‌آموز بدون گردش مالی به‌طور کامل حذف شود؟')) { deleteStudent(editingStudent.id); setIsModalOpen(false); }
+                  }} className="py-2 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 font-bold text-xs">حذف دانش‌آموز</button>
+                  <button type="button" onClick={() => {
+                    if (window.confirm('انصراف از مدرسه ثبت شود؟ دانش‌آموز غیرفعال خواهد شد و سوابق مالی حفظ می‌شود.')) { withdrawStudent(editingStudent.id); setIsModalOpen(false); }
+                  }} className="py-2 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 font-bold text-xs">انصراف از مدرسه</button>
+                </div>
+              )}
               <div className="flex items-center gap-3 pt-3 border-t border-[#e5dde8]">
                 <button
                   type="button"

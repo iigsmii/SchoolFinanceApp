@@ -24,8 +24,8 @@ const CFG = {
 
 const HEADERS = {
   Requests: ['id','user_id','action','payload_hash','status','result','created_at'],
-  Managers: ['id','name','username','password','school_id','role','active','created_at'],
-  Schools: ['id','name','code','active','created_at'],
+  Managers: ['id','name','username','password','school_id','role','active','created_at','petty_cash_card','petty_cash_bank','petty_cash_shaba','petty_cash_limit','petty_cash_balance'],
+  Schools: ['id','name','code','active','created_at','petty_cash_card'],
   Students: ['id','name','grade','phone','national_id','school_id','kol_code','moeen_code','tafsili_code','active','created_at'],
   Tuition: ['id','date','student_id','school_id','type','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','payment_source'],
   Expenses: ['id','date','school_id','category','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','payment_source'],
@@ -253,6 +253,8 @@ function doPost(e) {
         cheques: (cheques_(body)||{}).data || [],
         categories: (categories_(body)||{}).data || [],
         managers: managerData,
+        bank: (bank_(body)||{}).data || [],
+        transactions: (transactions_(body)||{}).data || [],
       });
     }
 
@@ -409,12 +411,16 @@ function auth_(b, roles) {
   }
   try {
     const u = JSON.parse(raw);
+    if (u.expires_at && Number(u.expires_at) <= Date.now()) throw new Error('نشست ورود منقضی شده است.');
     const current = findRow_('Managers', u.id);
-    if (current && String(current.obj.active) !== 'false') {
-      u.role = String(current.obj.role);
-      u.school_id = current.obj.school_id;
-      u.name = current.obj.name;
+    if (!current || String(current.obj.active).toLowerCase() === 'false') {
+      throw new Error('حساب کاربری غیرفعال است؛ دوباره وارد سامانه شوید.');
     }
+    if (u.password_fingerprint && u.password_fingerprint !== sha256_(String(current.obj.password || ''))) throw new Error('اطلاعات ورود تغییر کرده است؛ دوباره وارد شوید.');
+    u.role = String(current.obj.role);
+    u.school_id = current.obj.school_id;
+    u.name = current.obj.name;
+    u.username = current.obj.username;
     if (u.role === 'admin') u.role = 'senior';
     if (roles && roles.length && roles.indexOf(u.role) < 0) {
       throw new Error('شما مجوز انجام این عملیات را ندارید.');
@@ -869,7 +875,7 @@ function studentUpdate_(b) {
     updateRow_('Students',hit.row,[
       old.id,b.name!==undefined?b.name:old.name,grade,
       phone,targetNid,targetSchool,codes.kol,codes.moeen,codes.tafsili,
-      old.active,old.created_at
+      b.active!==undefined?b.active:old.active,old.created_at
     ]);
     return {success:true};
   } finally {
@@ -1473,7 +1479,7 @@ function managerAdd_(b) {
   const id=nextId_('Managers');
   sheet_('Managers').appendRow([
     id,String(b.name||''),String(b.username),sha256_(String(b.password)),
-    String(b.school_id||''),String(b.role||'manager'),true,now_()
+    String(b.school_id||''),String(b.role||'manager'),true,now_(),String(b.petty_cash_card||''),String(b.petty_cash_bank||''),String(b.petty_cash_shaba||''),Number(b.petty_cash_limit||0),Number(b.petty_cash_balance||0)
   ]);
   return {success:true,id:id};
 }
@@ -1487,7 +1493,12 @@ function managerUpdate_(b) {
   updateRow_('Managers',hit.row,[
     r.id,b.name!==undefined?b.name:r.name,b.username!==undefined?b.username:r.username,
     pass,b.school_id!==undefined?b.school_id:r.school_id,
-    b.role!==undefined?b.role:r.role,b.active!==undefined?b.active:r.active,r.created_at
+    b.role!==undefined?b.role:r.role,b.active!==undefined?b.active:r.active,r.created_at,
+    b.petty_cash_card!==undefined?b.petty_cash_card:(r.petty_cash_card||''),
+    b.petty_cash_bank!==undefined?b.petty_cash_bank:(r.petty_cash_bank||''),
+    b.petty_cash_shaba!==undefined?b.petty_cash_shaba:(r.petty_cash_shaba||''),
+    b.petty_cash_limit!==undefined?Number(b.petty_cash_limit||0):Number(r.petty_cash_limit||0),
+    b.petty_cash_balance!==undefined?Number(b.petty_cash_balance||0):Number(r.petty_cash_balance||0)
   ]);
   return {success:true};
 }

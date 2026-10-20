@@ -22,10 +22,12 @@ import {
   Filter,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { postToAppsScript } from '../../services/googleSheets';
 
 export const BankScreen: React.FC = () => {
   const {
     transactions,
+    bankTransactions,
     schools,
     users,
     currentUser,
@@ -33,6 +35,7 @@ export const BankScreen: React.FC = () => {
     reconcileBank,
     manualReviewTransaction,
     importBankTransactions,
+    updateManager,
     addExpense,
     categories,
   } = useApp();
@@ -55,6 +58,9 @@ export const BankScreen: React.FC = () => {
   });
 
   // Filter Petty Cash transactions
+  const matchedBankRows = bankTransactions.filter((t) => t.reconciled);
+  const unmatchedBankRows = bankTransactions.filter((t) => !t.reconciled);
+
   const pettyCashTxs = transactions.filter((t) => {
     if (t.kind !== 'هزینه') return false;
     if (t.payment_source !== 'petty_cash') return false;
@@ -103,44 +109,103 @@ export const BankScreen: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const normalize = (value: unknown) => String(value ?? '')
+      .replace(/[\u200c\u200f\u202a-\u202e\s_\-]/g, '')
+      .replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').toLowerCase();
+    const pick = (row: Record<string, unknown>, aliases: string[]) => {
+      const keys = Object.keys(row);
+      const target = aliases.map(normalize);
+      const key = keys.find((k) => target.includes(normalize(k))) || keys.find((k) => target.some((a) => normalize(k).includes(a)));
+      return key ? row[key] : '';
+    };
+    const toDigits = (value: unknown) => String(value ?? '').replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+    const toAmount = (value: unknown) => {
+      if (typeof value === 'number') return Math.abs(value);
+      const cleaned = toDigits(value).replace(/[٬,،\s]/g, '').replace(/[^0-9.-]/g, '');
+      const n = Number(cleaned);
+      return Number.isFinite(n) ? Math.abs(n) : 0;
+    };
+    const toDate = (value: unknown) => {
+      if (typeof value === 'number' && value > 0 && value < 100000) {
+        const date = XLSX.SSF.parse_date_code(value);
+        if (date) return `${date.y}-${String(date.m).padStart(2,'0')}-${String(date.d).padStart(2,'0')}`;
+      }
+      const text = toDigits(value).trim();
+      const iso = text.match(/(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+      if (iso) return `${iso[1]}-${iso[2].padStart(2,'0')}-${iso[3].padStart(2,'0')}`;
+      return text || todayGregorian();
+    };
+
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const data = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws);
+        const wb = XLSX.read(evt.target?.result, { type: 'array', cellDates: true });
+        let data: Record<string, unknown>[] = [];
+        let sourceName = '';
+        // Find the first sheet with recognizable bank headers, not blindly the first sheet.
+        for (const sheetName of wb.SheetNames) {
+          const matrix = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sheetName], { header: 1, defval: '' });
+          const headerRowIndex = matrix.slice(0, 12).findIndex((row) => {
+            const h = row.map(normalize);
+            return h.some((x) => ['تاریخ','تاریختراکنش','date','transactiondate'].includes(x)) &&
+              h.some((x) => ['مبلغ','amount','برداشت','واریز','بدهکار','بستانکار','مبلغتراکنش'].includes(x));
+          });
+          if (headerRowIndex >= 0) {
+            const rows = matrix.slice(headerRowIndex).map((r) => r as unknown[]);
+            const headers = (rows.shift() || []).map((x) => String(x ?? '').trim());
+            data = rows.map((r) => Object.fromEntries(headers.map((h, i) => [h, r[i] ?? ''])));
+            sourceName = sheetName;
+            break;
+          }
+        }
+        if (!data.length) throw new Error('ستون‌های تاریخ و مبلغ/برداشت/واریز در ۱۲ ردیف ابتدایی هیچ برگه‌ای پیدا نشد.');
 
         let feeCount = 0;
+        let skipped = 0;
         const newItems = data.map((row) => {
-          const amt = Number(String(row['مبلغ'] || row['بدهکار'] || row['بستانکار'] || row['amount'] || 0).replace(/\D/g, ''));
-          const track = String(row['شماره پیگیری'] || row['کد پیگیری'] || row['ارجاع'] || row['tracking'] || '').trim();
-          const desc = String(row['شرح'] || row['توضیحات'] || row['description'] || 'تراکنش بانکی').trim();
-
-          const isFee = desc.includes('کارمزد') || desc.includes('پایا') || desc.includes('ساتنا');
-          if (isFee) feeCount++;
-
+          const debit = toAmount(pick(row, ['برداشت','مبلغ برداشت','بدهکار','debit','withdrawal','برداشت (ریال)']));
+          const credit = toAmount(pick(row, ['واریز','مبلغ واریز','بستانکار','credit','deposit','واریز (ریال)']));
+          const rawAmount = pick(row, ['مبلغ','مبلغ تراکنش','amount','transaction amount']);
+          const amount = debit || credit || toAmount(rawAmount);
+          const track = String(pick(row, ['شماره پیگیری','کد پیگیری','شماره مرجع','شماره ارجاع','ارجاع','tracking','reference','reference number']) || '').trim();
+          const desc = String(pick(row, ['شرح','شرح تراکنش','توضیحات','بابت','description','details']) || '').trim();
+          const date = toDate(pick(row, ['تاریخ','تاریخ تراکنش','تاریخ عملیات','date','transaction date']));
+          if (!amount || (!desc && !track)) { skipped++; return null; }
+          if (/(کارمزد|پایا|ساتنا|fee)/i.test(desc)) feeCount++;
           return {
-            date: todayGregorian(),
+            date,
             school_id: currentUser?.school_id || 1,
-            amount: amt || 50000000,
-            tracking_code: track || String(Math.floor(10000000 + Math.random() * 90000000)),
-            bank_account: 'بانک صادرات ۰۱۹۲۸۳۷۴۶۵',
-            description: desc,
+            amount,
+            tracking_code: track,
+            bank_account: String(pick(row, ['شماره حساب','حساب','شماره کارت','bank account','account']) || 'بانک صادرات').trim(),
+            description: desc || (debit ? 'برداشت بانکی' : credit ? 'واریز بانکی' : 'تراکنش بانکی'),
           };
-        });
+        }).filter((x): x is NonNullable<typeof x> => x !== null);
 
+        if (!newItems.length) throw new Error('هیچ ردیف معتبر دارای مبلغ، شرح یا شماره پیگیری یافت نشد. فایل و سطر عنوان را بررسی کنید.');
         const count = importBankTransactions(newItems);
-        let msg = `فایل صورتحساب با موفقیت وارد شد: ${count} تراکنش جدید ثبت گردید.`;
-        if (feeCount > 0) {
-          msg += ` همچنین ${feeCount} فقره کارمزد انتقال بانکی شناسایی گردید.`;
+        let cloudMessage = 'ذخیره در Google Sheets تأیید نشد؛ اطلاعات محلی حفظ شده است.';
+        try {
+          const bytes = new Uint8Array(evt.target?.result as ArrayBuffer);
+          let binary = '';
+          const chunkSize = 0x8000;
+          for (let i = 0; i < bytes.length; i += chunkSize) binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+          const upload = await postToAppsScript({ action: 'bank_upload', file_name: file.name, base64: btoa(binary), school_id: currentUser?.school_id || 1 });
+          if (upload?.success) cloudMessage = `ذخیره در Google Sheets تأیید شد (${upload.count ?? count} ردیف؛ برگه Bank).`;
+          else if (upload?.error) cloudMessage += ` علت: ${upload.error}`;
+        } catch (cloudError) {
+          console.warn('Cloud bank upload failed; local import remains available:', cloudError);
         }
+        let msg = `برگه «${sourceName}»: ${count} تراکنش معتبر به فهرست محلی اضافه شد. ${cloudMessage}`;
+        if (skipped) msg += ` ${skipped} ردیف خالی/نامعتبر کنار گذاشته شد.`;
+        if (feeCount) msg += ` ${feeCount} مورد با احتمال کارمزد شناسایی شد.`;
         alert(msg);
       } catch (err) {
-        alert('خطا در خواندن فایل بانک: ' + String(err));
+        alert('خطا در خواندن فایل بانک: ' + (err instanceof Error ? err.message : String(err)));
       }
     };
-    reader.readAsBinaryString(file);
+    reader.onerror = () => alert('خواندن فایل ناموفق بود. لطفاً فایل Excel یا CSV سالم دیگری انتخاب کنید.');
+    reader.readAsArrayBuffer(file);
     e.target.value = '';
   };
 
@@ -360,6 +425,33 @@ export const BankScreen: React.FC = () => {
                 );
               })
             )}
+
+            <section className="mt-6 space-y-3">
+              <h3 className="font-black text-sm text-[#341648]">تراکنش‌های واردشده از فایل صورتحساب بانک</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl p-3 bg-emerald-50 border border-emerald-200 text-emerald-900">
+                  <div className="text-xs">تطبیق‌شده</div><div className="text-xl font-black">{matchedBankRows.length}</div>
+                </div>
+                <div className="rounded-2xl p-3 bg-amber-50 border border-amber-200 text-amber-900">
+                  <div className="text-xs">تطبیق‌نشده</div><div className="text-xl font-black">{unmatchedBankRows.length}</div>
+                </div>
+              </div>
+              {[{title:'موارد تطبیق‌نشده', rows:unmatchedBankRows, tone:'border-amber-200'}, {title:'موارد تطبیق‌شده', rows:matchedBankRows, tone:'border-emerald-200'}].map((group) => (
+                <details key={group.title} className={`bg-white rounded-2xl border ${group.tone} overflow-hidden`} open={group.title === 'موارد تطبیق‌نشده' && group.rows.length > 0}>
+                  <summary className="cursor-pointer p-3 text-xs font-bold">{group.title} ({group.rows.length})</summary>
+                  <div className="divide-y divide-gray-100">
+                    {group.rows.slice(0, 500).map((b) => (
+                      <div key={b.id} className="p-3 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <div><div className="font-bold text-gray-800">{b.description || 'تراکنش بانکی'}</div><div className="text-gray-500">{b.date} · پیگیری: {b.tracking_code || '—'} · {b.bank_account || 'بانک'}</div></div>
+                        <div className="font-mono font-bold">{formatRial(b.amount)} ریال</div>
+                      </div>
+                    ))}
+                    {group.rows.length > 500 && <p className="p-3 text-gray-500">برای جلوگیری از کندی، ۵۰۰ مورد اول نمایش داده شده است.</p>}
+                    {group.rows.length === 0 && <p className="p-3 text-gray-400">موردی وجود ندارد.</p>}
+                  </div>
+                </details>
+              ))}
+            </section>
           </div>
         )}
 
@@ -374,8 +466,8 @@ export const BankScreen: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                 {schools.map((sc) => {
                   const manager = users.find((u) => u.school_id === sc.id && u.role === 'manager');
-                  const cardNum = manager?.petty_cash_card || sc.petty_cash_card || '۶۰۳۷-۹۹۷۵-۱۱۲۲-۳۳۴۴';
-                  const limit = manager?.petty_cash_limit || 150000000;
+                  const cardNum = manager?.petty_cash_card || sc.petty_cash_card || ''; 
+                  const limit = manager?.petty_cash_limit || 0;
 
                   // Sum of expenses paid with petty cash for this school
                   const spent = transactions
@@ -402,8 +494,24 @@ export const BankScreen: React.FC = () => {
                       </div>
 
                       <div className="font-mono text-xs font-bold text-gray-800 tracking-wider mb-2 bg-[#fcfaff] p-2 rounded-xl border border-gray-100 text-center" dir="ltr">
-                        {cardNum}
+                        {cardNum || 'کارت ثبت نشده'}
                       </div>
+                      {isSenior && manager && (
+                        <div className="grid grid-cols-2 gap-2 mb-2" onClick={(e) => e.stopPropagation()}>
+                          <button type="button" className="rounded-lg bg-purple-50 text-purple-800 border border-purple-200 py-1.5 text-[11px] font-bold" onClick={() => {
+                            const nextCard = window.prompt('شماره کارت تنخواه مدیر', manager.petty_cash_card || '');
+                            if (nextCard === null) return;
+                            const nextLimit = window.prompt('سقف تنخواه به ریال', String(manager.petty_cash_limit || 0));
+                            if (nextLimit === null) return;
+                            const parsedLimit = Number(nextLimit.replace(/[^0-9]/g, ''));
+                            if (!Number.isFinite(parsedLimit) || parsedLimit < 0) { alert('سقف تنخواه معتبر نیست.'); return; }
+                            updateManager(manager.id, { petty_cash_card: nextCard.trim(), petty_cash_limit: parsedLimit });
+                          }}>{cardNum ? 'ویرایش کارت' : 'افزودن کارت'}</button>
+                          <button type="button" className="rounded-lg bg-rose-50 text-rose-700 border border-rose-200 py-1.5 text-[11px] font-bold disabled:opacity-40" disabled={!cardNum} onClick={() => {
+                            if (window.confirm('اطلاعات کارت تنخواه حذف شود؟ سابقه هزینه‌ها باقی می‌ماند.')) updateManager(manager.id, { petty_cash_card: '', petty_cash_bank: '', petty_cash_shaba: '', petty_cash_limit: 0 });
+                          }}>حذف کارت</button>
+                        </div>
+                      )}
 
                       <div className="space-y-1 text-[11px] text-gray-600 pt-1 border-t border-gray-100">
                         <div className="flex justify-between">
