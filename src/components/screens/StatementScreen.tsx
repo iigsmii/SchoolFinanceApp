@@ -33,7 +33,7 @@ export const StatementScreen: React.FC = () => {
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
 
   const availableStudents = students.filter((s) => {
-    if (!isSenior && s.school_id !== currentUser?.school_id) return false;
+    if (!isSenior && Number(s.school_id) !== Number(currentUser?.school_id)) return false;
     return matchesStudentSearch(s, searchQuery);
   });
   const visibleStudents = availableStudents.slice(0, 50);
@@ -52,7 +52,7 @@ export const StatementScreen: React.FC = () => {
 
   const expenseTxs = transactions.filter((t) => {
     if (t.kind !== 'هزینه') return false;
-    if (!isSenior && t.school_id !== currentUser?.school_id) return false;
+    if (!isSenior && Number(t.school_id) !== Number(currentUser?.school_id)) return false;
     return true;
   });
 
