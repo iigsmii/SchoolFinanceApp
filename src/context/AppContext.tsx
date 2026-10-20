@@ -180,6 +180,7 @@ interface AppContextType {
   reconcileBank: () => { matched: number; unmatched: number };
   manualReviewTransaction: (id: number, approve: boolean, note?: string) => void;
   importBankTransactions: (txs: Array<Omit<BankTransaction, 'id' | 'reconciled'>>) => number;
+  updateBankTransaction: (id: number, data: Partial<BankTransaction>) => void;
 
   // Managers & Schools ops
   addManager: (m: Omit<User, 'id'>) => void;
@@ -1198,6 +1199,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newItems.length;
   };
 
+  const updateBankTransaction = (id: number, data: Partial<BankTransaction>) => {
+    setBankTransactions((prev) => prev.map((item) => item.id === id ? { ...item, ...data } : item));
+    logActivity('تخصیص تراکنش بانکی', `به‌روزرسانی توضیحات/تخصیص تراکنش بانکی شناسه ${id}`, 'bank_transaction', id);
+  };
+
   const addManager = (m: Omit<User, 'id'>) => {
     const newId = users.length > 0 ? Math.max(...users.map((u) => u.id)) + 1 : 1;
     const sc = schools.find((s) => s.id === m.school_id);
@@ -1602,6 +1608,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         reconcileBank,
         manualReviewTransaction,
         importBankTransactions,
+        updateBankTransaction,
         addManager,
         updateManager,
         deleteManager,
