@@ -564,10 +564,11 @@ function students_(b) {
       const normalizeStudentSearch_ = value => String(value===undefined||value===null?'':value)
         .normalize('NFKC').toLocaleLowerCase('fa')
         .replace(/[يىئ]/g,'ی').replace(/ك/g,'ک')
+        .replace(/[أإآٱ]/g,'ا').replace(/[ۀة]/g,'ه').replace(/ؤ/g,'و')
         .replace(/[۰-۹]/g,d=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
         .replace(/[٠-٩]/g,d=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
-        .replace(/[\u064B-\u065F\u0670\u0640\u200c\u200d\u200e\u200f\ufeff]/g,'')
-        .replace(/[^\p{L}\p{N}\s]/gu,' ').replace(/\s+/g,' ').trim();
+        .replace(/[\u064B-\u065F\u0670\u0640\u200b-\u200f\u202a-\u202e\ufeff]/g,'')
+        .replace(/[^\p{L}\p{N}]/gu,'');
       const q=normalizeStudentSearch_(b.q);
       const searchText=normalizeStudentSearch_([x.name,x.national_id,x.grade,x.phone,x.father_phone,x.mother_phone].join(' '));
       if(q && searchText.indexOf(q)<0) return;
