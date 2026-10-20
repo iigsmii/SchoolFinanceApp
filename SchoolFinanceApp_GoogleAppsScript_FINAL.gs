@@ -1174,7 +1174,10 @@ function transactionDelete_(b) {
 
 function bankAnnotationKey_(x){
   const tracking=String(x.tracking_code||'').trim();
-  return [String(x.school_id||''),String(x.date||'').trim(),String(Number(x.amount)||0),tracking||String(x.bank_account||'').replace(/\D/g,'')].join('|');
+  const base=[String(x.school_id||''),String(Number(x.amount)||0)];
+  // Prefer the bank's reference number because some Excel exports encode dates as serials.
+  if(tracking) return base.concat([tracking]).join('|');
+  return base.concat([String(x.date||'').trim(),String(x.bank_account||'').replace(/\D/g,'')]).join('|');
 }
 function bank_(b) {
   const u=auth_(b);
