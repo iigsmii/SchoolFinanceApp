@@ -611,19 +611,17 @@ function studentAdd_(b) {
 
     const existingRows=rows_('Students');
     const existing=nid ? existingRows.find(x=>normalizeNationalId_(x.obj.national_id || '')===nid) : null;
+    const requestedId=Number(b.id)||0;
     if(existing) {
-      const old=existing.obj;
-      const grade=b.grade ? normalizeGrade_(b.grade) : old.grade;
-      const savedFather=b.father_phone!==undefined ? fatherPhone : normalizeImportedPhone_(old.father_phone || old.phone || fatherPhone || '');
-      const savedMother=b.mother_phone!==undefined ? motherPhone : normalizeImportedPhone_(old.mother_phone || '');
-      const primary=normalizeImportedPhone_(b.phone || savedFather || savedMother || old.phone || '');
-      updateRow_('Students',existing.row,[old.id,fullName,grade,primary,nid||old.national_id,old.school_id,old.kol_code,old.moeen_code,old.tafsili_code,old.active,old.created_at,savedFather,savedMother]);
-      SpreadsheetApp.flush();
-      return {success:true,id:old.id,updated:true,message:'اطلاعات دانش‌آموز به‌روزرسانی شد.'};
+      // Idempotent retry: if this exact student ID already exists, return success.
+      // A different student ID using the same national ID must be rejected, never overwritten.
+      if (requestedId > 0 && String(existing.obj.id) === String(requestedId)) {
+        return {success:true,id:existing.obj.id,duplicate:true,message:'این دانش‌آموز قبلاً ثبت شده است.'};
+      }
+      throw new Error('این کد ملی قبلاً برای دانش‌آموز دیگری ثبت شده است.');
     }
 
-    const requestedId=Number(b.id)||0;
-    const id=(requestedId>0 && !existingRows.some(x=>String(x.obj.id)===String(requestedId))) ? requestedId : nextId_('Students');
+    
     const grade=normalizeGrade_(b.grade || 'اول');
     const codes=studentAccountCodes_(id, grade, schoolId, nid);
     const sh=sheet_('Students');
