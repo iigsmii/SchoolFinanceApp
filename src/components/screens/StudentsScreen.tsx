@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { Student } from '../../types';
 import { buildParsianCode } from '../../utils/parsian';
+import { matchesStudentSearch } from '../../utils/studentSearch';
 import {
   UserPlus,
   FileSpreadsheet,
@@ -249,19 +250,11 @@ export const StudentsScreen: React.FC = () => {
     if (!s.active) return false;
     if (selectedSchoolFilter !== 0 && s.school_id !== selectedSchoolFilter) return false;
     if (filterNeedsFix && !s.needs_fix) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      const matchName = s.name.toLowerCase().includes(q);
-      const matchNid = s.national_id.includes(q);
-      const matchPhone =
-        s.phone.includes(q) ||
-        (s.father_phone && s.father_phone.includes(q)) ||
-        (s.mother_phone && s.mother_phone.includes(q));
-      if (!matchName && !matchNid && !matchPhone) return false;
-    }
+    if (!matchesStudentSearch(s, searchQuery)) return false;
     return true;
   });
 
+  const visibleStudents = filteredStudents.slice(0, 50);
   const needsFixCount = students.filter((s) => s.needs_fix).length;
 
   return (
@@ -369,7 +362,7 @@ export const StudentsScreen: React.FC = () => {
               دانش‌آموزی با این مشخصات یافت نشد.
             </div>
           ) : (
-            filteredStudents.map((s) => (
+            visibleStudents.map((s) => (
               <div
                 key={s.id}
                 onClick={() => openEditModal(s)}
