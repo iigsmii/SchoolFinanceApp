@@ -364,7 +364,10 @@ export const StudentsScreen: React.FC = () => {
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => setSearchQuery(e.currentTarget.value)}
+              onInput={(e) => setSearchQuery(e.currentTarget.value)}
+              onCompositionEnd={(e) => setSearchQuery(e.currentTarget.value)}
+              onBlur={(e) => setSearchQuery(e.currentTarget.value)}
               placeholder="جستجوی نام، کد ملی، شماره تماس پدر یا مادر..."
               className="w-full pr-10 pl-4 py-2.5 rounded-2xl border border-[#e5dde8] text-xs bg-[#fdfcfd] focus:border-[#62205f] outline-hidden"
             />
