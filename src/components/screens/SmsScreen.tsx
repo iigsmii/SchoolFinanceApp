@@ -461,7 +461,7 @@ export const SmsScreen: React.FC = () => {
                 </div>
               ) : (
                 <div className="divide-y divide-gray-100">
-                  {filteredStudents.slice(0, 50).map((st) => {
+                  {filteredStudents.map((st) => {
                     const balance = getStudentBalance(st.id);
                     const overdue = calculateStudentOverdue(st, transactions);
                     const fatherPhone = st.father_phone || st.phone;
