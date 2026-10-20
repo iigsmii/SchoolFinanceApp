@@ -173,6 +173,27 @@ export const apiSaveManager = async (manager: Partial<User> & { id?: number }, a
   return postToAppsScript(payload);
 };
 
+export const apiSaveSchool = async (school: Partial<School> & { id?: number }, action: 'add' | 'update' | 'delete' = 'update') =>
+  postToAppsScript({
+    action: action === 'add' ? 'school_add' : action === 'delete' ? 'school_delete' : 'school_update',
+    id: school.id, name: school.name, code: school.code, type: school.type,
+    moeen_code: school.moeen_code, petty_cash_card: school.petty_cash_card, active: school.active,
+  });
+
+export const apiSaveStaffMember = async (staff: Partial<StaffMember> & { id?: number }, action: 'add' | 'update' | 'delete' = 'update') =>
+  postToAppsScript({
+    action: action === 'add' ? 'staff_add' : action === 'delete' ? 'staff_delete' : 'staff_update',
+    id: staff.id, school_id: staff.school_id, school_name: staff.school_name,
+    name: staff.name, national_id: staff.national_id, phone: staff.phone,
+    role_title: staff.role_title, contract_type: staff.contract_type,
+    hourly_rate: staff.hourly_rate, base_salary: staff.base_salary,
+    insurance_employer_share: staff.insurance_employer_share,
+    insurance_employee_share: staff.insurance_employee_share,
+    bank_card_or_sheba: staff.bank_card_or_sheba, kol_code: staff.kol_code,
+    moeen_code: staff.moeen_code, tafsili_code: staff.tafsili_code, active: staff.active,
+  });
+
+
 /**
  * Save Tuition (Payment or Debt) on Google Sheet via Apps Script
  */
