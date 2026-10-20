@@ -202,7 +202,7 @@ export const BankScreen: React.FC = () => {
             : (configured.length === 1 ? configured[0] : undefined);
           const schoolId = terminalNo ? (terminalSchool?.id || 0) : (terminalSchool?.id || item.school_id);
           const candidates = transactions.filter((t) =>
-            !usedTxIds.has(t.id) && !t.reconciled &&
+            !usedTxIds.has(t.id) && !t.reconciled && Boolean(t.student_id) &&
             Number(t.school_id) === Number(schoolId) &&
             Number(t.amount) === Number(item.amount) &&
             String(t.tracking_code || '').trim() !== '' &&
