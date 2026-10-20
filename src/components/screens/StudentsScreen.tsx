@@ -159,11 +159,30 @@ export const StudentsScreen: React.FC = () => {
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json<any>(ws, { defval: '', raw: false });
+        const matrix = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: '', raw: false });
         const normalizeHeader = (v: unknown) => String(v ?? '')
           .replace(/[\u200c\u200f\u202a-\u202e\ufeff]/g, '')
           .trim().toLowerCase().replace(/[\s_\-\u0640]/g, '')
           .replace(/[يى]/g, 'ی').replace(/ك/g, 'ک');
+        const headerAliases = (values: unknown[], aliases: string[]) => {
+          const normalized = values.map(normalizeHeader);
+          return aliases.some(alias => normalized.includes(normalizeHeader(alias)));
+        };
+        // Many school workbooks have a merged title in row 1 and real headers in row 2.
+        const headerIndex = matrix.findIndex((row, index) => index < 20 &&
+          headerAliases(row, ['کد ملی','کدملی','national id','national_id']) &&
+          ((headerAliases(row, ['نام']) && headerAliases(row, ['نام خانوادگی','نام‌خانوادگی','نام خانوادگي','surname','last name'])) ||
+            headerAliases(row, ['نام کامل','نام و نام خانوادگی','نام دانش آموز','نام دانش‌آموز','full name','student name'])));
+        if (headerIndex < 0) {
+          setImportSummary('عنوان ستون‌ها پیدا نشد. فایل باید ستون‌های نام، نام خانوادگی و کد ملی را داشته باشد.');
+          return;
+        }
+        const headers = (matrix[headerIndex] || []).map((h, i) => String(h ?? '').trim() || ('ستون ' + (i + 1)));
+        const data = matrix.slice(headerIndex + 1).map(cells => {
+          const row: Record<string, unknown> = {};
+          headers.forEach((header, i) => { row[header] = cells?.[i] ?? ''; });
+          return row;
+        }).filter(row => Object.values(row).some(value => String(value ?? '').trim() !== ''));
         const getCell = (row: any, aliases: string[]) => {
           const keys = Object.keys(row || {});
           const targets = aliases.map(normalizeHeader).filter(Boolean);
@@ -201,8 +220,9 @@ export const StudentsScreen: React.FC = () => {
           let grade = String(getCell(row, ['پایه','کلاس','grade','class']) || 'اول').trim();
           if (grade === 'مهد') grade = 'پیش یک';
 
-          const fatherP = normalizeDigits(getCell(row, ['شماره پدر','تلفن پدر','موبایل پدر','شماره همراه پدر','تلفن','phone','father phone'])).replace(/\D/g, '');
+          const fatherP = normalizeDigits(getCell(row, ['شماره پدر','تلفن پدر','موبایل پدر','شماره همراه پدر','شماره موبایل','شماره تلفن همراه','موبایل','تلفن','phone','mobile','father phone'])).replace(/\D/g, '');
           const motherP = normalizeDigits(getCell(row, ['شماره مادر','تلفن مادر','موبایل مادر','شماره همراه مادر','mother phone'])).replace(/\D/g, '');
+          const normalizedFatherP = /^9\d{9}$/.test(fatherP) ? '0' + fatherP : fatherP;
           const nid = normalizeDigits(getCell(row, ['کد ملی','کدملی','شماره ملی','شماره کد ملی','کد شناسایی ملی','national_id','national id','national code','nid'])).replace(/\D/g, '');
 
           let schoolId = chosenSchoolId;
@@ -217,8 +237,8 @@ export const StudentsScreen: React.FC = () => {
             newStudents.push({
               name: String(name).trim(),
               grade,
-              phone: fatherP || motherP || '',
-              father_phone: fatherP || '',
+              phone: normalizedFatherP || motherP || '',
+              father_phone: normalizedFatherP || '',
               mother_phone: motherP || '',
               national_id: nid.padStart(10, '0'),
               school_id: schoolId,
