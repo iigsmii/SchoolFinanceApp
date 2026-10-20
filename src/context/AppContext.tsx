@@ -181,7 +181,7 @@ interface AppContextType {
   // Bank reconciliation ops
   reconcileBank: () => { matched: number; unmatched: number };
   manualReviewTransaction: (id: number, approve: boolean, note?: string) => void;
-  importBankTransactions: (txs: Array<Omit<BankTransaction, 'id' | 'reconciled'>>) => number;
+  importBankTransactions: (txs: Array<Omit<BankTransaction, 'id' | 'reconciled'> & { reconciled?: boolean }>) => number;
   updateBankTransaction: (id: number, data: Partial<BankTransaction>) => void;
 
   // Managers & Schools ops
@@ -1231,14 +1231,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logActivity('بررسی دستی تطبیق تراکنش', `${approve ? 'تأیید' : 'رد'} تراکنش شناسه ${id}`, 'transaction', id);
   };
 
-  const importBankTransactions = (txs: Array<Omit<BankTransaction, 'id' | 'reconciled'>>) => {
+  const importBankTransactions = (txs: Array<Omit<BankTransaction, 'id' | 'reconciled'> & { reconciled?: boolean }>) => {
     let maxId = bankTransactions.length > 0 ? Math.max(...bankTransactions.map((b) => b.id)) : 0;
     const newItems: BankTransaction[] = txs.map((t) => {
       maxId++;
       return {
         ...t,
         id: maxId,
-        reconciled: false,
+        reconciled: Boolean(t.reconciled),
       };
     });
     setBankTransactions((prev) => [...newItems, ...prev]);
