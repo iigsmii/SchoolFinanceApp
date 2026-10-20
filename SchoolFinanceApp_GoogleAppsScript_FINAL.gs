@@ -494,7 +494,7 @@ function schoolAdd_(b){
   auth_(b,['senior','admin']); ensureStructure_();
   const id=nextId_('Schools');
   const row=[id,String(b.name||''),String(b.code||''),b.active!==false,now_(),String(b.petty_cash_card||''),String(b.type||''),String(b.moeen_code||'')];
-  sheet_('Schools').appendRow(row); return {success:true,id:id};
+  sheet_('Schools').appendRow(row); if(b.pos_terminal_number!==undefined) saveSetting_('pos_terminal_'+String(id),String(b.pos_terminal_number||'').trim()); return {success:true,id:id};
 }
 function schoolUpdate_(b){
   auth_(b,['senior','admin']); ensureStructure_();
