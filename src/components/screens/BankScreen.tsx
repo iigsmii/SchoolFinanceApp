@@ -27,6 +27,7 @@ import { postToAppsScript } from '../../services/googleSheets';
 export const BankScreen: React.FC = () => {
   const {
     transactions,
+    students,
     bankTransactions,
     schools,
     users,
@@ -35,6 +36,7 @@ export const BankScreen: React.FC = () => {
     reconcileBank,
     manualReviewTransaction,
     importBankTransactions,
+    updateBankTransaction,
     updateManager,
     addExpense,
     categories,
@@ -170,6 +172,8 @@ export const BankScreen: React.FC = () => {
           const track = String(pick(row, ['شماره پیگیری','کد پیگیری','شماره مرجع','شماره ارجاع','ارجاع','tracking','reference','reference number']) || '').trim();
           const desc = String(pick(row, ['شرح','شرح تراکنش','توضیحات','بابت','description','details']) || '').trim();
           const date = toDate(pick(row, ['تاریخ','تاریخ تراکنش','تاریخ عملیات','date','transaction date']));
+          const account = String(pick(row, ['شماره حساب','حساب','شماره کارت','شماره کارت مقصد','شماره کارت مبدا','bank account','account','card number']) || '').trim();
+          const balance = toAmount(pick(row, ['مانده','موجودی','مانده حساب','balance','running balance']));
           if (!amount || (!desc && !track)) { skipped++; return null; }
           if (/(کارمزد|پایا|ساتنا|fee)/i.test(desc)) feeCount++;
           return {
@@ -177,7 +181,10 @@ export const BankScreen: React.FC = () => {
             school_id: currentUser?.school_id || 1,
             amount,
             tracking_code: track,
-            bank_account: String(pick(row, ['شماره حساب','حساب','شماره کارت','bank account','account']) || 'بانک صادرات').trim(),
+            bank_account: account || 'حساب بانکی',
+            card_number: account.replace(/\D/g, ''),
+            balance: balance || undefined,
+            direction: debit > 0 ? 'withdrawal' as const : credit > 0 ? 'deposit' as const : 'unknown' as const,
             description: desc || (debit ? 'برداشت بانکی' : credit ? 'واریز بانکی' : 'تراکنش بانکی'),
           };
         }).filter((x): x is NonNullable<typeof x> => x !== null);
@@ -441,9 +448,45 @@ export const BankScreen: React.FC = () => {
                   <summary className="cursor-pointer p-3 text-xs font-bold">{group.title} ({group.rows.length})</summary>
                   <div className="divide-y divide-gray-100">
                     {group.rows.slice(0, 500).map((b) => (
-                      <div key={b.id} className="p-3 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                        <div><div className="font-bold text-gray-800">{b.description || 'تراکنش بانکی'}</div><div className="text-gray-500">{b.date} · پیگیری: {b.tracking_code || '—'} · {b.bank_account || 'بانک'}</div></div>
-                        <div className="font-mono font-bold">{formatRial(b.amount)} ریال</div>
+                      <div key={b.id} className="p-3 text-xs flex flex-col gap-2">
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-1">
+                          <div className="min-w-0">
+                            <div className="font-bold text-gray-800">{b.description || 'تراکنش بانکی'}</div>
+                            <div className="text-gray-500">{b.date} · پیگیری: {b.tracking_code || '—'} · حساب/کارت: {b.card_number || b.bank_account || '—'}</div>
+                            <div className="mt-1 flex flex-wrap gap-2 text-[11px]">
+                              <span className={b.direction === 'deposit' ? 'text-emerald-700 font-bold' : b.direction === 'withdrawal' ? 'text-rose-700 font-bold' : 'text-gray-500'}>{b.direction === 'deposit' ? 'واریز' : b.direction === 'withdrawal' ? 'برداشت' : 'نوع نامشخص'}</span>
+                              {b.balance !== undefined && <span className="text-gray-500">مانده پس از تراکنش: {formatRial(b.balance)} ریال</span>}
+                              {b.assigned_student_name && <span className="text-indigo-700 font-bold">دانش‌آموز: {b.assigned_student_name}</span>}
+                              {b.assigned_purpose && <span className="text-gray-600">بابت: {b.assigned_purpose}</span>}
+                            </div>
+                          </div>
+                          <div className="font-mono font-bold whitespace-nowrap">{formatRial(b.amount)} ریال</div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {(() => {
+                            const cardDigits = String(b.card_number || b.bank_account || '').replace(/\D/g, '');
+                            const matchedManager = users.find((u) => u.role === 'manager' && String(u.petty_cash_card || '').replace(/\D/g, '') && (cardDigits.endsWith(String(u.petty_cash_card || '').replace(/\D/g, '')) || String(u.petty_cash_card || '').replace(/\D/g, '').endsWith(cardDigits)));
+                            return matchedManager ? <span className="rounded-lg bg-purple-50 border border-purple-200 px-2 py-1 text-[10px] font-bold text-purple-800">کارت تن‌خواه: {matchedManager.name}</span> : null;
+                          })()}
+                          {(isSenior || b.school_id === currentUser?.school_id) && (
+                            <button type="button" onClick={() => {
+                              const choices = students.filter((s) => s.school_id === b.school_id || isSenior).map((s) => s.name);
+                              const chosenName = window.prompt('نام کامل دانش‌آموز را وارد کنید:\n' + choices.slice(0, 100).join('، '), b.assigned_student_name || '');
+                              if (chosenName === null) return;
+                              const student = students.find((s) => s.name.trim() === chosenName.trim() && (isSenior || s.school_id === b.school_id));
+                              if (chosenName.trim() && !student) { alert('دانش‌آموزی با این نام دقیق پیدا نشد. نام را از فهرست وارد کنید.'); return; }
+                              const purpose = window.prompt('این تراکنش بابت چه موردی بوده است؟', b.assigned_purpose || '');
+                              if (purpose === null) return;
+                              updateBankTransaction(b.id, {
+                                assigned_student_id: student?.id,
+                                assigned_student_name: student?.name || '',
+                                assigned_purpose: purpose.trim(),
+                              });
+                            }} className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-[11px] font-bold text-indigo-800">
+                              {b.assigned_student_name || b.assigned_purpose ? 'ویرایش دانش‌آموز / بابت' : 'تعیین دانش‌آموز و بابت'}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ))}
                     {group.rows.length > 500 && <p className="p-3 text-gray-500">برای جلوگیری از کندی، ۵۰۰ مورد اول نمایش داده شده است.</p>}
