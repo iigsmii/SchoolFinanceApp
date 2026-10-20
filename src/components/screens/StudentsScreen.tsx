@@ -92,7 +92,7 @@ export const StudentsScreen: React.FC = () => {
     e.preventDefault();
     setFormError('');
 
-    const cleanName = formName.trim();
+    const cleanName = formName.normalize('NFC').replace(/\\s+/g, ' ').trim();
     const cleanFatherPhone = formFatherPhone.trim();
     const cleanMotherPhone = formMotherPhone.trim();
     const cleanNid = formNationalId.trim();
@@ -482,6 +482,8 @@ export const StudentsScreen: React.FC = () => {
                 <input
                   type="text"
                   value={formName}
+                  maxLength={200}
+                  autoComplete="name"
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="مثال: علی‌رضا کمالی"
                   className="w-full px-3.5 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs sm:text-sm text-[#302735] focus:outline-hidden focus:border-[#62205f]"
