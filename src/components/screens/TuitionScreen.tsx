@@ -19,6 +19,7 @@ import {
   Image,
 } from 'lucide-react';
 import { ReceiptImageUploader } from '../ReceiptImageUploader';
+import { matchesStudentSearch } from '../../utils/studentSearch';
 
 const PAYMENT_METHODS = ['پول نقد', 'کارت به کارت', 'کارت خوان', 'چک'];
 
@@ -74,11 +75,11 @@ export const TuitionScreen: React.FC = () => {
 
   // Handle student search results
   const availableStudents = students.filter((s) => {
+    if (!s.active) return false;
     if (!isSenior && s.school_id !== currentUser?.school_id) return false;
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase().trim();
-    return s.name.toLowerCase().includes(q) || s.national_id.includes(q) || s.grade.includes(q);
+    return matchesStudentSearch(s, searchQuery);
   });
+  const visibleStudents = availableStudents.slice(0, 50);
 
   const handleSelectStudent = (st: Student) => {
     setSelectedStudent(st);
@@ -289,11 +290,10 @@ export const TuitionScreen: React.FC = () => {
 
   // Bulk dialog school filtered students
   const bulkSchoolStudents = students.filter((s) => s.school_id === bulkSchoolId && s.active);
-  const displayedBulkStudents = bulkSchoolStudents.filter((st) => {
-    if (!bulkFilterQuery.trim()) return true;
-    const q = bulkFilterQuery.toLowerCase().trim();
-    return st.name.toLowerCase().includes(q) || st.grade.includes(q) || st.national_id.includes(q);
-  });
+  const displayedBulkStudents = bulkSchoolStudents.filter((st) =>
+    matchesStudentSearch(st, bulkFilterQuery)
+  );
+  const visibleBulkStudents = displayedBulkStudents.slice(0, 100);
 
   return (
     <div className="min-h-screen bg-[#f8f5f9] pb-12">
@@ -321,7 +321,7 @@ export const TuitionScreen: React.FC = () => {
               {availableStudents.length === 0 ? (
                 <div className="p-3 text-center text-xs text-gray-500">دانش‌آموزی پیدا نشد</div>
               ) : (
-                availableStudents.map((st) => (
+                visibleStudents.map((st) => (
                   <button
                     key={st.id}
                     onClick={() => handleSelectStudent(st)}
@@ -920,7 +920,7 @@ export const TuitionScreen: React.FC = () => {
                 </div>
 
                 <div className="flex-1 overflow-y-auto space-y-1.5">
-                  {displayedBulkStudents.map((st) => (
+                  {visibleBulkStudents.map((st) => (
                     <label
                       key={st.id}
                       className="flex items-center justify-between p-2 rounded-xl bg-white border border-[#e5dde8] text-xs cursor-pointer hover:bg-gray-50"
