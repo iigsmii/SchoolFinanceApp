@@ -177,7 +177,7 @@ export const apiSaveSchool = async (school: Partial<School> & { id?: number }, a
   postToAppsScript({
     action: action === 'add' ? 'school_add' : action === 'delete' ? 'school_delete' : 'school_update',
     id: school.id, name: school.name, code: school.code, type: school.type,
-    moeen_code: school.moeen_code, petty_cash_card: school.petty_cash_card, active: school.active,
+    moeen_code: school.moeen_code, petty_cash_card: school.petty_cash_card, pos_terminal_number: school.pos_terminal_number, active: school.active,
   });
 
 export const apiSaveStaffMember = async (staff: Partial<StaffMember> & { id?: number }, action: 'add' | 'update' | 'delete' = 'update') =>
