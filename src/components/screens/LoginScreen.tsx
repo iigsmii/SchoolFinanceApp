@@ -125,6 +125,9 @@ export const LoginScreen: React.FC = () => {
           </form>
         </div>
 
+        <p className="mx-auto max-w-sm px-3 text-center text-[10px] leading-5 text-gray-400/90">
+          این نرم‌افزار با تلاش واحد مالی و حسابداری مدرسة القرآن الکریم شهرضا طراحی و توسعه یافته است؛ با هدف سامان‌دهی و تسهیل فرایندهای مالی مجموعه.
+        </p>
       </div>
     </div>
   );
