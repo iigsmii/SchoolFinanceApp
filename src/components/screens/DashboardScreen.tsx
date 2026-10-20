@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { matchesStudentSearch } from '../../utils/studentSearch';
 import { DashboardClock } from '../DashboardClock';
 import { TuitionMonthlyChart } from '../TuitionMonthlyChart';
 import { QuickInvoiceModal } from '../QuickInvoiceModal';
@@ -198,18 +199,9 @@ export const DashboardScreen: React.FC = () => {
       .filter((item) => item.debt > 0);
 
     // Apply search
-    const filtered = list.filter((item) => {
-      if (!debtorSearchQuery.trim()) return true;
-      const q = debtorSearchQuery.toLowerCase().trim();
-      const matchName = item.student.name.toLowerCase().includes(q);
-      const matchNid = item.student.national_id.includes(q);
-      const matchPhone =
-        (item.student.phone && item.student.phone.includes(q)) ||
-        (item.student.father_phone && item.student.father_phone.includes(q)) ||
-        (item.student.mother_phone && item.student.mother_phone.includes(q));
-      const matchSchool = (item.student.school_name || '').toLowerCase().includes(q);
-      return matchName || matchNid || matchPhone || matchSchool;
-    });
+    const filtered = list.filter((item) =>
+      matchesStudentSearch(item.student, debtorSearchQuery)
+    );
 
     // Apply sort
     filtered.sort((a, b) => {
