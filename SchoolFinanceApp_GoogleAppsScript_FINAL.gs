@@ -258,6 +258,7 @@ function doPost(e) {
         categories: (categories_(body)||{}).data || [],
         managers: managerData,
         bank: (bank_(body)||{}).data || [],
+        bankTransactions: (bank_(body)||{}).data || [],
         transactions: (transactions_(body)||{}).data || [],
       });
     }
@@ -1181,7 +1182,10 @@ function bankAnnotationKey_(x){
 }
 function bank_(b) {
   const u=auth_(b);
-  let data=rows_('Bank').map(x=>x.obj);
+  let data=rows_('Bank').map(x=>Object.assign({},x.obj,{
+    reconciled:String(x.obj.matched)==='true',
+    matched_transaction_id:x.obj.matched_transaction_id?Number(x.obj.matched_transaction_id):undefined
+  }));
   const annotations=rows_('BankAnnotations').map(x=>x.obj);
   const byKey={}; annotations.forEach(a=>byKey[bankAnnotationKey_(a)]=a);
   data=data.map(x=>{const a=byKey[bankAnnotationKey_(x)];return a?Object.assign({},x,{assigned_student_id:a.student_id?Number(a.student_id):undefined,assigned_student_name:a.student_name||'',assigned_purpose:a.purpose||'',annotation_updated_at:a.updated_at,direction:a.direction||'unknown',balance:a.balance!==''&&a.balance!==undefined?Number(a.balance):undefined,card_number:a.card_number||a.bank_account||''}):x;});
