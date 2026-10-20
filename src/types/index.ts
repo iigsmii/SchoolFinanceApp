@@ -219,6 +219,7 @@ export interface PayrollPayment {
 
 export type ScreenType =
   | 'dashboard'
+  | 'finance_overview'
   | 'students'
   | 'tuition'
   | 'tuition_trend'
