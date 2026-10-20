@@ -31,6 +31,7 @@ const HEADERS = {
   Expenses: ['id','date','school_id','category','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','payment_source'],
   Transactions: ['id','date','school_id','kind','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','source_id','payment_source'],
   Bank: ['id','date','school_id','amount','description','tracking_code','bank_account','created_at','matched_transaction_id','matched','approved'],
+  BankAnnotations: ['id','school_id','date','amount','tracking_code','bank_account','student_id','student_name','purpose','manager_id','updated_at'],
   ExpenseCategories: ['id','name','active','created_at'],
   Messages: ['id','message','created_by','created_at','active','target_school_id','target_role'],
   Attachments: ['id','source_type','source_id','file_name','mime_type','drive_file_id','url','created_by','created_at'],
@@ -318,6 +319,7 @@ function doPost(e) {
       case 'bank_match': result=bankMatch_(body); break;
       case 'bank_reconcile': result=bankReconcile_(body); break;
       case 'bank_upload': result=bankUpload_(body); break;
+      case 'bank_annotation': result=bankAnnotationSave_(body); break;
       case 'transaction_review': result=transactionReview_(body); break;
       case 'categories': result=categories_(body); break;
       case 'category_add': result=categoryAdd_(body); break;
@@ -860,10 +862,10 @@ function importBankXlsx_(base64,schoolId){
   const out=[]; sd.getChildren().filter(x=>x.getName()==='row').forEach(row=>{const c={};row.getChildren().filter(x=>x.getName()==='c').forEach(cell=>{const ref=String(cell.getAttribute('r').getValue()).replace(/\d/g,'');const v=cell.getChildren().filter(x=>x.getName()==='v')[0];let val=v?v.getText():'';const typ=cell.getAttribute('t');if(typ&&typ.getValue()==='s'&&val!=='')val=shared[Number(val)]||'';c[ref]=val;});out.push(c);});
   if(out.length<2)return {added:0,skipped:0};
   const h=out[0]; const map={};Object.keys(h).forEach(k=>map[String(h[k]).trim().toLowerCase()]=k);
-  const amountCol=map['مبلغ']||map['amount']||map['مبلغ تراکنش']; const dateCol=map['تاریخ']||map['date']; const descCol=map['شرح']||map['description']; const trackCol=map['شماره پیگیری']||map['tracking_code']||map['پیگیری'];
+  const amountCol=map['مبلغ']||map['amount']||map['مبلغ تراکنش']; const dateCol=map['تاریخ']||map['date']; const descCol=map['شرح']||map['description']; const trackCol=map['شماره پیگیری']||map['tracking_code']||map['پیگیری']; const accountCol=map['شماره کارت']||map['شماره حساب']||map['حساب']||map['bank account']||map['account'];
   if(!amountCol) throw new Error('ستون مبلغ در فایل بانک پیدا نشد.');
   let added=0,skipped=0; const sh=sheet_('Bank');
-  for(let i=1;i<out.length;i++){const r=out[i];const amount=Number(String(r[amountCol]||'').replace(/,/g,''));if(!amount){skipped++;continue;}const track=String(r[trackCol]||'');const dup=rows_('Bank').some(x=>Number(x.obj.amount)===amount&&String(x.obj.tracking_code||'')===track&&String(x.obj.school_id||'')===String(schoolId||''));if(dup){skipped++;continue;}sh.appendRow([nextId_('Bank'),String(r[dateCol]||''),String(schoolId||''),amount,String(r[descCol]||''),track,'',now_(),'','false','false']);added++;}
+  for(let i=1;i<out.length;i++){const r=out[i];const amount=Number(String(r[amountCol]||'').replace(/,/g,''));if(!amount){skipped++;continue;}const track=String(r[trackCol]||'');const dup=rows_('Bank').some(x=>Number(x.obj.amount)===amount&&String(x.obj.tracking_code||'')===track&&String(x.obj.school_id||'')===String(schoolId||''));if(dup){skipped++;continue;}sh.appendRow([nextId_('Bank'),String(r[dateCol]||''),String(schoolId||''),amount,String(r[descCol]||''),track,String(r[accountCol]||''),now_(),'','false','false']);added++;}
   return {added:added,skipped:skipped};
 }
 function importBankCsv_(base64,schoolId){throw new Error('ورود بانک در این نسخه فقط با فایل XLSX و ستون‌های مبلغ، تاریخ و شماره پیگیری پشتیبانی می‌شود؛ فایل CSV را به XLSX تبدیل کنید.');}
@@ -1170,11 +1172,33 @@ function transactionDelete_(b) {
 
 /* ---------- BANK ---------- */
 
+function bankAnnotationKey_(x){
+  const tracking=String(x.tracking_code||'').trim();
+  return [String(x.school_id||''),String(x.date||'').trim(),String(Number(x.amount)||0),tracking||String(x.bank_account||'').replace(/\D/g,'')].join('|');
+}
 function bank_(b) {
   const u=auth_(b);
   let data=rows_('Bank').map(x=>x.obj);
-  if(u.role!=='senior') data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  const annotations=rows_('BankAnnotations').map(x=>x.obj);
+  const byKey={}; annotations.forEach(a=>byKey[bankAnnotationKey_(a)]=a);
+  data=data.map(x=>{const a=byKey[bankAnnotationKey_(x)];return a?Object.assign({},x,{assigned_student_id:a.student_id?Number(a.student_id):undefined,assigned_student_name:a.student_name||'',assigned_purpose:a.purpose||'',annotation_updated_at:a.updated_at}):x;});
+  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>String(x.school_id)===String(u.school_id));
   return {success:true,data:data};
+}
+function bankAnnotationSave_(b){
+  const u=auth_(b);
+  const schoolId=String(b.school_id||u.school_id||'');
+  if(u.role!=='senior' && u.role!=='admin' && schoolId!==String(u.school_id)) throw new Error('دسترسی به این مدرسه مجاز نیست.');
+  const date=String(b.date||'').trim(), amount=Number(b.amount||0), tracking=String(b.tracking_code||'').trim(), account=String(b.bank_account||'').trim();
+  if(!date || !amount) throw new Error('تاریخ و مبلغ تراکنش برای ثبت تخصیص الزامی است.');
+  const key=bankAnnotationKey_({school_id:schoolId,date:date,amount:amount,tracking_code:tracking,bank_account:account});
+  const sh=sheet_('BankAnnotations');
+  const hit=rows_('BankAnnotations').find(x=>bankAnnotationKey_(x.obj)===key);
+  const studentId=String(b.student_id||'');
+  if(studentId){const student=findRow_('Students',studentId);if(!student)throw new Error('دانش‌آموز انتخاب‌شده یافت نشد.');if(u.role!=='senior'&&String(student.obj.school_id)!==String(u.school_id))throw new Error('دانش‌آموز متعلق به مدرسه دیگری است.');}
+  const values=[hit?hit.obj.id:Utilities.getUuid(),schoolId,date,amount,tracking,account,studentId,String(b.student_name||''),String(b.purpose||''),u.id,now_()];
+  if(hit) updateRow_('BankAnnotations',hit.row,values); else sh.appendRow(values);
+  return {success:true,message:'تخصیص تراکنش بانکی ذخیره شد.'};
 }
 
 function bankReview_(b) {
