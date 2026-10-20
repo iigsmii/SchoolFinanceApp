@@ -1,4 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import { useApp } from './context/AppContext';
 import { LoginScreen } from './components/screens/LoginScreen';
 import { DashboardScreen } from './components/screens/DashboardScreen';
@@ -32,51 +34,60 @@ export const App: React.FC = () => {
     accentColor,
   } = useApp();
 
-  // Keep Android/browser Back inside the app. A guard entry is installed on mount
-  // and replenished after every popstate so WebView does not navigate away from the app.
+  // Keep a fresh navigation callback without repeatedly tearing down native listeners.
+  const goBackRef = useRef(goBack);
   useEffect(() => {
-    const installBackGuard = () => {
-      try { window.history.pushState({ screen: 'app-back-guard' }, '', window.location.href); } catch {}
-    };
-    installBackGuard();
+    goBackRef.current = goBack;
+  }, [goBack]);
 
-    let handlingBack = false;
-    const handlePopState = () => {
-      if (handlingBack) return;
-      handlingBack = true;
-      try { goBack(); } finally {
-        installBackGuard();
-        // Release on the next microtask without relying on browser timers.
-        Promise.resolve().then(() => { handlingBack = false; });
+  // Browser Back and Android's native Back are separate events. Capacitor's
+  // App plugin is the supported native entry point; popstate is only the web fallback.
+  useEffect(() => {
+    const installBrowserGuard = () => {
+      try {
+        window.history.pushState({ screen: 'app-back-guard' }, '', window.location.href);
+      } catch {
+        // Some embedded WebViews restrict history state changes.
       }
     };
 
-    const handleHardwareBack = (e: Event) => {
-      e.preventDefault();
-      handlePopState();
+    installBrowserGuard();
+    let handlingBack = false;
+    const dispatchBack = () => {
+      if (handlingBack) return;
+      handlingBack = true;
+      try {
+        goBackRef.current();
+      } finally {
+        installBrowserGuard();
+        queueMicrotask(() => { handlingBack = false; });
+      }
     };
 
+    const handlePopState = () => dispatchBack();
     window.addEventListener('popstate', handlePopState);
-    document.addEventListener('backbutton', handleHardwareBack);
 
-    // Capacitor's App plugin must be present in the Android build to intercept native Back.
-    let capacitorListenerRemove: (() => void) | null = null;
-    const capacitorApp = (window as any).Capacitor?.Plugins?.App || (window as any).Capacitor?.App;
-    if (capacitorApp && typeof capacitorApp.addListener === 'function') {
-      Promise.resolve(capacitorApp.addListener('backButton', (event: any) => {
-        event?.preventDefault?.();
-        handlePopState();
-      })).then((handler: any) => {
-        if (handler && typeof handler.remove === 'function') capacitorListenerRemove = () => handler.remove();
-      }).catch(() => {});
-    }
+    let listenerHandle: { remove: () => Promise<void> | void } | undefined;
+    let disposed = false;
+    // App.addListener is backed by the native Android plugin after cap sync.
+    CapacitorApp.addListener('backButton', () => dispatchBack())
+      .then((handle) => {
+        if (disposed) {
+          void handle.remove();
+        } else {
+          listenerHandle = handle;
+        }
+      })
+      .catch(() => {
+        // On ordinary browsers there is no native plugin; popstate remains active.
+      });
 
     return () => {
+      disposed = true;
       window.removeEventListener('popstate', handlePopState);
-      document.removeEventListener('backbutton', handleHardwareBack);
-      if (capacitorListenerRemove) capacitorListenerRemove();
+      if (listenerHandle) void listenerHandle.remove();
     };
-  }, [goBack]);
+  }, []);
 
   if (!currentUser) {
     return <LoginScreen />;
@@ -84,10 +95,9 @@ export const App: React.FC = () => {
 
   const handleExitApp = () => {
     setShowExitModal(false);
-    // If native Capacitor Android app, exit gracefully
-    const capacitorApp = (window as any).Capacitor?.Plugins?.App || (window as any).Capacitor?.App;
-    if (capacitorApp && typeof capacitorApp.exitApp === 'function') {
-      capacitorApp.exitApp();
+    // Exit only after the user explicitly confirms the dashboard exit prompt.
+    if (Capacitor.isNativePlatform()) {
+      void CapacitorApp.exitApp();
     } else {
       logout();
     }

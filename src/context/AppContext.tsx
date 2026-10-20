@@ -315,21 +315,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [screenHistory, setScreenHistory] = useState<ScreenType[]>([]);
   const [showExitModal, setShowExitModal] = useState<boolean>(false);
 
-  // Initialize browser history trap on mount so hardware back button does not abruptly exit
-  useEffect(() => {
-    try {
-      window.history.replaceState({ screen: 'dashboard', root: true }, '', '');
-    } catch {}
-  }, []);
-
+  // AppContext owns the in-app screen stack. Browser history is handled only
+  // by App.tsx as a back-event guard, avoiding duplicate history stacks.
   const setCurrentScreen = (newScreen: ScreenType) => {
     setCurrentScreenState((prev) => {
-      if (prev !== newScreen) {
-        setScreenHistory((h) => [...h, prev]);
-        try {
-          window.history.pushState({ screen: newScreen }, '', '');
-        } catch {}
-      }
+      if (prev !== newScreen) setScreenHistory((h) => [...h, prev]);
       return newScreen;
     });
   };
@@ -343,9 +333,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCurrentScreenState('dashboard');
     } else {
       setShowExitModal(true);
-      try {
-        window.history.pushState({ screen: 'dashboard', root: true }, '', '');
-      } catch {}
     }
   };
 
