@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
-import { exportParsianExcel } from '../../utils/parsian';
 import {
   Palette,
   Type,
@@ -38,9 +37,6 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
     setFontScale,
     logout,
     accentColor,
-    transactions,
-    students,
-    schools,
     currentUser,
     googleUser,
     googleAccessToken,
@@ -59,15 +55,10 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
   } = useApp();
 
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
-  const [exportSchoolId, setExportSchoolId] = useState<number>(0);
   const [updateMsg, setUpdateMsg] = useState<string | null>(null);
   const [inputSheetId, setInputSheetId] = useState(spreadsheetId);
   const [inputWebAppUrl, setInputWebAppUrl] = useState(webAppUrl);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
-
-  const handleExportParsian = () => {
-    exportParsianExcel(transactions, students, schools, exportSchoolId);
-  };
 
   const handleCheckUpdate = () => {
     setUpdateMsg('نسخه فعلی v2.15.0 آخرین نسخه پایدار سامانه مدرسة القرآن می‌باشد و نرم‌افزار به‌روز است.');
