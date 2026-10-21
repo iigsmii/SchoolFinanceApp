@@ -720,15 +720,6 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
 
                   <div className="flex items-center gap-1.5">
                     <button
-                      onClick={() => setInvoiceStudent(item.student)}
-                      className="px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-[#62205f] font-bold text-[11px] flex items-center gap-1 border border-purple-200 transition-all active:scale-95"
-                      title="فاکتور رسمی"
-                    >
-                      <FileText className="w-3.5 h-3.5" />
-                      <span>فاکتور</span>
-                    </button>
-
-                    <button
                       onClick={() => {
                         setCurrentScreen('sms_reminders');
                       }}
