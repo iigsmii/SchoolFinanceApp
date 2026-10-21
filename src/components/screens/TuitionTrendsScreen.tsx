@@ -26,7 +26,7 @@ import {
   CheckCircle,
 } from 'lucide-react';
 
-export const TuitionTrendsScreen: React.FC = () => {
+export const TuitionTrendsScreen: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const { transactions, schools, currentUser, accentColor } = useApp();
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
 
@@ -127,10 +127,10 @@ export const TuitionTrendsScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8f5f9] pb-16 w-full max-w-full overflow-x-hidden">
-      <Header title="روند شهریه‌های دریافتی" />
+    <div className={embedded ? "w-full min-w-0 space-y-5" : "min-h-screen bg-[#f8f5f9] pb-16 w-full max-w-full overflow-x-hidden"}>
+      {!embedded && <Header title="روند شهریه‌های دریافتی" />}
 
-      <main className="max-w-4xl mx-auto px-4 py-6 space-y-5 w-full min-w-0">
+      <main className={embedded ? "w-full min-w-0 space-y-5" : "max-w-4xl mx-auto px-4 py-6 space-y-5 w-full min-w-0"}>
         {/* Banner */}
         <div
           className="rounded-3xl p-6 text-white shadow-xl relative overflow-hidden"
