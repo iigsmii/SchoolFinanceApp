@@ -19,11 +19,14 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
   balance,
   onClose,
 }) => {
-  const { managerSignature, setManagerSignature, accentColor, getStudentBalance } = useApp();
+  const { managerSignature, setManagerSignature, accentColor, getStudentBalance, sendSmsReminder, smsConfig } = useApp();
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState('');
   const [paperSize, setPaperSize] = useState<'a4' | 'a5'>('a4');
+  const [showSmsOptions, setShowSmsOptions] = useState(false);
+  const [smsRecipient, setSmsRecipient] = useState<'mother' | 'father'>('mother');
+  const [smsMethod, setSmsMethod] = useState<'phone' | 'system'>('phone');
   const [hadithRandomSeed] = useState(() => Math.random());
 
   useEffect(() => {
@@ -115,16 +118,29 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
 
   const handlePaymentSms = () => {
     const remaining = getStudentBalance(student.id).debt;
-    const phone = (student.father_phone || student.phone || student.mother_phone || '').trim();
+    const preferredPhone = smsRecipient === 'mother'
+      ? (student.mother_phone || '')
+      : (student.father_phone || student.phone || '');
+    const phone = preferredPhone.trim();
     if (!phone) {
-      window.alert('برای این دانش‌آموز شماره تلفن ثبت نشده است.');
+      window.alert(smsRecipient === 'mother'
+        ? 'شماره تلفن مادر ثبت نشده است.'
+        : 'شماره تلفن پدر ثبت نشده است.');
       return;
     }
-    const message = `اولیای گرامی دانش‌آموز ${student.name}، از پرداخت شهریه شما سپاسگزاریم. مبلغ پرداختی ثبت شد و مانده شهریه ${formatRial(remaining)} ریال است. با احترام، مدرسة القرآن الکریم شهرضا`;
-    const separator = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? '&' : '?';
-    window.location.href = `sms:${phone}${separator}body=${encodeURIComponent(message)}`;
+    const message = `ولی گرامی دانش‌آموز ${student.name}، از پرداخت شهریه سپاسگزاریم. مانده شهریه ${formatRial(remaining)} ریال است. با احترام، مدرسة القرآن الکریم شهرضا`;
+    if (smsMethod === 'phone') {
+      const separator = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? '&' : '?';
+      window.location.href = `sms:${phone}${separator}body=${encodeURIComponent(message)}`;
+      setShowSmsOptions(false);
+      return;
+    }
+    if (!smsConfig.enabled || !smsConfig.apiUrl || !smsConfig.apiKey) {
+      window.alert('برای ارسال از سامانه، ابتدا پنل پیامک و اطلاعات وب‌سرویس را در بخش «سامانه پیامک» تنظیم و فعال کنید. این برنامه در حال حاضر ارسال مستقیم از این صفحه را به وب‌سرویس متصل نکرده است.');
+      return;
+    }
+    window.alert('ارسال مستقیم از پنل پیامک هنوز در این صفحه پیاده‌سازی نشده است؛ برای جلوگیری از ثبت ارسالِ غیرواقعی، پیامک ارسال نشد. فعلاً «از گوشی» را انتخاب کنید یا از صفحه «سامانه پیامک» استفاده کنید.');
   };
-
   const studentTxs = transactions
     .filter((t) => t.student_id === student.id)
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -154,7 +170,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
               <span>{managerSignature ? 'ویرایش امضای فاکتور' : 'افزودن امضای رسمی'}</span>
             </button>
             <button
-              onClick={handlePaymentSms}
+              onClick={() => setShowSmsOptions((v) => !v)}
               className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 active:scale-95 transition-all shadow-sm"
               title="آماده‌سازی پیام تشکر و مانده شهریه در برنامه پیامک گوشی"
             >
@@ -178,6 +194,32 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
             </button>
           </div>
         </div>
+
+        {showSmsOptions && (
+          <div className="no-print mx-4 mt-3 rounded-2xl border border-sky-200 bg-sky-50 p-4 space-y-3">
+            <div className="font-bold text-sm text-sky-950">تنظیم ارسال پیام به ولی دانش‌آموز</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1 text-xs font-bold text-slate-700">
+                گیرنده پیام
+                <select value={smsRecipient} onChange={(e) => setSmsRecipient(e.target.value as 'mother' | 'father')} className="rounded-xl border border-slate-300 bg-white p-2.5 text-sm">
+                  <option value="mother">مادر {student.mother_phone ? `(${student.mother_phone})` : '(شماره ثبت نشده)'}</option>
+                  <option value="father">پدر {student.father_phone || student.phone ? `(${student.father_phone || student.phone})` : '(شماره ثبت نشده)'}</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-bold text-slate-700">
+                روش ارسال
+                <select value={smsMethod} onChange={(e) => setSmsMethod(e.target.value as 'phone' | 'system')} className="rounded-xl border border-slate-300 bg-white p-2.5 text-sm">
+                  <option value="phone">از پیامک گوشی</option>
+                  <option value="system">از سامانه پیامک مدرسه</option>
+                </select>
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={handlePaymentSms} className="rounded-xl px-4 py-2.5 text-sm font-bold text-white" style={{ backgroundColor: accentColor }}>ادامه</button>
+              <button type="button" onClick={() => setShowSmsOptions(false)} className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700">انصراف</button>
+            </div>
+          </div>
+        )}
 
         {pdfError && <div className="no-print mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">{pdfError} اگر اینترنت در دسترس نیست، از گزینه «چاپ» استفاده کنید.</div>}
 
