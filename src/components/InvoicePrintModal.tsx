@@ -354,13 +354,39 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
             <div className="font-black">با سپاس از اعتماد و پرداخت به‌موقع شما</div>
             از همراهی شما خانواده گرامی در تأمین هزینه‌های آموزشی و تربیتی فرزندانمان صمیمانه سپاسگزاریم. برای دانش‌آموز عزیزتان، توفیق و پیشرفت روزافزون آرزومندیم.
           </div>
-          {/* Verified short narration about fair financial dealings */}
-          <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center">
-            <div className="mb-1 text-[11px] font-bold text-amber-900">یادآوری از سیره پیامبر اکرم ﷺ</div>
-            <div className="text-sm font-bold leading-7 text-[#5b4218]">«رَحِمَ اللهُ رَجُلًا سَمْحًا إِذَا بَاعَ وَإِذَا اشْتَرَى وَإِذَا اقْتَضَى»</div>
-            <div className="mt-1 text-[11px] leading-5 text-amber-900">خدا رحمت کند کسی را که هنگام معامله و مطالبه حق، با گذشت و آسان‌گیری رفتار می‌کند.</div>
-            <div className="mt-1 text-[10px] text-amber-800">منبع: صحیح بخاری، حدیث ۲۰۷۶</div>
-          </div>
+          {/* Short Shia narration on fairness in financial dealings */}
+          {(() => {
+            const shiaNarrations = [
+              {
+                narrator: 'امام جعفر صادق (علیه‌السلام)',
+                text: '«أَنْصِفِ النَّاسَ مِنْ نَفْسِكَ»',
+                meaning: 'با مردم منصفانه رفتار کن و همان را برای آنان بخواه که برای خود می‌خواهی.',
+                source: 'الکافی، جلد ۲، صفحه ۴۷۴، باب الإنصاف والعدل'
+              },
+              {
+                narrator: 'امام جعفر صادق (علیه‌السلام)، به نقل از روایت الکافی',
+                text: '«وَمُؤَاسَاتُكَ الْأَخَ فِي الْمَالِ»',
+                meaning: 'از نشانه‌های نیکی، همراهی و یاری برادر دینی در امور مالی است.',
+                source: 'الکافی، جلد ۲، صفحه ۴۷۴، باب الإنصاف والعدل'
+              },
+              {
+                narrator: 'امام سجاد زین‌العابدین (علیه‌السلام)، از پیامبر اکرم (صلی‌الله‌علیه‌وآله)',
+                text: '«وَأَنْصَفَ النَّاسَ مِنْ نَفْسِهِ»',
+                meaning: 'خوشا به حال کسی که با مردم از روی انصاف رفتار کند.',
+                source: 'الکافی، جلد ۲، صفحه ۴۷۴، باب الإنصاف والعدل'
+              }
+            ];
+            const narration = shiaNarrations[Math.abs(String(student.id).split('').reduce((sum, char) => sum + char.charCodeAt(0), 0)) % shiaNarrations.length];
+            return (
+              <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center">
+                <div className="mb-1 text-[11px] font-bold text-amber-900">روایتی از منابع شیعه درباره انصاف و رفتار مالی</div>
+                <div className="mb-1 text-[11px] font-bold text-[#5b4218]">صادرکننده روایت: {narration.narrator}</div>
+                <div className="text-sm font-bold leading-7 text-[#5b4218]">{narration.text}</div>
+                <div className="mt-1 text-[11px] leading-5 text-amber-900">{narration.meaning}</div>
+                <div className="mt-1 text-[10px] text-amber-800">منبع: {narration.source}</div>
+              </div>
+            );
+          })()}
 
           {/* Footer Official Seal and Signature */}
           <div className="pt-6 border-t border-gray-200 flex justify-between items-end text-xs text-gray-500">
