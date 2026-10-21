@@ -223,7 +223,7 @@ export const BankScreen: React.FC = () => {
             card_number: cardNumber.replace(/\D/g, ''),
             terminal_number: terminal,
             balance: balance || undefined,
-            direction: debit > 0 ? 'withdrawal' as const : credit > 0 ? 'deposit' as const : 'unknown' as const,
+            direction: isPosReport ? 'deposit' as const : debit > 0 ? 'withdrawal' as const : credit > 0 ? 'deposit' as const : 'unknown' as const,
             description: desc || (debit ? 'برداشت بانکی' : credit ? 'واریز بانکی' : 'تراکنش بانکی'),
           };
         }).filter((x): x is NonNullable<typeof x> => x !== null);
