@@ -7,7 +7,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-release-apk:
@@ -146,3 +146,30 @@ jobs:
           path: output/SchoolFinanceApp-*-release.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish APK as a GitHub Release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_PATH="$(find output -maxdepth 1 -name 'SchoolFinanceApp-*-release.apk' -print -quit)"
+          if [ -z "$APK_PATH" ] || [ ! -s "$APK_PATH" ]; then
+            echo "::error::Signed APK missing; refusing to publish release"
+            exit 1
+          fi
+          RELEASE_TAG="v${APP_VERSION}-build-${GITHUB_RUN_NUMBER}"
+          gh release create "$RELEASE_TAG" "$APK_PATH" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "SchoolFinanceApp ${APP_VERSION} (build ${GITHUB_RUN_NUMBER})" \
+            --notes "نسخه آماده نصب برنامه SchoolFinanceApp. فایل APK امضاشده را مستقیماً از بخش Assets دریافت کنید."
+          APK_NAME="$(basename "$APK_PATH")"
+          APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${APK_NAME}"
+          {
+            echo "## نسخه آماده نصب اندروید"
+            echo ""
+            echo "- نسخه: ${APP_VERSION}"
+            echo "- فایل APK: [دانلود مستقیم برنامه](${APK_URL})"
+            echo "- تگ انتشار: ${RELEASE_TAG}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "APK direct download URL: ${APK_URL}"
