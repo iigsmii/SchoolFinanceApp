@@ -23,6 +23,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState('');
+  const [paperSize, setPaperSize] = useState<'a4' | 'a5'>('a4');
 
   useEffect(() => {
     const handleAppBack = () => {
@@ -52,7 +53,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
     setPdfError('');
     setIsPdfLoading(true);
     try {
-      await loadPdfScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', () => typeof (window as any).html2canvas === 'function');
+      await loadPdfScript('https://unpkg.com/html2canvas-pro@1.5.11/dist/html2canvas-pro.min.js', () => typeof (window as any).html2canvas === 'function');
       await loadPdfScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', () => Boolean((window as any).jspdf?.jsPDF));
       const target = document.getElementById('printable-invoice');
       if (!target) throw new Error('محتوای فاکتور پیدا نشد.');
@@ -73,8 +74,8 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
       });
       const JsPDF = (window as any).jspdf.jsPDF;
       const pdf = new JsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
-      const pageWidth = 210;
-      const pageHeight = 297;
+      const pageWidth = paperSize === 'a4' ? 210 : 148;
+      const pageHeight = paperSize === 'a4' ? 297 : 210;
       const margin = 8;
       const printableWidth = pageWidth - margin * 2;
       const printableHeight = pageHeight - margin * 2;
@@ -134,6 +135,11 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
             <span className="text-sm font-bold text-[#341648]">پیش‌نمایش و صدور فاکتور رسمی</span>
           </div>
           <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1" aria-label="اندازه برگه PDF">
+              <span className="px-1 text-[11px] font-bold text-slate-500">برگه</span>
+              <button type="button" onClick={() => setPaperSize('a4')} className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors ${paperSize === 'a4' ? 'bg-[#1b365d] text-white' : 'text-slate-600 hover:bg-slate-100'}`}>A4</button>
+              <button type="button" onClick={() => setPaperSize('a5')} className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors ${paperSize === 'a5' ? 'bg-[#1b365d] text-white' : 'text-slate-600 hover:bg-slate-100'}`}>A5</button>
+            </div>
             <button
               onClick={() => setShowSignatureModal(!showSignatureModal)}
               className="flex items-center gap-1.5 px-3 py-2 bg-purple-50 hover:bg-purple-100 text-[#62205f] border border-purple-200 rounded-xl font-bold text-xs transition-all"
@@ -191,6 +197,8 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
             />
           </div>
         )}
+
+        <style>{`@media print { @page { size: ${'${paperSize}'} portrait; margin: 8mm; } .invoice-print-root { position: static !important; inset: auto !important; display: block !important; background: white !important; padding: 0 !important; overflow: visible !important; } #printable-invoice { overflow: visible !important; max-height: none !important; } }`}</style>
 
         {/* Invoice Printable Area */}
         <div id="printable-invoice" className="p-6 sm:p-10 overflow-y-auto font-['Vazirmatn',sans-serif] bg-white text-[#232d3a] flex-1">
@@ -290,7 +298,8 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                         <td className="p-3 text-center text-gray-500 font-mono">{idx + 1}</td>
                         <td className="p-3 font-mono font-medium text-gray-700">{jalaliFromGregorian(t.date)}</td>
                         <td className="p-3">
-                          <div className="font-semibold text-[#1b365d]">{t.description || t.comment || '—'}</div>
+                          <div className="font-semibold text-[#1b365d]">{isDebt ? (t.description || t.comment || 'ثبت بدهی شهریه') : 'پرداخت بابت شهریه مصوب'}</div>
+                          {!isDebt && (t.description || t.comment) && <div className="mt-0.5 text-[10px] text-gray-500">جزئیات: {t.description || t.comment}</div>}
                           {t.tracking_code && (
                             <div className="text-[11px] text-gray-500 mt-0.5">
                               روش: {t.payment_method || 'بانک'} | پیگیری: {t.tracking_code}
