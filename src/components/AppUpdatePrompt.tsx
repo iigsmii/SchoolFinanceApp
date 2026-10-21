@@ -28,8 +28,8 @@ async function getLatestUpdate(webAppUrl: string): Promise<UpdateInfo | null> {
   }
   const result = await postToAppsScript({ action: 'app_version' }, webAppUrl);
   if (!result.success) return null;
-  const info = result as UpdateInfo;
-  return info.version && info.apk_url && /^https:\/\//i.test(info.apk_url) ? info : null;
+  const info = ((result as any).data && typeof (result as any).data === 'object' ? (result as any).data : result) as Partial<UpdateInfo>;
+  return info.version && info.apk_url && /^https:\/\//i.test(info.apk_url) ? (info as UpdateInfo) : null;
 }
 export const AppUpdatePrompt: React.FC = () => {
   const { currentUser, webAppUrl } = useApp();
