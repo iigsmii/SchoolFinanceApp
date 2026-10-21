@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - latest-version.json
 
 permissions:
   contents: write
@@ -35,6 +37,23 @@ jobs:
           .icon-venv/bin/pip install Pillow
           .icon-venv/bin/python scripts/generate-icons.py
 
+      - name: Set version for this build
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_VERSION="$(node -p "require('./package.json').version")"
+          VERSION_PREFIX="$(echo "$BASE_VERSION" | awk -F. '{print $1 "." $2}')"
+          APP_VERSION="${VERSION_PREFIX}.${GITHUB_RUN_NUMBER}"
+          npm version "$APP_VERSION" --no-git-tag-version --allow-same-version
+          VERSION_CODE=$((21600 + GITHUB_RUN_NUMBER))
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          GRADLE_FILE="android/app/build.gradle"
+          mkdir -p android/app
+          if [ ! -f "$GRADLE_FILE" ]; then
+            echo "::notice::Gradle file will be created by Capacitor; version will be applied after sync."
+          fi
+
       - name: Build app bundle
         run: npm run build
 
@@ -50,6 +69,15 @@ jobs:
           npx cap sync android
           .icon-venv/bin/python scripts/generate-icons.py
 
+      - name: Set Android version
+        shell: bash
+        run: |
+          set -euo pipefail
+          GRADLE_FILE="android/app/build.gradle"
+          test -f "$GRADLE_FILE"
+          sed -i -E "s/versionCode[[:space:]]+[0-9]+/versionCode $VERSION_CODE/" "$GRADLE_FILE"
+          sed -i -E "s/versionName[[:space:]]+\"[^\"]*\"/versionName \"$APP_VERSION\"/" "$GRADLE_FILE"
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -59,29 +87,12 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          # The legacy 'tools' package is no longer available from Google's SDK repository.
           packages: platform-tools
 
       - name: Install Android SDK packages
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
-
-      - name: Set version
-        shell: bash
-        run: |
-          set -euo pipefail
-          APP_VERSION="$(node -p "require('./package.json').version")"
-          VERSION_CODE=$((21600 + GITHUB_RUN_NUMBER))
-          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
-          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
-          GRADLE_FILE="android/app/build.gradle"
-          if [ ! -f "$GRADLE_FILE" ]; then
-            echo "::error::Capacitor did not create android/app/build.gradle"
-            exit 1
-          fi
-          sed -i -E "s/versionCode[[:space:]]+[0-9]+/versionCode $VERSION_CODE/" "$GRADLE_FILE"
-          sed -i -E "s/versionName[[:space:]]+\"[^\"]*\"/versionName \"$APP_VERSION\"/" "$GRADLE_FILE"
 
       - name: Validate release signing secrets
         shell: bash
@@ -138,38 +149,52 @@ jobs:
           "$BUILD_TOOLS/zipalign" -c -v 4 "$SIGNED_APK"
           mkdir -p output
           cp "$SIGNED_APK" output/
+          cp "$SIGNED_APK" output/SchoolFinanceApp-latest.apk
 
-      - name: Upload signed Release APK
+      - name: Upload signed APK artifacts
         uses: actions/upload-artifact@v4
         with:
           name: SchoolFinanceApp-release-${{ github.run_number }}
-          path: output/SchoolFinanceApp-*-release.apk
+          path: output/SchoolFinanceApp-*.apk
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish APK as a GitHub Release asset
+      - name: Publish APK and refresh automatic update manifest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-          APK_PATH="$(find output -maxdepth 1 -name 'SchoolFinanceApp-*-release.apk' -print -quit)"
-          if [ -z "$APK_PATH" ] || [ ! -s "$APK_PATH" ]; then
-            echo "::error::Signed APK missing; refusing to publish release"
-            exit 1
-          fi
+          APK_PATH="output/SchoolFinanceApp-latest.apk"
+          test -s "$APK_PATH"
           RELEASE_TAG="v${APP_VERSION}-build-${GITHUB_RUN_NUMBER}"
           gh release create "$RELEASE_TAG" "$APK_PATH" \
             --repo "$GITHUB_REPOSITORY" \
             --title "SchoolFinanceApp ${APP_VERSION} (build ${GITHUB_RUN_NUMBER})" \
-            --notes "نسخه آماده نصب برنامه SchoolFinanceApp. فایل APK امضاشده را مستقیماً از بخش Assets دریافت کنید."
-          APK_NAME="$(basename "$APK_PATH")"
-          APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${APK_NAME}"
+            --notes "نسخه آماده نصب برنامه SchoolFinanceApp. این انتشار به‌صورت خودکار ساخته شده است."
+          APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/SchoolFinanceApp-latest.apk"
+          LAST_CHANGE="$(git log -1 --pretty=%s | tr '\\n' ' ' | sed 's/"/\\"/g')"
+          BUILD_TIME="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          cat > latest-version.json <<EOF
+          {
+            "version": "${APP_VERSION}",
+            "apk_url": "${APK_URL}",
+            "notes": "${LAST_CHANGE}",
+            "build": ${GITHUB_RUN_NUMBER},
+            "published_at": "${BUILD_TIME}"
+          }
+          EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add latest-version.json
+          git commit -m "chore: update latest Android build manifest [skip ci]" || echo "Manifest unchanged"
+          git push origin HEAD:main
           {
             echo "## نسخه آماده نصب اندروید"
             echo ""
             echo "- نسخه: ${APP_VERSION}"
-            echo "- فایل APK: [دانلود مستقیم برنامه](${APK_URL})"
-            echo "- تگ انتشار: ${RELEASE_TAG}"
+            echo "- لینک مستقیم آخرین APK: [دانلود برنامه](${APK_URL})"
+            echo "- فایل وضعیت به‌روزرسانی: https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/latest-version.json"
+            echo "- آخرین تغییر ثبت‌شده: ${LAST_CHANGE}"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "APK direct download URL: ${APK_URL}"
