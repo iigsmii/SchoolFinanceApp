@@ -130,13 +130,28 @@ export const BankScreen: React.FC = () => {
       return Number.isFinite(n) ? Math.abs(n) : 0;
     };
     const toDate = (value: unknown) => {
+      // Excel serials are Gregorian; bank/POS exports often contain Jalali dates as text.
       if (typeof value === 'number' && value > 0 && value < 100000) {
         const date = XLSX.SSF.parse_date_code(value);
-        if (date) return `${date.y}-${String(date.m).padStart(2,'0')}-${String(date.d).padStart(2,'0')}`;
+        if (date) return String(date.y) + '-' + String(date.m).padStart(2,'0') + '-' + String(date.d).padStart(2,'0');
       }
       const text = toDigits(value).trim();
-      const iso = text.match(/(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
-      if (iso) return `${iso[1]}-${iso[2].padStart(2,'0')}-${iso[3].padStart(2,'0')}`;
+      const compact = text.match(/^(\d{4})(\d{2})(\d{2})$/);
+      const separated = text.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})$/);
+      const parts = compact ? [compact[1], compact[2], compact[3]] : separated ? [separated[1], separated[2], separated[3]] : null;
+      if (parts) {
+        const year = Number(parts[0]);
+        const month = Number(parts[1]);
+        const day = Number(parts[2]);
+        if (year >= 1300 && year <= 1500) {
+          try {
+            return jalaliToIso(String(parts[0]) + '/' + String(month).padStart(2, '0') + '/' + String(day).padStart(2, '0'));
+          } catch {
+            return text;
+          }
+        }
+        return String(parts[0]) + '-' + String(month).padStart(2,'0') + '-' + String(day).padStart(2,'0');
+      }
       return text || todayGregorian();
     };
 
@@ -146,15 +161,28 @@ export const BankScreen: React.FC = () => {
         const wb = XLSX.read(evt.target?.result, { type: 'array', cellDates: true });
         let data: Record<string, unknown>[] = [];
         let sourceName = '';
-        // Find the first sheet with recognizable bank headers, not blindly the first sheet.
+        let fileAccountNumber = '';
+        let isPosReport = false;
+        // Find a sheet with recognizable transaction headers and read account metadata separately.
         for (const sheetName of wb.SheetNames) {
           const matrix = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sheetName], { header: 1, defval: '' });
+          for (const row of matrix.slice(0, 12)) {
+            for (let i = 0; i < row.length; i++) {
+              if (normalize(row[i]).includes('شمارهحساب')) {
+                const candidate = row.slice(i + 1).map((v) => toDigits(v).replace(/\D/g, '')).find((v) => v.length >= 10);
+                if (candidate) fileAccountNumber = candidate;
+              }
+            }
+          }
           const headerRowIndex = matrix.slice(0, 12).findIndex((row) => {
             const h = row.map(normalize);
             return h.some((x) => ['تاریخ','تاریختراکنش','date','transactiondate'].includes(x)) &&
               h.some((x) => ['مبلغ','amount','برداشت','واریز','بدهکار','بستانکار','مبلغتراکنش'].includes(x));
           });
           if (headerRowIndex >= 0) {
+            const headerValues = (matrix[headerRowIndex] || []).map(normalize);
+            isPosReport = headerValues.some((x) => x.includes('کدپایانه') || x.includes('terminalid')) &&
+              headerValues.some((x) => x.includes('تاریخواریز') || x.includes('settlementdate'));
             const rows = matrix.slice(headerRowIndex).map((r) => r as unknown[]);
             const headers = (rows.shift() || []).map((x) => String(x ?? '').trim());
             data = rows.map((r) => Object.fromEntries(headers.map((h, i) => [h, r[i] ?? ''])));
@@ -163,6 +191,12 @@ export const BankScreen: React.FC = () => {
           }
         }
         if (!data.length) throw new Error('ستون‌های تاریخ و مبلغ/برداشت/واریز در ۱۲ ردیف ابتدایی هیچ برگه‌ای پیدا نشد.');
+        // The account printed on a POS report is a merchant/report identifier, not the bank account suffix.
+        const bankAccountSuffix = !isPosReport && fileAccountNumber ? fileAccountNumber.replace(/\D/g, '').slice(-3) : '';
+        if (bankAccountSuffix === '003') {
+          alert('این صورتحساب مربوط به حساب ۰۰۳ (غدیر) است و برای جلوگیری از ورود اطلاعات غیرمدرسه‌ای، وارد نشد.');
+          return;
+        }
 
         let feeCount = 0;
         let skipped = 0;
@@ -175,7 +209,8 @@ export const BankScreen: React.FC = () => {
           const terminal = toDigits(pick(row, ['شماره پایانه','شماره ترمینال','کد پایانه','پایانه','terminal id','terminal number','pos terminal','terminal'])).replace(/\D/g, '');
           const desc = String(pick(row, ['شرح','شرح تراکنش','توضیحات','بابت','description','details']) || '').trim();
           const date = toDate(pick(row, ['تاریخ','تاریخ تراکنش','تاریخ عملیات','date','transaction date']));
-          const account = String(pick(row, ['شماره حساب','حساب','شماره کارت','شماره کارت مقصد','شماره کارت مبدا','bank account','account','card number']) || '').trim();
+          const cardNumber = String(pick(row, ['شماره کارت','شماره کارت مقصد','شماره کارت مبدا','card number']) || '').trim();
+          const account = String(pick(row, ['شماره حساب','حساب','bank account','account']) || (isPosReport ? '' : fileAccountNumber)).trim();
           const balance = toAmount(pick(row, ['مانده','موجودی','مانده حساب','balance','running balance']));
           if (!amount || (!desc && !track)) { skipped++; return null; }
           if (/(کارمزد|پایا|ساتنا|fee)/i.test(desc)) feeCount++;
@@ -184,8 +219,8 @@ export const BankScreen: React.FC = () => {
             school_id: currentUser?.school_id || 1,
             amount,
             tracking_code: track,
-            bank_account: account || 'حساب بانکی',
-            card_number: account.replace(/\D/g, ''),
+            bank_account: account || (isPosReport ? 'گزارش پوز' : 'حساب بانکی'),
+            card_number: cardNumber.replace(/\D/g, ''),
             terminal_number: terminal,
             balance: balance || undefined,
             direction: debit > 0 ? 'withdrawal' as const : credit > 0 ? 'deposit' as const : 'unknown' as const,
