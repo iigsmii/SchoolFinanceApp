@@ -62,6 +62,14 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
         backgroundColor: '#ffffff',
         logging: false,
         windowWidth: Math.max(target.scrollWidth, 900),
+        onclone: (clonedDocument: Document) => {
+          const clonedInvoice = clonedDocument.getElementById('printable-invoice');
+          if (clonedInvoice) {
+            clonedInvoice.style.overflow = 'visible';
+            clonedInvoice.style.height = 'auto';
+            clonedInvoice.style.maxHeight = 'none';
+          }
+        },
       });
       const JsPDF = (window as any).jspdf.jsPDF;
       const pdf = new JsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
