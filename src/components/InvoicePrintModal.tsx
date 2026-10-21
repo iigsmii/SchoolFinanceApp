@@ -122,7 +122,9 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
     window.location.href = `sms:${phone}${separator}body=${encodeURIComponent(message)}`;
   };
 
-  const studentTxs = transactions.filter((t) => t.student_id === student.id);
+  const studentTxs = transactions
+    .filter((t) => t.student_id === student.id)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   const totalDebit = studentTxs.reduce((sum, t) => sum + (t.debit || 0), 0);
   const totalCredit = studentTxs.reduce((sum, t) => sum + (t.credit || 0), 0);
 
@@ -334,6 +336,30 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                 </tr>
               </tfoot>
             </table>
+          </div>
+
+          {/* Closing balance and thank-you note */}
+          <div className="mb-5 rounded-2xl border-2 border-[#1b365d] bg-[#f3f7fb] p-4 sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-bold text-[#1b365d]">مانده نهایی حساب شهریه</div>
+                <div className="mt-1 text-[11px] text-gray-500">بر اساس گردش‌های ثبت‌شده تا تاریخ صدور این فاکتور</div>
+              </div>
+              <div className={`text-xl sm:text-2xl font-black font-mono ${balance > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
+                {balance > 0 ? `${formatRial(balance)} ریال بدهکار` : balance < 0 ? `${formatRial(Math.abs(balance))} ریال بستانکار` : '۰ ریال — تسویه‌شده'}
+              </div>
+            </div>
+          </div>
+          <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-xs sm:text-sm leading-7 text-emerald-900">
+            <div className="font-black">با سپاس از اعتماد و پرداخت به‌موقع شما</div>
+            از همراهی شما خانواده گرامی در تأمین هزینه‌های آموزشی و تربیتی فرزندانمان صمیمانه سپاسگزاریم. برای دانش‌آموز عزیزتان، توفیق و پیشرفت روزافزون آرزومندیم.
+          </div>
+          {/* Verified short narration about fair financial dealings */}
+          <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center">
+            <div className="mb-1 text-[11px] font-bold text-amber-900">یادآوری از سیره پیامبر اکرم ﷺ</div>
+            <div className="text-sm font-bold leading-7 text-[#5b4218]">«رَحِمَ اللهُ رَجُلًا سَمْحًا إِذَا بَاعَ وَإِذَا اشْتَرَى وَإِذَا اقْتَضَى»</div>
+            <div className="mt-1 text-[11px] leading-5 text-amber-900">خدا رحمت کند کسی را که هنگام معامله و مطالبه حق، با گذشت و آسان‌گیری رفتار می‌کند.</div>
+            <div className="mt-1 text-[10px] text-amber-800">منبع: صحیح بخاری، حدیث ۲۰۷۶</div>
           </div>
 
           {/* Footer Official Seal and Signature */}
