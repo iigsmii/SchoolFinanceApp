@@ -173,7 +173,7 @@ jobs:
             --title "SchoolFinanceApp ${APP_VERSION} (build ${GITHUB_RUN_NUMBER})" \
             --notes "نسخه آماده نصب برنامه SchoolFinanceApp. این انتشار به‌صورت خودکار ساخته شده است."
           APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/SchoolFinanceApp-latest.apk"
-          LAST_CHANGE="$(git log -1 --pretty=%s | tr '\\n' ' ' | sed 's/"/\\"/g')"
+          LAST_CHANGE="$(git log -5 --pretty=format:'%s' | paste -sd '; ' - | sed 's/"/\\"/g')"
           BUILD_TIME="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           cat > latest-version.json <<EOF
           {
