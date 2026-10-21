@@ -34,6 +34,36 @@ export const App: React.FC = () => {
     accentColor,
   } = useApp();
 
+  // Convert Persian and Arabic numerals to ASCII in every editable text field.
+  // Capture phase ensures React's onChange handlers receive the normalized value.
+  useEffect(() => {
+    const normalizeDigits = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
+      if (target instanceof HTMLInputElement && target.type === 'password') return;
+      const original = target.value;
+      const normalized = original.replace(/[۰-۹٠-٩]/g, (digit) => {
+        const code = digit.charCodeAt(0);
+        return String(code >= 0x06f0 && code <= 0x06f9
+          ? code - 0x06f0
+          : code - 0x0660);
+      });
+      if (normalized === original) return;
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+      target.value = normalized;
+      if (start !== null && end !== null) {
+        try {
+          target.setSelectionRange(start, end);
+        } catch {
+          // Some specialized input types do not support selection ranges.
+        }
+      }
+    };
+    document.addEventListener('input', normalizeDigits, true);
+    return () => document.removeEventListener('input', normalizeDigits, true);
+  }, []);
+
   // Keep a fresh navigation callback without repeatedly tearing down native listeners.
   const goBackRef = useRef(goBack);
   useEffect(() => {
