@@ -210,7 +210,11 @@ export const BankScreen: React.FC = () => {
           const terminal = toDigits(pick(row, ['شماره پایانه','شماره ترمینال','کد پایانه','پایانه','terminal id','terminal number','pos terminal','terminal'])).replace(/\D/g, '');
           const desc = String(pick(row, ['شرح','شرح تراکنش','توضیحات','بابت','description','details']) || '').trim();
           const date = toDate(pick(row, ['تاریخ','تاریخ تراکنش','تاریخ عملیات','date','transaction date']));
-          const cardNumber = String(pick(row, ['شماره کارت','شماره کارت مقصد','شماره کارت مبدا','card number']) || '').trim();
+          // Keep source and destination cards separate; don't collapse both into one field.
+          const sourceCardNumber = toDigits(pick(row, ['شماره کارت مبدا','کارت مبدا','شماره کارت برداشت','کارت برداشت','source card number','from card','source card'])).replace(/\D/g, '');
+          const destinationCardNumber = toDigits(pick(row, ['شماره کارت مقصد','کارت مقصد','شماره کارت واریز','کارت واریز','destination card number','to card','destination card'])).replace(/\D/g, '');
+          const genericCardNumber = toDigits(pick(row, ['شماره کارت','card number','card no'])).replace(/\D/g, '');
+          const cardNumber = genericCardNumber || sourceCardNumber || destinationCardNumber;
           const account = String(pick(row, ['شماره حساب','حساب','bank account','account']) || (isPosReport ? '' : fileAccountNumber)).trim();
           const balance = toAmount(pick(row, ['مانده','موجودی','مانده حساب','balance','running balance']));
           if (!amount || (!desc && !track)) { skipped++; return null; }
@@ -221,7 +225,9 @@ export const BankScreen: React.FC = () => {
             amount,
             tracking_code: track,
             bank_account: account || (isPosReport ? 'گزارش پوز' : 'حساب بانکی'),
-            card_number: cardNumber.replace(/\D/g, ''),
+            card_number: cardNumber,
+            source_card_number: sourceCardNumber || undefined,
+            destination_card_number: destinationCardNumber || undefined,
             terminal_number: terminal,
             balance: balance || undefined,
             direction: isPosReport ? 'deposit' as const : debit > 0 ? 'withdrawal' as const : credit > 0 ? 'deposit' as const : 'unknown' as const,
@@ -276,6 +282,7 @@ export const BankScreen: React.FC = () => {
             date: item.date, school_id: item.school_id, amount: item.amount,
             description: item.description || '', tracking_code: item.tracking_code || '',
             bank_account: item.bank_account || '', card_number: item.card_number || '',
+            source_card_number: item.source_card_number || '', destination_card_number: item.destination_card_number || '',
             balance: item.balance ?? '', direction: item.direction || 'unknown',
             terminal_number: item.terminal_number || ''
           }));
@@ -327,7 +334,8 @@ export const BankScreen: React.FC = () => {
     /۰۰۱|۰۰۲|001|002|111889212002|218706617001/.test(digitsOnly(b.bank_account))
   );
   const getPettyCashCandidates = (b: typeof bankTransactions[number]) => {
-    const bankCard = digitsOnly(b.card_number);
+    // On withdrawals, source_card_number identifies the spending card.
+    const bankCard = digitsOnly(b.source_card_number || b.card_number);
     return pettyCashTxs.filter((t) => {
       if (t.reconciled || t.review_status === 'rejected') return false;
       if (Number(t.school_id) !== Number(b.school_id) || Number(t.amount) !== Number(b.amount)) return false;
