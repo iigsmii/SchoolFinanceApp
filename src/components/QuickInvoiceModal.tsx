@@ -51,6 +51,13 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
 
   // Each opening starts with a clean student selection and fresh invoice fields.
   useEffect(() => {
+    if (!isOpen) return;
+    const handleAppBack = () => onClose();
+    window.addEventListener('app:back', handleAppBack);
+    return () => window.removeEventListener('app:back', handleAppBack);
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
     if (isOpen) {
       setSelectedStudent(null);
       setStudentSearch('');
@@ -123,7 +130,7 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+    <div className="quick-invoice-modal fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
       <div className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-[#e5dde8] my-auto">
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-[#e5dde8] mb-5">
