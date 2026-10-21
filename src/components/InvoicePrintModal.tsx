@@ -306,34 +306,31 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
           </div>
         )}
 
-        <style>{`@media print { @page { size: ${paperSize} portrait; margin: 8mm; } .no-print { display: none !important; } .invoice-print-root { position: static !important; inset: auto !important; display: block !important; background: white !important; padding: 0 !important; overflow: visible !important; } #printable-invoice { overflow: visible !important; max-height: none !important; } }`}</style>
+        <style>{`@media print { @page { size: ${paperSize} portrait; margin: 5mm; } .no-print { display: none !important; } .invoice-print-root { position: static !important; inset: auto !important; display: block !important; background: white !important; padding: 0 !important; overflow: visible !important; } #printable-invoice { overflow: visible !important; max-height: none !important; padding: 4mm !important; } #printable-invoice .invoice-section { margin-bottom: 8px !important; } #printable-invoice table th, #printable-invoice table td { padding: 5px 6px !important; } #printable-invoice .invoice-header { padding: 10px 14px !important; margin-bottom: 10px !important; gap: 10px !important; } #printable-invoice .invoice-logo { width: 76px !important; height: 76px !important; } #printable-invoice .invoice-school-name { font-size: 16px !important; white-space: nowrap !important; text-align: center !important; } #printable-invoice .invoice-school-block { flex: 1 !important; text-align: center !important; min-width: 0 !important; } #printable-invoice .invoice-school-subtitle { font-size: 11px !important; } #printable-invoice .invoice-student-card { padding: 9px 12px !important; margin-bottom: 8px !important; } #printable-invoice .invoice-student-card .invoice-details-heading { margin-bottom: 5px !important; padding-bottom: 4px !important; } #printable-invoice .invoice-footer-card { padding: 8px 10px !important; margin-bottom: 8px !important; } #printable-invoice .invoice-footer { padding-top: 8px !important; } }`}</style>
 
         {/* Invoice Printable Area */}
         <div id="printable-invoice" className="p-4 sm:p-10 overflow-y-auto overflow-x-auto font-['Vazirmatn',sans-serif] bg-white text-[#232d3a] flex-1 min-w-0">
           {/* Header Banner */}
-          <div className="bg-gradient-to-l from-[#172554] via-[#1e3a5f] to-[#0f766e] text-white p-6 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 shadow-md">
-            <div className="flex items-center gap-3">
-              <img
-                src={appLogo}
-                alt="لوگوی سیستم مالی مدرسة القرآن"
-                referrerPolicy="no-referrer"
-                className="w-12 h-12 rounded-xl object-cover border border-amber-300/40 shrink-0 shadow-xs"
-              />
-              <div>
-                <div className="text-xl sm:text-2xl font-black">{student.school_name || 'مدرسة القرآن الکریم شهرضا'}</div>
-                <div className="text-sm sm:text-base font-semibold opacity-90 mt-0.5">فاکتور و ریز گردش حساب مالی دانش‌آموز</div>
-              </div>
+          <div className="invoice-header bg-gradient-to-l from-[#172554] via-[#1e3a5f] to-[#0f766e] text-white p-4 rounded-2xl flex flex-row justify-between items-center gap-3 mb-3 shadow-md">
+            <img
+              src={appLogo}
+              alt="لوگوی سیستم مالی مدرسة القرآن"
+              referrerPolicy="no-referrer"
+              className="invoice-logo w-20 h-20 rounded-xl object-cover border border-amber-300/40 shrink-0 shadow-xs"
+            />
+            <div className="invoice-school-block flex-1 min-w-0 text-center">
+              <div className="invoice-school-name text-base sm:text-lg font-black whitespace-nowrap">{student.school_name || 'مدرسة القرآن الکریم شهرضا'}</div>
+              <div className="invoice-school-subtitle text-xs sm:text-sm font-semibold opacity-90 mt-1">فاکتور و ریز گردش حساب مالی دانش‌آموز</div>
             </div>
-            <div className="text-xs sm:text-sm font-medium text-right sm:text-left bg-white/10 px-4 py-2 rounded-xl backdrop-blur-xs">
+            <div className="text-[11px] sm:text-xs font-medium text-right bg-white/10 px-3 py-2 rounded-xl shrink-0">
               <div>تاریخ صدور: {todayJalali()}</div>
-              <div>شماره پرونده: {student.id}</div>
-              {student.parsian_code && <div>کد پارسیان: {student.parsian_code}</div>}
+              <div>شماره سند: {student.id}</div>
             </div>
           </div>
 
           {/* Student Details Card */}
-          <div className="bg-[#eff6fa] border border-[#ccd8e2] rounded-2xl p-5 mb-6">
-            <div className="text-sm font-bold text-[#1b365d] mb-3 pb-2 border-b border-[#ccd8e2]">مشخصات دانش‌آموز</div>
+          <div className="invoice-student-card bg-[#eff6fa] border border-[#ccd8e2] rounded-2xl p-3 mb-2">
+            <div className="invoice-details-heading text-sm font-bold text-[#1b365d] mb-2 pb-1 border-b border-[#ccd8e2]">مشخصات دانش‌آموز</div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2.5 gap-x-6 text-xs sm:text-sm">
               <div className="flex">
                 <span className="font-semibold text-gray-500 w-32">نام و نام خانوادگی:</span>
@@ -362,33 +359,17 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
             </div>
           </div>
 
-          {/* Balance Summary Cards */}
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className={`p-4 rounded-2xl border ${balance > 0 ? 'bg-rose-50 border-rose-200 text-rose-900' : 'bg-gray-50 border-gray-200'}`}>
-              <div className="text-xs font-semibold text-gray-500 mb-1">مانده بدهی شهریه</div>
-              <div className="text-base sm:text-xl font-black font-mono">
-                {balance > 0 ? `${formatRial(balance)} ریال` : '۰ ریال'}
-              </div>
-            </div>
-            <div className="p-4 rounded-2xl border bg-emerald-50 border-emerald-200 text-emerald-900">
-              <div className="text-xs font-semibold text-gray-500 mb-1">مجموع پرداختی‌های ثبت‌شده</div>
-              <div className="text-base sm:text-xl font-black font-mono">
-                {formatRial(totalCredit)} ریال
-              </div>
-            </div>
-          </div>
-
           {/* Transactions Table */}
-          <div className="border border-[#ccd8e2] rounded-2xl overflow-hidden mb-6">
+          <div className="invoice-section border border-[#ccd8e2] rounded-xl overflow-hidden mb-3">
             <table className="w-full text-right text-xs">
               <thead className="bg-[#1b365d] text-white">
                 <tr>
-                  <th className="p-3 text-center">ردیف</th>
-                  <th className="p-3">تاریخ</th>
-                  <th className="p-3">شرح تراکنش</th>
-                  <th className="p-3 text-center">نوع</th>
-                  <th className="p-3 text-left">بدهکار (ریال)</th>
-                  <th className="p-3 text-left">بستانکار (ریال)</th>
+                  <th className="p-2 text-center">ردیف</th>
+                  <th className="p-2">تاریخ</th>
+                  <th className="p-2">شرح تراکنش</th>
+                  <th className="p-2 text-center">نوع</th>
+                  <th className="p-2 text-left">بدهکار (ریال)</th>
+                  <th className="p-2 text-left">بستانکار (ریال)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e1ebf2]">
@@ -403,9 +384,9 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                     const isDebt = t.kind === 'شهریه_بدهی' || t.debit > 0;
                     return (
                       <tr key={t.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-[#eff6fa]'}>
-                        <td className="p-3 text-center text-gray-500 font-mono">{idx + 1}</td>
-                        <td className="p-3 font-mono font-medium text-gray-700">{jalaliFromGregorian(t.date)}</td>
-                        <td className="p-3">
+                        <td className="p-2 text-center text-gray-500 font-mono">{idx + 1}</td>
+                        <td className="p-2 font-mono font-medium text-gray-700">{jalaliFromGregorian(t.date)}</td>
+                        <td className="p-2">
                           <div className="font-semibold text-[#1b365d]">{isDebt ? (t.description || t.comment || 'ثبت بدهی شهریه') : 'پرداخت بابت شهریه مصوب'}</div>
                           {!isDebt && (t.description || t.comment) && <div className="mt-0.5 text-[10px] text-gray-500">جزئیات: {t.description || t.comment}</div>}
                           {t.tracking_code && (
@@ -414,7 +395,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                             </div>
                           )}
                         </td>
-                        <td className="p-3 text-center">
+                        <td className="p-2 text-center">
                           <span
                             className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
                               isDebt ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'
@@ -423,10 +404,10 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                             {isDebt ? 'بدهی' : 'پرداخت'}
                           </span>
                         </td>
-                        <td className="p-3 text-left font-mono font-bold text-gray-900">
+                        <td className="p-2 text-left font-mono font-bold text-gray-900">
                           {isDebt ? formatRial(t.debit) : '—'}
                         </td>
-                        <td className="p-3 text-left font-mono font-bold text-teal-700">
+                        <td className="p-2 text-left font-mono font-bold text-teal-700">
                           {!isDebt ? formatRial(t.credit) : '—'}
                         </td>
                       </tr>
@@ -436,16 +417,16 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
               </tbody>
               <tfoot className="bg-[#f0f4f8] font-bold border-t-2 border-[#167d7d]">
                 <tr>
-                  <td colSpan={4} className="p-3 text-right">جمع کل گردش:</td>
-                  <td className="p-3 text-left font-mono text-gray-900">{formatRial(totalDebit)}</td>
-                  <td className="p-3 text-left font-mono text-teal-700">{formatRial(totalCredit)}</td>
+                  <td colSpan={4} className="p-2 text-right">جمع کل گردش:</td>
+                  <td className="p-2 text-left font-mono text-gray-900">{formatRial(totalDebit)}</td>
+                  <td className="p-2 text-left font-mono text-teal-700">{formatRial(totalCredit)}</td>
                 </tr>
               </tfoot>
             </table>
           </div>
 
           {/* Closing balance and thank-you note */}
-          <div className="mb-5 rounded-2xl border-2 border-[#1b365d] bg-[#f3f7fb] p-4 sm:p-5">
+          <div className="invoice-footer-card mb-3 rounded-xl border-2 border-[#1b365d] bg-[#f3f7fb] p-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-bold text-[#1b365d]">مانده نهایی حساب شهریه</div>
@@ -456,7 +437,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
               </div>
             </div>
           </div>
-          <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-xs sm:text-sm leading-7 text-emerald-900">
+          <div className="invoice-footer-card mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-center text-xs leading-5 text-emerald-900">
             <div className="font-black">با سپاس از اعتماد و پرداخت به‌موقع شما</div>
             از همراهی شما خانواده گرامی در تأمین هزینه‌های آموزشی و تربیتی فرزندانمان صمیمانه سپاسگزاریم. برای دانش‌آموز عزیزتان، توفیق و پیشرفت روزافزون آرزومندیم.
           </div>
@@ -538,7 +519,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
             ];
             const narration = shiaNarrations[Math.floor(hadithRandomSeed * shiaNarrations.length)];
             return (
-              <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center">
+              <div className="invoice-footer-card mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-center">
                 <div className="mb-1 text-[11px] font-bold text-amber-900">حدیثی از منابع شیعه درباره اخلاق و امانت‌داری</div>
                 <div className="mb-1 text-[11px] font-bold text-[#5b4218]">{narration.narrator}</div>
                 <div className="text-sm font-bold leading-7 text-[#5b4218]">{narration.text}</div>
@@ -549,7 +530,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
           })()}
 
           {/* Footer Official Seal and Signature */}
-          <div className="pt-6 border-t border-gray-200 flex justify-between items-end text-xs text-gray-500">
+          <div className="invoice-footer pt-3 border-t border-gray-200 flex justify-between items-end text-[10px] text-gray-500">
             <div>
               <div>این سند به‌صورت سیستمی توسط سامانه مالی مدرسة القرآن صادر شده است.</div>
               <div className="mt-1 font-mono text-[10px]">کد امنیتی یکتا: SF-{student.id}-{Date.now().toString(36)}</div>
