@@ -132,12 +132,13 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
     <div className="invoice-print-root fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[94vh] flex flex-col shadow-2xl border border-[#d7e4ed] overflow-hidden my-auto">
         {/* Modal Controls Bar (Hidden during print) */}
-        <div className="no-print flex items-center justify-between px-6 py-4 border-b border-[#e5dde8] bg-[#f8f5f9]">
-          <div className="flex items-center gap-2">
+        <div className="no-print flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-3 sm:px-6 py-3 sm:py-4 border-b border-[#e5dde8] bg-[#f8f5f9] w-full min-w-0">
+          <div className="flex items-center justify-between gap-2 min-w-0">
             <span className="text-sm font-bold text-[#341648]">پیش‌نمایش و صدور فاکتور رسمی</span>
+            <button onClick={onClose} className="sm:hidden p-2 text-gray-500 rounded-xl hover:bg-gray-200/50" aria-label="بستن پیش‌نمایش"><X className="w-5 h-5" /></button>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1" aria-label="اندازه برگه PDF">
+          <div className="flex flex-wrap items-center justify-start sm:justify-end gap-2 min-w-0 w-full sm:w-auto">
+            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shrink-0" aria-label="اندازه برگه PDF">
               <span className="px-1 text-[11px] font-bold text-slate-500">برگه</span>
               <button type="button" onClick={() => setPaperSize('a4')} className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors ${paperSize === 'a4' ? 'bg-[#1b365d] text-white' : 'text-slate-600 hover:bg-slate-100'}`}>A4</button>
               <button type="button" onClick={() => setPaperSize('a5')} className={`rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors ${paperSize === 'a5' ? 'bg-[#1b365d] text-white' : 'text-slate-600 hover:bg-slate-100'}`}>A5</button>
@@ -160,7 +161,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
             <button
               onClick={handleDownloadPdf}
               disabled={isPdfLoading}
-              className="flex items-center gap-2 px-4 py-2 bg-[#0f766e] text-white rounded-xl font-bold text-sm hover:bg-[#115e59] disabled:opacity-60 active:scale-95 transition-all shadow-sm"
+              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-[#0f766e] text-white rounded-xl font-bold text-sm whitespace-nowrap hover:bg-[#115e59] disabled:opacity-60 active:scale-95 transition-all shadow-sm"
               title="ساخت و دانلود مستقیم فایل PDF"
             >
               {isPdfLoading ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
@@ -168,7 +169,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
             </button>
             <button
               onClick={handlePrint}
-              className="flex items-center gap-2 px-4 py-2 bg-[#62205f] text-white rounded-xl font-bold text-sm hover:opacity-90 active:scale-95 transition-all shadow-sm"
+              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-[#62205f] text-white rounded-xl font-bold text-sm whitespace-nowrap hover:opacity-90 active:scale-95 transition-all shadow-sm"
               style={{ backgroundColor: accentColor }}
             >
               <Printer className="w-4 h-4" />
@@ -176,7 +177,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
             </button>
             <button
               onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-700 rounded-xl hover:bg-gray-200/50 transition-colors"
+              className="hidden sm:block p-2 text-gray-400 hover:text-gray-700 rounded-xl hover:bg-gray-200/50 transition-colors shrink-0"
             >
               <X className="w-5 h-5" />
             </button>
@@ -203,7 +204,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
         <style>{`@media print { @page { size: ${paperSize} portrait; margin: 8mm; } .invoice-print-root { position: static !important; inset: auto !important; display: block !important; background: white !important; padding: 0 !important; overflow: visible !important; } #printable-invoice { overflow: visible !important; max-height: none !important; } }`}</style>
 
         {/* Invoice Printable Area */}
-        <div id="printable-invoice" className="p-6 sm:p-10 overflow-y-auto font-['Vazirmatn',sans-serif] bg-white text-[#232d3a] flex-1">
+        <div id="printable-invoice" className="p-4 sm:p-10 overflow-y-auto overflow-x-auto font-['Vazirmatn',sans-serif] bg-white text-[#232d3a] flex-1 min-w-0">
           {/* Header Banner */}
           <div className="bg-gradient-to-l from-[#172554] via-[#1e3a5f] to-[#0f766e] text-white p-6 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 shadow-md">
             <div className="flex items-center gap-3">
