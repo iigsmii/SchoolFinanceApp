@@ -230,7 +230,18 @@ export const BankScreen: React.FC = () => {
         }).filter((x): x is NonNullable<typeof x> => x !== null);
 
         if (!newItems.length) throw new Error('هیچ ردیف معتبر دارای مبلغ، شرح یا شماره پیگیری یافت نشد. فایل و سطر عنوان را بررسی کنید.');
-        const normalizeTerminal = (v: unknown) => toDigits(v).replace(/\D/g, '').replace(/^0+/, '');
+
+        // Keep the two school accounts distinct: 002 receives POS settlements but can
+        // also contain petty-cash withdrawals; 001 can contain petty-cash withdrawals too.
+        // Therefore classify by account AND transaction direction, never by suffix alone.
+        const accountLabel = bankAccountSuffix === '002' ? '۰۰۲' : bankAccountSuffix === '001' ? '۰۰۱' : 'نامشخص';
+        const depositRows = newItems.filter((item) => item.direction === 'deposit');
+        const withdrawalRows = newItems.filter((item) => item.direction === 'withdrawal');
+        const depositTotal = depositRows.reduce((sum, item) => sum + item.amount, 0);
+        const withdrawalTotal = withdrawalRows.reduce((sum, item) => sum + item.amount, 0);
+        const posDepositRows = isPosReport ? depositRows : [];
+
+        const normalizeTerminal = (v: unknown) => toDigits(v).replace(/\\D/g, '').replace(/^0+/, '');
         const configured = schools.filter((sc) => String(sc.pos_terminal_number || '').trim());
         const usedTxIds = new Set<number>();
         const assignedItems = newItems.map((item) => {
@@ -282,6 +293,12 @@ export const BankScreen: React.FC = () => {
         let msg = `برگه «${sourceName}»: ${count} تراکنش وارد شد؛ ${matchedCount} مورد با شماره پیگیری و مبلغ تطبیق شد و ${unmatchedCount} مورد در فهرست تطبیق‌نشده‌ها باقی ماند. ${cloudMessage}`;
         if (skipped) msg += ` ${skipped} ردیف خالی/نامعتبر کنار گذاشته شد.`;
         if (feeCount) msg += ` ${feeCount} مورد با احتمال کارمزد شناسایی شد.`;
+        if (!isPosReport && (bankAccountSuffix === '001' || bankAccountSuffix === '002')) {
+          msg += ` حساب مبدأ: ${accountLabel}؛ ${depositRows.length} واریز به مبلغ ${formatRial(depositTotal)} ریال؛ ${withdrawalRows.length} برداشت به مبلغ ${formatRial(withdrawalTotal)} ریال. برداشت‌های ۰۰۱ و ۰۰۲ باید با هزینه‌های تن‌خواه تطبیق داده شوند.`;
+        }
+        if (isPosReport) {
+          msg += ` گزارش پوز: ${posDepositRows.length} ردیف واریزی تجمیعی به مبلغ ${formatRial(depositTotal)} ریال؛ این ارقام جداگانه با واریزی حساب ۰۰۲ تطبیق داده شوند.`;
+        }
         alert(msg);
       } catch (err) {
         alert('خطا در خواندن فایل بانک: ' + (err instanceof Error ? err.message : String(err)));
