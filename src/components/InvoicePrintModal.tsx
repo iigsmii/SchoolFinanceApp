@@ -75,7 +75,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
     setPdfError('');
     setIsPdfLoading(true);
     try {
-      await loadPdfScript('https://unpkg.com/html2canvas-pro@1.5.11/dist/html2canvas-pro.min.js', () => typeof (window as any).html2canvas === 'function');
+      await loadPdfScript('https://cdn.jsdelivr.net/npm/html2canvas-pro@1.5.11/dist/html2canvas-pro.min.js', () => typeof (window as any).html2canvas === 'function');
       await loadPdfScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', () => Boolean((window as any).jspdf?.jsPDF));
       const target = document.getElementById('printable-invoice');
       if (!target) throw new Error('محتوای فاکتور پیدا نشد.');
