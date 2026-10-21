@@ -14,6 +14,9 @@ import {
   ArrowUpRight,
   Receipt,
   User,
+  Image as ImageIcon,
+  Eye,
+  X,
 } from 'lucide-react';
 
 export const StatementScreen: React.FC = () => {
@@ -31,6 +34,7 @@ export const StatementScreen: React.FC = () => {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [showExpenseLedger, setShowExpenseLedger] = useState(false);
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+  const [selectedAttachment, setSelectedAttachment] = useState<{ url: string; title: string } | null>(null);
 
   const availableStudents = students.filter((s) => {
     if (!isSenior && Number(s.school_id) !== Number(currentUser?.school_id)) return false;
@@ -138,6 +142,17 @@ export const StatementScreen: React.FC = () => {
                         تاریخ: {jalaliFromGregorian(t.date)} | پیگیری: {t.tracking_code || '—'} | منبع:{' '}
                         {t.payment_source === 'own' ? 'حساب شخصی مدیر' : 'بانک مدرسه'}
                       </div>
+
+                      {t.attachment_url && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedAttachment({ url: t.attachment_url!, title: `پیوست هزینه شماره ${t.id}` })}
+                          className="mt-3 flex items-center gap-2 rounded-xl border border-indigo-200 bg-white p-2 text-indigo-800 hover:bg-indigo-50 transition-colors"
+                        >
+                          <img src={t.attachment_url} alt="پیش‌نمایش رسید هزینه" loading="lazy" className="w-16 h-16 rounded-lg object-cover border border-gray-200 bg-gray-50" onError={(event) => { event.currentTarget.style.display = 'none'; }} />
+                          <span className="text-xs font-bold flex items-center gap-1.5"><ImageIcon className="w-4 h-4" /> مشاهده تصویر رسید هزینه <Eye className="w-3.5 h-3.5" /></span>
+                        </button>
+                      )}
                     </div>
                     <div className="font-black font-mono text-purple-900 text-sm">
                       {formatRial(t.amount)} ریال
@@ -233,6 +248,17 @@ export const StatementScreen: React.FC = () => {
                               {t.tracking_code && (
                                 <span className="text-gray-400 mr-2 font-mono">({t.tracking_code})</span>
                               )}
+
+                              {t.attachment_url && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedAttachment({ url: t.attachment_url!, title: `پیوست گردش حساب شماره ${t.id}` })}
+                                  className="mt-2 flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50/70 p-1.5 text-indigo-800"
+                                >
+                                  <img src={t.attachment_url} alt="پیش‌نمایش پیوست گردش حساب" loading="lazy" className="w-12 h-12 rounded-md object-cover border border-gray-200 bg-white" onError={(event) => { event.currentTarget.style.display = 'none'; }} />
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold"><ImageIcon className="w-3.5 h-3.5" /> مشاهده پیوست</span>
+                                </button>
+                              )}
                             </td>
                             <td className="py-3 text-center">
                               <span
@@ -279,6 +305,23 @@ export const StatementScreen: React.FC = () => {
           balance={balanceData?.balance || 0}
           onClose={() => setIsInvoiceModalOpen(false)}
         />
+      )}
+
+      {selectedAttachment && (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6" onClick={() => setSelectedAttachment(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between gap-3">
+              <h3 className="font-bold text-sm text-[#341648]">{selectedAttachment.title}</h3>
+              <button type="button" onClick={() => setSelectedAttachment(null)} className="p-2 rounded-xl hover:bg-gray-100" aria-label="بستن تصویر"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-3 sm:p-5 overflow-auto flex items-center justify-center bg-gray-50 min-h-40">
+              <img src={selectedAttachment.url} alt={selectedAttachment.title} className="max-w-full max-h-[72vh] object-contain rounded-lg" />
+            </div>
+            <div className="p-3 border-t border-gray-100 flex justify-end">
+              <a href={selectedAttachment.url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-indigo-700 underline">باز کردن فایل در صفحه جداگانه</a>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
