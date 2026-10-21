@@ -1900,9 +1900,9 @@ function updateSettings_(b){
   const apkUrl=String(b.apk_url||'').trim();
   const notes=String(b.notes||'').trim().slice(0,2000);
   const force=String(b.force_update||'false').toLowerCase()==='true';
-  if(!/^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version))
+  if(!version.split('.')[0] || version.split('.').length < 3 || !/^[0-9A-Za-z.+-]+$/.test(version))
     throw new Error('شماره نسخه باید مانند 2.17.0 باشد.');
-  if(!/^https:\\/\\//i.test(apkUrl) || !/\\.apk(?:$|[?#])/i.test(apkUrl))
+  if(apkUrl.indexOf('https://')!==0 || apkUrl.toLowerCase().indexOf('.apk')<0)
     throw new Error('لینک باید نشانی مستقیم و امن فایل APK باشد.');
   saveSetting_('android_version',version);
   saveSetting_('android_apk_url',apkUrl);
