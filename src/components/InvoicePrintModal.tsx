@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import appLogo from '../assets/images/quran_school_finance_logo_1792312844966.jpg';
 import { Student, Transaction } from '../types';
 import { jalaliFromGregorian, todayJalali, formatRial } from '../utils/jalali';
-import { Printer, Download, X, Sparkles, PenTool } from 'lucide-react';
+import { Printer, Download, X, Sparkles, PenTool, MessageSquare } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { SignatureUploader } from './SignatureUploader';
 
@@ -19,11 +19,25 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
   balance,
   onClose,
 }) => {
-  const { managerSignature, setManagerSignature, accentColor } = useApp();
+  const { managerSignature, setManagerSignature, accentColor, getStudentBalance } = useApp();
   const [showSignatureModal, setShowSignatureModal] = useState(false);
 
   const handlePrint = () => {
+    // Keep the browser's native print dialog so users can choose “Save as PDF”.
+    // A web app cannot silently write a PDF file to the phone's Downloads folder.
     window.print();
+  };
+
+  const handlePaymentSms = () => {
+    const remaining = getStudentBalance(student.id).debt;
+    const phone = (student.father_phone || student.phone || student.mother_phone || '').trim();
+    if (!phone) {
+      window.alert('برای این دانش‌آموز شماره تلفن ثبت نشده است.');
+      return;
+    }
+    const message = `اولیای گرامی دانش‌آموز ${student.name}، از پرداخت شهریه شما سپاسگزاریم. مبلغ پرداختی ثبت شد و مانده شهریه ${formatRial(remaining)} ریال است. با احترام، مدرسة القرآن الکریم شهرضا`;
+    const separator = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? '&' : '?';
+    window.location.href = `sms:${phone}${separator}body=${encodeURIComponent(message)}`;
   };
 
   const studentTxs = transactions.filter((t) => t.student_id === student.id);
@@ -45,6 +59,14 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
             >
               <PenTool className="w-3.5 h-3.5 text-[#62205f]" />
               <span>{managerSignature ? 'ویرایش امضای فاکتور' : 'افزودن امضای رسمی'}</span>
+            </button>
+            <button
+              onClick={handlePaymentSms}
+              className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 active:scale-95 transition-all shadow-sm"
+              title="آماده‌سازی پیام تشکر و مانده شهریه در برنامه پیامک گوشی"
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>ارسال پیامک تشکر</span>
             </button>
             <button
               onClick={handlePrint}
