@@ -405,7 +405,7 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
             <div className="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
               <FileText className="w-4 h-4 text-amber-700" />
             </div>
-            <span className="text-[11px] font-bold text-[#341648] leading-tight">صدور سریع فاکتور</span>
+            <span className="text-[11px] font-bold text-[#341648] leading-tight">ثبت پرداخت شهریه</span>
           </button>
           {menuItems.map((item) => {
             const Icon = item.icon;
@@ -620,7 +620,7 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
                 </span>
               </div>
               <p className="text-[11px] text-gray-400">
-                پیگیری مطالبات اولیا، تفکیک شماره پدر و مادر و صدور سریع فاکتور
+                پیگیری مطالبات اولیا و ثبت پرداخت شهریه
               </p>
             </div>
           </div>
