@@ -161,9 +161,13 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
         pdf.save(fileName);
       }
     } catch (error) {
-      setPdfError((error instanceof Error ? error.message : 'ساخت فایل PDF ناموفق بود.') + ' پنجره چاپ باز می‌شود؛ در مقصد چاپ، «ذخیره به‌صورت PDF» را انتخاب کنید.');
-      // Fallback for Android WebView or blocked external PDF libraries.
-      window.setTimeout(() => window.print(), 250);
+      const reason = error instanceof Error ? error.message : 'ساخت فایل PDF ناموفق بود.';
+      if (Capacitor.isNativePlatform()) {
+        setPdfError(`${reason} فایل ذخیره نشد؛ لطفاً دوباره تلاش کنید. اگر ادامه داشت، اتصال اینترنت را بررسی کنید.`);
+      } else {
+        setPdfError(`${reason} پنجره چاپ باز می‌شود؛ در مقصد چاپ، «ذخیره به‌صورت PDF» را انتخاب کنید.`);
+        window.setTimeout(() => window.print(), 250);
+      }
     } finally {
       setIsPdfLoading(false);
     }
