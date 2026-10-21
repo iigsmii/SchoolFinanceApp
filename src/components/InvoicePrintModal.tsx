@@ -45,9 +45,16 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
     if (script?.dataset.loaded === 'true' && !test()) { script.remove(); script = null; }
     const target = script || document.createElement('script');
     let settled = false;
+    const timeoutId = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      target.dataset.failed = 'true';
+      reject(new Error('بارگذاری ابزار ساخت PDF بیش از ۱۵ ثانیه طول کشید. اتصال اینترنت یا دسترسی برنامه به کتابخانه PDF را بررسی کنید.'));
+    }, 15000);
     const finish = () => {
       if (settled) return;
       settled = true;
+      window.clearTimeout(timeoutId);
       if (test()) {
         target.dataset.loaded = 'true';
         resolve();
@@ -60,6 +67,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
     target.addEventListener('error', () => {
       if (settled) return;
       settled = true;
+      window.clearTimeout(timeoutId);
       target.dataset.failed = 'true';
       reject(new Error('بارگذاری کتابخانه PDF ناموفق بود؛ اتصال اینترنت را بررسی و دوباره تلاش کنید.'));
     }, { once: true });
