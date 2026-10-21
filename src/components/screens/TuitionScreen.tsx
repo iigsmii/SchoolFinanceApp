@@ -19,7 +19,6 @@ import {
   Image,
 } from 'lucide-react';
 import { ReceiptImageUploader } from '../ReceiptImageUploader';
-import { QuickInvoiceModal } from '../QuickInvoiceModal';
 import { InvoicePrintModal } from '../InvoicePrintModal';
 import { matchesStudentSearch } from '../../utils/studentSearch';
 
@@ -40,7 +39,6 @@ export const TuitionScreen: React.FC = () => {
   } = useApp();
 
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
-  const [isQuickInvoiceOpen, setIsQuickInvoiceOpen] = useState(false);
   const [invoiceStudent, setInvoiceStudent] = useState<Student | null>(null);
 
   // Selected student state
@@ -224,6 +222,7 @@ export const TuitionScreen: React.FC = () => {
           attachment_url: formAttachment,
         });
         setModalType(null);
+        setInvoiceStudent(selectedStudent!);
       } catch (err) {
         setFormError(String(err));
       }
@@ -248,6 +247,7 @@ export const TuitionScreen: React.FC = () => {
         attachment_url: formAttachment,
       });
       setModalType(null);
+      setInvoiceStudent(selectedStudent!);
     } catch (err) {
       setFormError(String(err));
     }
@@ -303,16 +303,6 @@ export const TuitionScreen: React.FC = () => {
       <Header title="دریافت و ثبت شهریه" />
 
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-        <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-black text-[#341648]">صدور فاکتور پرداخت شهریه</h2>
-            <p className="text-xs text-gray-600 mt-1">اطلاعات دانش‌آموز، مبلغ و تاریخ را وارد کنید؛ سپس فاکتور رسمی را تولید و چاپ یا به‌صورت PDF ذخیره کنید.</p>
-          </div>
-          <button type="button" onClick={() => setIsQuickInvoiceOpen(true)} className="shrink-0 px-4 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold shadow-sm active:scale-95 transition-all flex items-center justify-center gap-2">
-            <FileCheck2 className="w-4 h-4" />
-            صدور فاکتور پرداخت
-          </button>
-        </section>
         {/* Search Student Section */}
         <div className="bg-white rounded-3xl p-5 border border-[#e5dde8] shadow-xs">
           <label className="block text-xs font-bold text-[#341648] mb-2">
@@ -979,14 +969,6 @@ export const TuitionScreen: React.FC = () => {
           </div>
         </div>
       )}
-
-      <QuickInvoiceModal
-        isOpen={isQuickInvoiceOpen}
-        onClose={() => setIsQuickInvoiceOpen(false)}
-        students={students}
-        accentColor={accentColor}
-        onIssueInvoice={(student) => setInvoiceStudent(student)}
-      />
 
       {invoiceStudent && (
         <InvoicePrintModal
