@@ -27,20 +27,21 @@ export const SignatureUploader: React.FC<SignatureUploaderProps> = ({
     setErrorMsg(null);
     setIsProcessing(true);
     try {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const rawUrl = e.target?.result as string;
-        setTempImage(rawUrl);
-        const processed = await processSignatureImage(rawUrl, {
-          luminanceThreshold: threshold,
-        });
-        setProcessedSignature(processed);
-        setShowEditor(true);
-        setIsProcessing(false);
-      };
-      reader.readAsDataURL(file);
-    } catch (err: any) {
-      setErrorMsg(err.message || 'خطا در پردازش تصویر');
+      if (!file.type.startsWith('image/')) throw new Error('لطفاً یک فایل تصویری انتخاب کنید.');
+      if (file.size > 8 * 1024 * 1024) throw new Error('حجم تصویر امضا باید کمتر از ۸ مگابایت باشد.');
+      const rawUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('خواندن فایل تصویر ناموفق بود.'));
+        reader.onerror = () => reject(new Error('دسترسی به فایل تصویر ممکن نیست. دوباره انتخاب کنید.'));
+        reader.readAsDataURL(file);
+      });
+      setTempImage(rawUrl);
+      const processed = await processSignatureImage(rawUrl, { luminanceThreshold: threshold });
+      setProcessedSignature(processed);
+      setShowEditor(true);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'خطا در پردازش تصویر امضا');
+    } finally {
       setIsProcessing(false);
     }
   };
