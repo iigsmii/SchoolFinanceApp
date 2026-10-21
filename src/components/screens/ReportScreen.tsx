@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { formatRial } from '../../utils/jalali';
 import { BarChart3, TrendingUp, TrendingDown, PieChart } from 'lucide-react';
+import { TuitionTrendsScreen } from './TuitionTrendsScreen';
 
 export const ReportScreen: React.FC = () => {
   const { transactions, schools, currentUser, accentColor } = useApp();
@@ -123,6 +124,12 @@ export const ReportScreen: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* Tuition collection trend integrated into the financial report */}
+        <section className="space-y-3">
+          <h2 className="text-base font-black text-[#341648] px-1">روند شهریه‌های دریافتی</h2>
+          <TuitionTrendsScreen embedded />
+        </section>
       </main>
     </div>
   );
