@@ -19,7 +19,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
   balance,
   onClose,
 }) => {
-  const { managerSignature, setManagerSignature, accentColor, getStudentBalance, sendSmsReminder, smsConfig } = useApp();
+  const { managerSignature, setManagerSignature, accentColor, getStudentBalance, smsConfig } = useApp();
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState('');
@@ -40,16 +40,34 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
 
   const loadPdfScript = (src: string, test: () => boolean) => new Promise<void>((resolve, reject) => {
     if (test()) { resolve(); return; }
-    const existing = document.querySelector(`script[data-pdf-lib="${src}"]`) as HTMLScriptElement | null;
-    const script = existing || document.createElement('script');
-    const finish = () => test() ? resolve() : reject(new Error('بارگذاری کتابخانه PDF انجام نشد.'));
-    script.addEventListener('load', finish, { once: true });
-    script.addEventListener('error', () => reject(new Error('اتصال برای ساخت PDF برقرار نشد.')), { once: true });
-    if (!existing) {
-      script.src = src;
-      script.async = true;
-      script.dataset.pdfLib = src;
-      document.head.appendChild(script);
+    let script = document.querySelector(`script[data-pdf-lib="${src}"]`) as HTMLScriptElement | null;
+    if (script && script.dataset.failed === 'true') { script.remove(); script = null; }
+    if (script?.dataset.loaded === 'true' && !test()) { script.remove(); script = null; }
+    const target = script || document.createElement('script');
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (test()) {
+        target.dataset.loaded = 'true';
+        resolve();
+      } else {
+        target.dataset.failed = 'true';
+        reject(new Error('کتابخانه PDF بارگذاری شد اما قابل استفاده نیست.'));
+      }
+    };
+    target.addEventListener('load', finish, { once: true });
+    target.addEventListener('error', () => {
+      if (settled) return;
+      settled = true;
+      target.dataset.failed = 'true';
+      reject(new Error('بارگذاری کتابخانه PDF ناموفق بود؛ اتصال اینترنت را بررسی و دوباره تلاش کنید.'));
+    }, { once: true });
+    if (!script) {
+      target.src = src;
+      target.async = true;
+      target.dataset.pdfLib = src;
+      document.head.appendChild(target);
     }
   });
 
@@ -57,7 +75,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
     setPdfError('');
     setIsPdfLoading(true);
     try {
-      await loadPdfScript('https://unpkg.com/html2canvas-pro@1.5.11/dist/html2canvas-pro.min.js', () => typeof (window as any).html2canvas === 'function');
+      await loadPdfScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', () => typeof (window as any).html2canvas === 'function');
       await loadPdfScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', () => Boolean((window as any).jspdf?.jsPDF));
       const target = document.getElementById('printable-invoice');
       if (!target) throw new Error('محتوای فاکتور پیدا نشد.');
@@ -128,7 +146,16 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
         : 'شماره تلفن پدر ثبت نشده است.');
       return;
     }
-    const message = `ولی گرامی دانش‌آموز ${student.name}، از پرداخت شهریه سپاسگزاریم. مانده شهریه ${formatRial(remaining)} ریال است. با احترام، مدرسة القرآن الکریم شهرضا`;
+    const latestPayment = transactions
+      .filter((t) => t.student_id === student.id && t.kind === 'شهریه' && (t.credit || 0) > 0)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+    if (!latestPayment) {
+      window.alert('برای این دانش‌آموز پرداخت شهریه‌ای ثبت نشده است؛ ابتدا پرداخت را ثبت کنید.');
+      return;
+    }
+    const paidAmount = latestPayment.credit || latestPayment.amount || 0;
+    const paymentDate = latestPayment.jalali_date || jalaliFromGregorian(latestPayment.date);
+    const message = `ولی گرامی دانش‌آموز ${student.name}، پرداخت شهریه به مبلغ ${formatRial(paidAmount)} ریال در تاریخ ${paymentDate} ثبت شد. مانده شهریه: ${formatRial(remaining)} ریال. با احترام، مدرسة القرآن الکریم شهرضا`;
     if (smsMethod === 'phone') {
       const separator = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? '&' : '?';
       window.location.href = `sms:${phone}${separator}body=${encodeURIComponent(message)}`;
