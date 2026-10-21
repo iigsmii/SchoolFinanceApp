@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import appLogo from '../assets/images/quran_school_finance_logo_1792312844966.jpg';
 import { Student, Transaction } from '../types';
 import { jalaliFromGregorian, todayJalali, formatRial } from '../utils/jalali';
-import { Printer, Download, X, Sparkles, PenTool, MessageSquare } from 'lucide-react';
+import { Printer, Download, X, Sparkles, PenTool, MessageSquare, LoaderCircle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { SignatureUploader } from './SignatureUploader';
 
@@ -21,12 +21,85 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
 }) => {
   const { managerSignature, setManagerSignature, accentColor, getStudentBalance } = useApp();
   const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [isPdfLoading, setIsPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState('');
 
-  const handlePrint = () => {
-    // Keep the browser's native print dialog so users can choose “Save as PDF”.
-    // A web app cannot silently write a PDF file to the phone's Downloads folder.
-    window.print();
+  useEffect(() => {
+    const handleAppBack = () => {
+      if (showSignatureModal) setShowSignatureModal(false);
+      else onClose();
+    };
+    window.addEventListener('app:back', handleAppBack);
+    return () => window.removeEventListener('app:back', handleAppBack);
+  }, [showSignatureModal, onClose]);
+
+  const loadPdfScript = (src: string, test: () => boolean) => new Promise<void>((resolve, reject) => {
+    if (test()) { resolve(); return; }
+    const existing = document.querySelector(`script[data-pdf-lib="${src}"]`) as HTMLScriptElement | null;
+    const script = existing || document.createElement('script');
+    const finish = () => test() ? resolve() : reject(new Error('بارگذاری کتابخانه PDF انجام نشد.'));
+    script.addEventListener('load', finish, { once: true });
+    script.addEventListener('error', () => reject(new Error('اتصال برای ساخت PDF برقرار نشد.')), { once: true });
+    if (!existing) {
+      script.src = src;
+      script.async = true;
+      script.dataset.pdfLib = src;
+      document.head.appendChild(script);
+    }
+  });
+
+  const handleDownloadPdf = async () => {
+    setPdfError('');
+    setIsPdfLoading(true);
+    try {
+      await loadPdfScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', () => typeof (window as any).html2canvas === 'function');
+      await loadPdfScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', () => Boolean((window as any).jspdf?.jsPDF));
+      const target = document.getElementById('printable-invoice');
+      if (!target) throw new Error('محتوای فاکتور پیدا نشد.');
+      const canvas = await (window as any).html2canvas(target, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        windowWidth: Math.max(target.scrollWidth, 900),
+      });
+      const JsPDF = (window as any).jspdf.jsPDF;
+      const pdf = new JsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const margin = 8;
+      const printableWidth = pageWidth - margin * 2;
+      const printableHeight = pageHeight - margin * 2;
+      const pxPerMm = canvas.width / printableWidth;
+      const pageHeightPx = Math.floor(printableHeight * pxPerMm);
+      let offsetY = 0;
+      let page = 0;
+      while (offsetY < canvas.height) {
+        const sliceHeight = Math.min(pageHeightPx, canvas.height - offsetY);
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = sliceHeight;
+        const ctx = pageCanvas.getContext('2d');
+        if (!ctx) throw new Error('ساخت تصویر فاکتور در مرورگر ناموفق بود.');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+        ctx.drawImage(canvas, 0, offsetY, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+        if (page > 0) pdf.addPage();
+        const image = pageCanvas.toDataURL('image/jpeg', 0.94);
+        pdf.addImage(image, 'JPEG', margin, margin, printableWidth, sliceHeight / pxPerMm, undefined, 'FAST');
+        offsetY += sliceHeight;
+        page += 1;
+      }
+      const safeName = (student.name || 'دانش‌آموز').replace(/[\\/:*?"<>|]/g, '-').trim();
+      pdf.save(`رسید-شهریه-${safeName}-${student.id}.pdf`);
+    } catch (error) {
+      setPdfError(error instanceof Error ? error.message : 'ساخت فایل PDF ناموفق بود. اتصال اینترنت را بررسی کنید.');
+    } finally {
+      setIsPdfLoading(false);
+    }
   };
+
+  const handlePrint = () => window.print();
 
   const handlePaymentSms = () => {
     const remaining = getStudentBalance(student.id).debt;
@@ -46,7 +119,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
 
   return (
     <div className="invoice-print-root fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-[#e5dde8] overflow-hidden my-auto">
+      <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[94vh] flex flex-col shadow-2xl border border-[#d7e4ed] overflow-hidden my-auto">
         {/* Modal Controls Bar (Hidden during print) */}
         <div className="no-print flex items-center justify-between px-6 py-4 border-b border-[#e5dde8] bg-[#f8f5f9]">
           <div className="flex items-center gap-2">
@@ -69,6 +142,15 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
               <span>ارسال پیامک تشکر</span>
             </button>
             <button
+              onClick={handleDownloadPdf}
+              disabled={isPdfLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-[#0f766e] text-white rounded-xl font-bold text-sm hover:bg-[#115e59] disabled:opacity-60 active:scale-95 transition-all shadow-sm"
+              title="ساخت و دانلود مستقیم فایل PDF"
+            >
+              {isPdfLoading ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              <span>{isPdfLoading ? 'در حال ساخت PDF...' : 'دانلود PDF'}</span>
+            </button>
+            <button
               onClick={handlePrint}
               className="flex items-center gap-2 px-4 py-2 bg-[#62205f] text-white rounded-xl font-bold text-sm hover:opacity-90 active:scale-95 transition-all shadow-sm"
               style={{ backgroundColor: accentColor }}
@@ -84,6 +166,8 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
             </button>
           </div>
         </div>
+
+        {pdfError && <div className="no-print mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">{pdfError} اگر اینترنت در دسترس نیست، از گزینه «چاپ» استفاده کنید.</div>}
 
         {/* Signature Uploader Drawer if opened */}
         {showSignatureModal && (
@@ -103,7 +187,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
         {/* Invoice Printable Area */}
         <div id="printable-invoice" className="p-6 sm:p-10 overflow-y-auto font-['Vazirmatn',sans-serif] bg-white text-[#232d3a] flex-1">
           {/* Header Banner */}
-          <div className="bg-[#1b365d] text-white p-6 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 shadow-md">
+          <div className="bg-gradient-to-l from-[#172554] via-[#1e3a5f] to-[#0f766e] text-white p-6 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 shadow-md">
             <div className="flex items-center gap-3">
               <img
                 src={appLogo}
