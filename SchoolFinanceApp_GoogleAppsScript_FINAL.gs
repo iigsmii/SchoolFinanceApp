@@ -354,6 +354,7 @@ function doPost(e) {
       case 'summary': result=summary_(body); break;
       case 'my_claim': result=myClaim_(body); break;
       case 'app_version': result=appVersion_(body); break;
+      case 'update_settings': result=updateSettings_(body); break;
       case 'health': result={success:true}; break;
       default: result={success:false,error:'Unknown action',action:action,backend_version:'2026-10-05-v2.12-expense-statement-update'};
     }
@@ -1879,7 +1880,36 @@ function saveSetting_(key,value){
   else appendByHeaders_('Settings',[String(key),String(value),now_()]);
 }
 
-function appVersion_(b){ auth_(b); const settings={}; rows_('Settings').forEach(x=>settings[String(x.obj.key||'')]=String(x.obj.value||'')); return {success:true,version:settings['android_version']||'2.15.0',apk_url:settings['android_apk_url']||'',backend_version:'2.15.0'}; }
+function appVersion_(b){
+  auth_(b);
+  const settings={};
+  rows_('Settings').forEach(x=>settings[String(x.obj.key||'')]=String(x.obj.value||''));
+  return {
+    success:true,
+    version:settings['android_version']||'2.16.0',
+    apk_url:settings['android_apk_url']||'',
+    notes:settings['android_update_notes']||'',
+    force_update:String(settings['android_force_update']||'false').toLowerCase()==='true',
+    backend_version:'2.16.0'
+  };
+}
+
+function updateSettings_(b){
+  const u=auth_(b,['senior']);
+  const version=String(b.version||'').trim();
+  const apkUrl=String(b.apk_url||'').trim();
+  const notes=String(b.notes||'').trim().slice(0,2000);
+  const force=String(b.force_update||'false').toLowerCase()==='true';
+  if(!/^\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version))
+    throw new Error('شماره نسخه باید مانند 2.17.0 باشد.');
+  if(!/^https:\\/\\//i.test(apkUrl) || !/\\.apk(?:$|[?#])/i.test(apkUrl))
+    throw new Error('لینک باید نشانی مستقیم و امن فایل APK باشد.');
+  saveSetting_('android_version',version);
+  saveSetting_('android_apk_url',apkUrl);
+  saveSetting_('android_update_notes',notes);
+  saveSetting_('android_force_update',force?'true':'false');
+  return {success:true,message:'تنظیمات به‌روزرسانی برای همه کاربران ذخیره شد.',version:version,updated_by:u.username};
+}
 
 function myClaim_(b){
   const u=auth_(b);
