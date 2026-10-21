@@ -3,7 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { normalizeSearchText } from '../../utils/studentSearch';
 import { Header } from '../Header';
 import { formatRial, jalaliFromGregorian } from '../../utils/jalali';
-import { ArrowLeftRight, Trash2, Search, Filter } from 'lucide-react';
+import { Trash2, Search, Image as ImageIcon, Eye, X } from 'lucide-react';
 
 export const TransactionsScreen: React.FC = () => {
   const { transactions, currentUser, deleteTransaction, accentColor } = useApp();
@@ -11,6 +11,7 @@ export const TransactionsScreen: React.FC = () => {
 
   const [filterKind, setFilterKind] = useState<'all' | 'debt' | 'payment' | 'expense'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedAttachment, setSelectedAttachment] = useState<{ url: string; title: string } | null>(null);
 
   const scopedTxs = isSenior
     ? transactions
@@ -127,6 +128,31 @@ export const TransactionsScreen: React.FC = () => {
                         شرح: {t.description}
                       </div>
                     )}
+
+                    {t.attachment_url && (
+                      <div className="mt-3 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-3">
+                        <div className="flex items-center gap-2 text-xs font-bold text-indigo-900 mb-2">
+                          <ImageIcon className="w-4 h-4" />
+                          تصویر پیوست تراکنش
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedAttachment({ url: t.attachment_url!, title: `پیوست تراکنش شماره ${t.id}` })}
+                          className="flex items-center gap-3 text-right rounded-xl bg-white border border-indigo-100 p-2 hover:bg-indigo-50 transition-colors"
+                        >
+                          <img
+                            src={t.attachment_url}
+                            alt="پیش‌نمایش پیوست تراکنش"
+                            loading="lazy"
+                            className="w-20 h-20 object-cover rounded-lg border border-gray-200 bg-gray-50"
+                            onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                          />
+                          <span className="text-xs font-bold text-indigo-800 flex items-center gap-1.5">
+                            <Eye className="w-4 h-4" /> مشاهده تصویر پیوست
+                          </span>
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center justify-between w-full sm:w-auto sm:flex-col sm:items-end gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100 shrink-0">
@@ -155,6 +181,23 @@ export const TransactionsScreen: React.FC = () => {
           )}
         </div>
       </main>
+
+      {selectedAttachment && (
+        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6" onClick={() => setSelectedAttachment(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between gap-3">
+              <h3 className="font-bold text-sm text-[#341648]">{selectedAttachment.title}</h3>
+              <button type="button" onClick={() => setSelectedAttachment(null)} className="p-2 rounded-xl hover:bg-gray-100" aria-label="بستن تصویر"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-3 sm:p-5 overflow-auto flex items-center justify-center bg-gray-50 min-h-40">
+              <img src={selectedAttachment.url} alt={selectedAttachment.title} className="max-w-full max-h-[72vh] object-contain rounded-lg" />
+            </div>
+            <div className="p-3 border-t border-gray-100 flex justify-end">
+              <a href={selectedAttachment.url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-indigo-700 underline">باز کردن فایل در صفحه جداگانه</a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
