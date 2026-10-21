@@ -1,0 +1,7 @@
+{
+  "version": "2.16.187",
+  "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
+  "notes": "Correct Android Gradle version regex escaping",
+  "build": 187,
+  "published_at": "2026-10-21T08:47:34Z"
+}
