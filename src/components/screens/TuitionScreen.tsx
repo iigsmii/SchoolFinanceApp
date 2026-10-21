@@ -24,6 +24,40 @@ import { matchesStudentSearch } from '../../utils/studentSearch';
 
 const PAYMENT_METHODS = ['پول نقد', 'کارت به کارت', 'کارت خوان', 'چک'];
 
+
+const amountInTomanWords = (rawAmount: string): string => {
+  const amount = Number(latinDigits(rawAmount).replace(/[^0-9]/g, ''));
+  if (!Number.isFinite(amount) || amount <= 0) return '';
+  const toman = Math.floor(amount / 10);
+  if (toman <= 0) return 'کمتر از یک تومان';
+  const ones = ['','یک','دو','سه','چهار','پنج','شش','هفت','هشت','نه'];
+  const teens = ['ده','یازده','دوازده','سیزده','چهارده','پانزده','شانزده','هفده','هجده','نوزده'];
+  const tens = ['','','بیست','سی','چهل','پنجاه','شصت','هفتاد','هشتاد','نود'];
+  const hundreds = ['','یکصد','دویست','سیصد','چهارصد','پانصد','ششصد','هفتصد','هشتصد','نهصد'];
+  const scales = ['', 'هزار', 'میلیون', 'میلیارد', 'تریلیون'];
+  const underThousand = (n: number): string => {
+    const parts: string[] = [];
+    if (n >= 100) parts.push(hundreds[Math.floor(n / 100)]);
+    n %= 100;
+    if (n >= 10 && n < 20) parts.push(teens[n - 10]);
+    else {
+      if (n >= 20) parts.push(tens[Math.floor(n / 10)]);
+      if (n % 10) parts.push(ones[n % 10]);
+    }
+    return parts.join(' و ');
+  };
+  const parts: string[] = [];
+  let n = toman;
+  let group = 0;
+  while (n > 0 && group < scales.length) {
+    const chunk = n % 1000;
+    if (chunk) parts.unshift(underThousand(chunk) + (scales[group] ? ' ' + scales[group] : ''));
+    n = Math.floor(n / 1000);
+    group++;
+  }
+  return parts.join(' و ') + ' تومان';
+};
+
 export const TuitionScreen: React.FC = () => {
   const {
     students,
@@ -521,6 +555,7 @@ export const TuitionScreen: React.FC = () => {
                   className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm text-[#302735] font-mono text-left focus:outline-hidden focus:border-[#62205f]"
                   dir="ltr"
                 />
+                {formAmount && <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800" aria-live="polite">معادل به حروف (تومان): {amountInTomanWords(formAmount)}</div>}
               </div>
 
               <JalaliDatePicker
@@ -620,6 +655,7 @@ export const TuitionScreen: React.FC = () => {
                   className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm text-[#302735] font-mono text-left focus:outline-hidden focus:border-[#62205f]"
                   dir="ltr"
                 />
+                {formAmount && <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800" aria-live="polite">معادل به حروف (تومان): {amountInTomanWords(formAmount)}</div>}
               </div>
 
               <JalaliDatePicker
@@ -846,6 +882,7 @@ export const TuitionScreen: React.FC = () => {
                     className="w-full px-4 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left focus:outline-hidden"
                     dir="ltr"
                   />
+                  {bulkAmount && <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800" aria-live="polite">معادل به حروف (تومان): {amountInTomanWords(bulkAmount)}</div>}
                 </div>
 
                 <JalaliDatePicker
