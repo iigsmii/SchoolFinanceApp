@@ -3,8 +3,6 @@ import { useApp } from '../../context/AppContext';
 import { matchesStudentSearch } from '../../utils/studentSearch';
 import { DashboardClock } from '../DashboardClock';
 import { TuitionMonthlyChart } from '../TuitionMonthlyChart';
-import { QuickInvoiceModal } from '../QuickInvoiceModal';
-import { InvoicePrintModal } from '../InvoicePrintModal';
 import {
   Users,
   CreditCard,
@@ -84,9 +82,6 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
   // State for offline excel feedback
   const [offlineSuccessNotice, setOfflineSuccessNotice] = useState<string | null>(null);
 
-  // Quick invoice modal state
-  const [isQuickInvoiceOpen, setIsQuickInvoiceOpen] = useState(false);
-  const [invoiceStudent, setInvoiceStudent] = useState<Student | null>(null);
 
   // Financial Status Box School Filter
   // Senior can select 0 (all schools) or any specific school. Manager is restricted to their own school.
@@ -403,7 +398,7 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
             type="button"
             onClick={() => {
               playClickSound();
-              setIsQuickInvoiceOpen(true);
+              setCurrentScreen('tuition');
             }}
             className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-amber-50 border border-amber-300 hover:border-amber-500 hover:shadow-xs active:scale-95 transition-all text-center min-h-[78px] group"
           >
@@ -796,24 +791,6 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
       </>
       )}
 
-      {/* Quick Invoice Modal */}
-      {!overviewOnly && <QuickInvoiceModal
-        isOpen={isQuickInvoiceOpen}
-        onClose={() => setIsQuickInvoiceOpen(false)}
-        students={baseStudents}
-        accentColor={accentColor}
-        onIssueInvoice={(student) => setInvoiceStudent(student)}
-      />}
-
-      {/* Full Official Invoice Print Modal */}
-      {!overviewOnly && invoiceStudent && (
-        <InvoicePrintModal
-          student={invoiceStudent}
-          transactions={transactions}
-          balance={getStudentBalance(invoiceStudent.id).balance}
-          onClose={() => setInvoiceStudent(null)}
-        />
-      )}
     </div>
   );
 };
