@@ -21,6 +21,7 @@ import { SettingsScreen } from './components/screens/SettingsScreen';
 import { SmsScreen } from './components/screens/SmsScreen';
 import { StaffScreen } from './components/screens/StaffScreen';
 import { PWAUpdatePrompt } from './components/PWAUpdatePrompt';
+import { AppUpdatePrompt } from './components/AppUpdatePrompt';
 import { LogOut, X, AlertTriangle } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -230,6 +231,7 @@ export const App: React.FC = () => {
       )}
       {/* PWA Update notification banner */}
       <PWAUpdatePrompt />
+      <AppUpdatePrompt />
     </>
   );
 };
