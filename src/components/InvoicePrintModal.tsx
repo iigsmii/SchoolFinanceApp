@@ -103,7 +103,9 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
       const safeName = (student.name || 'دانش‌آموز').replace(/[\\/:*?"<>|]/g, '-').trim();
       pdf.save(`رسید-شهریه-${safeName}-${student.id}.pdf`);
     } catch (error) {
-      setPdfError(error instanceof Error ? error.message : 'ساخت فایل PDF ناموفق بود. اتصال اینترنت را بررسی کنید.');
+      setPdfError((error instanceof Error ? error.message : 'ساخت فایل PDF ناموفق بود.') + ' پنجره چاپ باز می‌شود؛ در مقصد چاپ، «ذخیره به‌صورت PDF» را انتخاب کنید.');
+      // Fallback for Android WebView or blocked external PDF libraries.
+      window.setTimeout(() => window.print(), 250);
     } finally {
       setIsPdfLoading(false);
     }
@@ -162,19 +164,11 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
             <button
               onClick={handleDownloadPdf}
               disabled={isPdfLoading}
-              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-[#0f766e] text-white rounded-xl font-bold text-sm whitespace-nowrap hover:bg-[#115e59] disabled:opacity-60 active:scale-95 transition-all shadow-sm"
-              title="ساخت و دانلود مستقیم فایل PDF"
-            >
-              {isPdfLoading ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-              <span>{isPdfLoading ? 'در حال ساخت PDF...' : 'دانلود PDF'}</span>
-            </button>
-            <button
-              onClick={handlePrint}
-              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-[#62205f] text-white rounded-xl font-bold text-sm whitespace-nowrap hover:opacity-90 active:scale-95 transition-all shadow-sm"
+              className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-[#62205f] text-white rounded-xl font-bold text-sm whitespace-nowrap hover:opacity-90 active:scale-95 transition-all shadow-sm disabled:opacity-60"
               style={{ backgroundColor: accentColor }}
             >
-              <Printer className="w-4 h-4" />
-              <span>چاپ یا ذخیره PDF</span>
+              {isPdfLoading ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+              <span>{isPdfLoading ? "در حال آماده‌سازی..." : "چاپ / ذخیره PDF"}</span>
             </button>
             <button
               onClick={onClose}
@@ -202,7 +196,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
           </div>
         )}
 
-        <style>{`@media print { @page { size: ${paperSize} portrait; margin: 8mm; } .invoice-print-root { position: static !important; inset: auto !important; display: block !important; background: white !important; padding: 0 !important; overflow: visible !important; } #printable-invoice { overflow: visible !important; max-height: none !important; } }`}</style>
+        <style>{`@media print { @page { size: ${paperSize} portrait; margin: 8mm; } .no-print { display: none !important; } .invoice-print-root { position: static !important; inset: auto !important; display: block !important; background: white !important; padding: 0 !important; overflow: visible !important; } #printable-invoice { overflow: visible !important; max-height: none !important; } }`}</style>
 
         {/* Invoice Printable Area */}
         <div id="printable-invoice" className="p-4 sm:p-10 overflow-y-auto overflow-x-auto font-['Vazirmatn',sans-serif] bg-white text-[#232d3a] flex-1 min-w-0">
@@ -360,31 +354,31 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
           {(() => {
             const shiaNarrations = [
               {
-                narrator: 'امام علی (علیه‌السلام)',
+                narrator: 'امیرالمؤمنین علیه‌السلام',
                 text: '«عَلَى الإِنصافِ تَرسَخُ المَوَدَّةُ»',
                 meaning: 'انصاف، دوستی را استوار می‌کند.',
                 source: 'غرر الحکم و درر الکلم، حدیث ۶۱۹۰'
               },
               {
-                narrator: 'امام علی (علیه‌السلام)',
+                narrator: 'امیرالمؤمنین علیه‌السلام',
                 text: '«زَكاةُ القُدرَةِ الإِنصافُ»',
                 meaning: 'زکات و شکرانه قدرت، رعایت انصاف است.',
                 source: 'غرر الحکم و درر الکلم، حدیث ۵۴۴۸'
               },
               {
-                narrator: 'امام علی (علیه‌السلام)',
+                narrator: 'امیرالمؤمنین علیه‌السلام',
                 text: '«الأَمانَةُ تُؤَدّي إِلَى الصِّدقِ»',
                 meaning: 'امانت‌داری به راستگویی می‌انجامد.',
                 source: 'غرر الحکم و درر الکلم؛ میزان الحکمة، باب امانت'
               },
               {
-                narrator: 'امام علی (علیه‌السلام)',
+                narrator: 'امیرالمؤمنین علیه‌السلام',
                 text: '«إِذا قَوِيَتِ الأَمانَةُ كَثُرَ الصِّدقُ»',
                 meaning: 'هرگاه امانت‌داری نیرومند شود، راستگویی فراوان می‌شود.',
                 source: 'غرر الحکم و درر الکلم؛ میزان الحکمة، باب امانت'
               },
               {
-                narrator: 'امام علی (علیه‌السلام)',
+                narrator: 'امیرالمؤمنین علیه‌السلام',
                 text: '«الأَمانَةُ وَالوَفاءُ صِدقُ الأَفعالِ»',
                 meaning: 'امانت‌داری و وفای به عهد، راستی در کردار است.',
                 source: 'غرر الحکم و درر الکلم؛ میزان الحکمة، باب امانت'
@@ -402,19 +396,19 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                 source: 'الأمالی شیخ صدوق؛ نقل‌شده در میزان الحکمة، باب امانت'
               },
               {
-                narrator: 'امام علی (علیه‌السلام)',
+                narrator: 'امیرالمؤمنین علیه‌السلام',
                 text: '«مَن عُرِفَ بِالكَذِبِ لَمْ يُقْبَلْ صِدْقُهُ»',
                 meaning: 'کسی که به دروغگویی شناخته شود، سخن راستش نیز پذیرفته نمی‌شود.',
                 source: 'غرر الحکم و درر الکلم، حدیث ۸۰۱۰'
               },
               {
-                narrator: 'امام علی (علیه‌السلام)',
+                narrator: 'امیرالمؤمنین علیه‌السلام',
                 text: '«لَيسَ مِنَ العَدلِ القَضاءُ عَلَى الثِّقَةِ بِالظَّنِّ»',
                 meaning: 'داوری درباره فرد امین بر پایه گمان، از عدالت نیست.',
                 source: 'غرر الحکم و درر الکلم، حدیث ۷۵۰۰'
               },
               {
-                narrator: 'امام علی (علیه‌السلام)',
+                narrator: 'امیرالمؤمنین علیه‌السلام',
                 text: '«أَدُّوا الأَمانَةَ وَلَوْ إِلَى قَتَلَةِ أَوْلادِ الأَنْبِياءِ»',
                 meaning: 'امانت را ادا کنید، حتی اگر صاحب آن با شما دشمن باشد.',
                 source: 'بحار الأنوار، جلد ۷۵، صفحه ۱۱۵؛ نقل از منابع روایی شیعه'
@@ -436,7 +430,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
             return (
               <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center">
                 <div className="mb-1 text-[11px] font-bold text-amber-900">حدیثی از منابع شیعه درباره اخلاق و امانت‌داری</div>
-                <div className="mb-1 text-[11px] font-bold text-[#5b4218]">گوینده / راوی: {narration.narrator}</div>
+                <div className="mb-1 text-[11px] font-bold text-[#5b4218]">{narration.narrator}</div>
                 <div className="text-sm font-bold leading-7 text-[#5b4218]">{narration.text}</div>
                 <div className="mt-1 text-[11px] leading-5 text-amber-900">{narration.meaning}</div>
                 <div className="mt-1 text-[10px] text-amber-800">منبع: {narration.source}</div>
