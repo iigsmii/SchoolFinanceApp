@@ -93,11 +93,11 @@ jobs:
           import os, re, pathlib, sys
           path = pathlib.Path(os.environ["GRADLE_FILE"])
           content = path.read_text()
-          content, count_code = re.subn(r'(?m)(\\bversionCode\\s*=\\s*|\\bversionCode\\s+)[0-9]+', lambda m: m.group(1) + os.environ["VERSION_CODE"], content, count=1)
-          content, count_name = re.subn(r'(?m)(\\bversionName\\s*=\\s*|\\bversionName\\s+)[\'"][^\'"]*[\'"]', lambda m: m.group(1) + '"' + os.environ["APP_VERSION"] + '"', content, count=1)
+          content, count_code = re.subn(r'(?m)(\bversionCode\s*=\s*|\bversionCode\s+)[0-9]+', lambda m: m.group(1) + os.environ["VERSION_CODE"], content, count=1)
+          content, count_name = re.subn(r'(?m)(\bversionName\s*=\s*|\bversionName\s+)[\'"][^\'"]*[\'"]', lambda m: m.group(1) + '"' + os.environ["APP_VERSION"] + '"', content, count=1)
           if not count_code or not count_name:
               print("Could not find versionCode/versionName in generated Gradle file:", path)
-              print("\\n".join(line for line in content.splitlines() if "versionCode" in line or "versionName" in line))
+              print("\n".join(line for line in content.splitlines() if "versionCode" in line or "versionName" in line))
               sys.exit(1)
           path.write_text(content)
           print(f"Android version configured: {os.environ['APP_VERSION']} (code {os.environ['VERSION_CODE']})")
@@ -198,7 +198,7 @@ jobs:
             --title "SchoolFinanceApp ${APP_VERSION} (build ${GITHUB_RUN_NUMBER})" \
             --notes "نسخه آماده نصب برنامه SchoolFinanceApp. این انتشار به‌صورت خودکار ساخته شده است."
           APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/SchoolFinanceApp-latest.apk"
-          LAST_CHANGE="$(git log -5 --pretty=format:'%s' | paste -sd '; ' - | sed 's/"/\\"/g')"
+          LAST_CHANGE="$(git log -5 --pretty=format:'%s' | paste -sd '; ' - | sed 's/"/\"/g')"
           BUILD_TIME="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           cat > latest-version.json <<EOF
           {
