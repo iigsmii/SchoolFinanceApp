@@ -1,7 +1,7 @@
 {
-  "version": "2.16.187",
+  "version": "2.16.189",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Correct Android Gradle version regex escaping",
-  "build": 187,
-  "published_at": "2026-10-21T08:47:34Z"
+  "notes": "Show receipt attachments in account statements and expense ledger",
+  "build": 189,
+  "published_at": "2026-10-21T09:15:28Z"
 }
