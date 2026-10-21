@@ -34,7 +34,7 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
     students,
     currentUser,
     accentColor,
-    addTuitionDebt,
+    addTuitionPayment,
     getStudentBalance,
   } = useApp();
 
@@ -61,7 +61,6 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
   const [tuitionAmount, setTuitionAmount] = useState('180,000,000');
   const [invoiceDate, setInvoiceDate] = useState(todayJalali());
   const [description, setDescription] = useState('شهریه مصوب سال تحصیلی ۱۴۰۵-۱۴۰۶');
-  const [recordAsNewDebt, setRecordAsNewDebt] = useState(false);
   const [error, setError] = useState('');
 
   if (!isOpen) return null;
@@ -103,18 +102,17 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
     }
 
     try {
-      if (recordAsNewDebt) {
-        const isoDate = jalaliToIso(invoiceDate);
-        addTuitionDebt({
-          student_id: selectedStudent.id,
-          amount: cleanAmount,
-          date: isoDate,
-          description: description.trim() || 'شهریه مصوب',
-          school_id: selectedStudent.school_id,
-        });
-      }
+      const isoDate = jalaliToIso(invoiceDate);
+      // Quick invoice is a receipt for a payment, not a new debt.
+      addTuitionPayment({
+        student_id: selectedStudent.id,
+        amount: cleanAmount,
+        date: isoDate,
+        description: description.trim() || 'پرداخت شهریه',
+        payment_method: 'پول نقد',
+        school_id: selectedStudent.school_id,
+      });
 
-      // Trigger invoice modal
       if (onIssueInvoice) {
         onIssueInvoice(selectedStudent);
       }
@@ -138,7 +136,7 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-black text-[#341648]">صدور سریع فاکتور پرداخت شهریه</h2>
-              <p className="text-xs text-gray-400">انتخاب دانش‌آموز، مبلغ و صدور فوری فاکتور رسمی PDF</p>
+              <p className="text-xs text-gray-400">ثبت پرداخت شهریه، کسر از بدهی و صدور رسید</p>
             </div>
           </div>
           <button
@@ -227,7 +225,7 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-bold text-[#341648]">
-                مبلغ شهریه فاکتور (ریال) <span className="text-rose-500">*</span>
+                مبلغ پرداختی شهریه (ریال) <span className="text-rose-500">*</span>
               </label>
               {studentBalance && studentBalance.balance > 0 && (
                 <button
@@ -299,24 +297,6 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
             required
           />
 
-          {/* Record As New Debt Checkbox */}
-          <label className="flex items-start gap-2.5 p-3 rounded-2xl bg-[#fcfaff] border border-[#ede5ef] cursor-pointer">
-            <input
-              type="checkbox"
-              checked={recordAsNewDebt}
-              onChange={(e) => setRecordAsNewDebt(e.target.checked)}
-              className="mt-0.5 rounded text-[#62205f] focus:ring-[#62205f]"
-            />
-            <div>
-              <span className="font-bold text-gray-800 text-xs">
-                همزمان به عنوان بدهی جدید در سوابق و پرونده مالی دانش‌آموز ثبت شود
-              </span>
-              <p className="text-[11px] text-gray-400 mt-0.5">
-                (در صورت غیرفعال بودن، فاکتور بر اساس سوابق مالی و مانده حساب کنونی صادر می‌گردد)
-              </p>
-            </div>
-          </label>
-
           {/* Submit Action Buttons */}
           <div className="flex items-center gap-3 pt-3">
             <button
@@ -325,7 +305,7 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
               style={{ backgroundColor: accentColor }}
             >
               <Printer className="w-4 h-4" />
-              <span>مشاهده و چاپ فاکتور رسمی PDF</span>
+              <span>ثبت پرداخت و صدور رسید</span>
             </button>
             <button
               type="button"
