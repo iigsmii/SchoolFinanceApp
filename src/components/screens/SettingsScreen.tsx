@@ -66,10 +66,26 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
   const [updateSaving, setUpdateSaving] = useState(false);
 
   const handleCheckUpdate = async () => {
-    setUpdateMsg('در حال بررسی نسخه از سرور مشترک...');
+    setUpdateMsg('در حال دریافت خودکار آخرین نسخه و لینک مستقیم...');
+    try {
+      const response = await fetch('https://raw.githubusercontent.com/iigsmii/SchoolFinanceApp/main/latest-version.json?t=' + Date.now(), { cache: 'no-store' });
+      if (response.ok) {
+        const latest = await response.json();
+        if (latest.version && latest.apk_url) {
+          setUpdateVersion(String(latest.version));
+          setUpdateUrl(String(latest.apk_url));
+          setUpdateNotes(String(latest.notes || ''));
+          setForceUpdate(false);
+          setUpdateMsg('آخرین بیلد با موفقیت دریافت شد؛ نسخه و لینک مستقیم APK به‌صورت خودکار جایگذاری شد. برای انتشار از سرور مشترک، دکمه ذخیره را بزنید.');
+          return;
+        }
+      }
+    } catch (_) {
+      // If GitHub manifest is temporarily unreachable, try the configured Apps Script server.
+    }
     const result = await postToAppsScript({ action: 'app_version' }, webAppUrl);
     if (!result.success) {
-      setUpdateMsg('بررسی نسخه انجام نشد: ' + (result.error || 'ارتباط با سرور برقرار نشد.'));
+      setUpdateMsg('دریافت خودکار انجام نشد: ' + (result.error || 'هنوز اولین بیلد موفق منتشر نشده یا ارتباط برقرار نیست.'));
       return;
     }
     const data = (result as any);
@@ -79,7 +95,7 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
     setForceUpdate(Boolean(data.force_update));
     setUpdateMsg(data.apk_url
       ? 'تنظیمات نسخه از سرور دریافت شد. نسخه منتشرشده: ' + String(data.version || 'نامشخص')
-      : 'هنوز لینک APK برای کاربران ثبت نشده است.');
+      : 'هنوز فایل وضعیت آخرین بیلد ساخته نشده و لینک APK روی سرور هم ثبت نشده است. بعد از اولین بیلد موفق، دوباره امتحان کنید.');
   };
 
   const handleSaveUpdateSettings = async () => {
