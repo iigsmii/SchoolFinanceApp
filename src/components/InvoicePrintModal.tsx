@@ -36,7 +36,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
       return;
     }
     const message = `اولیای گرامی دانش‌آموز ${student.name}، از پرداخت شهریه شما سپاسگزاریم. مبلغ پرداختی ثبت شد و مانده شهریه ${formatRial(remaining)} ریال است. با احترام، مدرسة القرآن الکریم شهرضا`;
-    const separator = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ? '&' : '?';
+    const separator = /iPhone|iPad|iPod/i.test(navigator.userAgent) ? '&' : '?';
     window.location.href = `sms:${phone}${separator}body=${encodeURIComponent(message)}`;
   };
 
