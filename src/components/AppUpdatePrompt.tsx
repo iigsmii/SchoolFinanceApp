@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Download, X } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { postToAppsScript } from '../services/googleSheets';
+import packageJson from '../../package.json';
 
-const CURRENT_VERSION = '2.16.0';
+const CURRENT_VERSION = String(packageJson.version);
 type UpdateInfo = { version: string; apk_url: string; notes?: string; force_update?: boolean };
 function newer(remote: string, local: string) {
   const a = remote.split('.').map(Number), b = local.split('.').map(Number);
