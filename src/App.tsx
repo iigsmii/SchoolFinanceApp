@@ -57,6 +57,12 @@ export const App: React.FC = () => {
       if (handlingBack) return;
       handlingBack = true;
       try {
+        // A visible dialog gets the Back event first; it must not bubble into dashboard exit.
+        const overlay = document.querySelector('.invoice-print-root, .quick-invoice-modal');
+        if (overlay) {
+          window.dispatchEvent(new Event('app:back'));
+          return;
+        }
         goBackRef.current();
       } finally {
         installBrowserGuard();
