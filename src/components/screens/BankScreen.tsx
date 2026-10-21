@@ -309,6 +309,46 @@ export const BankScreen: React.FC = () => {
     e.target.value = '';
   };
 
+  // Suggest bank-withdrawal matches for petty-cash expenses. Matching is conservative:
+  // same school and amount, date within 3 days, and card suffix when available.
+  const digitsOnly = (value: unknown) => String(value ?? '').replace(/[^0-9۰-۹٠-٩]/g, '')
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+  const dayDistance = (a: string, b: string) => {
+    const da = new Date(a).getTime();
+    const db = new Date(b).getTime();
+    if (!Number.isFinite(da) || !Number.isFinite(db)) return 999;
+    return Math.abs(da - db) / 86400000;
+  };
+  const pettyCashWithdrawalRows = bankTransactions.filter((b) =>
+    b.direction === 'withdrawal' && !b.reconciled &&
+    (selectedSchoolId === 0 || b.school_id === selectedSchoolId) &&
+    (isSenior || b.school_id === currentUser?.school_id) &&
+    /۰۰۱|۰۰۲|001|002|111889212002|218706617001/.test(digitsOnly(b.bank_account))
+  );
+  const getPettyCashCandidates = (b: typeof bankTransactions[number]) => {
+    const bankCard = digitsOnly(b.card_number);
+    return pettyCashTxs.filter((t) => {
+      if (t.reconciled || t.review_status === 'rejected') return false;
+      if (Number(t.school_id) !== Number(b.school_id) || Number(t.amount) !== Number(b.amount)) return false;
+      if (dayDistance(t.date, b.date) > 3) return false;
+      const configuredCard = digitsOnly(t.petty_cash_card || users.find((u) => u.school_id === t.school_id && u.role === 'manager')?.petty_cash_card || schools.find((s) => s.id === t.school_id)?.petty_cash_card);
+      if (bankCard && configuredCard && !bankCard.endsWith(configuredCard.slice(-4))) return false;
+      return true;
+    });
+  };
+  const reconcilePettyCashPair = (bankId: number, transactionId: number) => {
+    const bankRow = bankTransactions.find((b) => b.id === bankId);
+    const expense = transactions.find((t) => t.id === transactionId);
+    if (!bankRow || !expense || expense.kind !== 'هزینه' || expense.payment_source !== 'petty_cash') return;
+    if (Number(bankRow.amount) !== Number(expense.amount) || Number(bankRow.school_id) !== Number(expense.school_id)) {
+      alert('مبلغ یا مدرسهٔ تراکنش‌ها یکسان نیست؛ تطبیق انجام نشد.');
+      return;
+    }
+    updateBankTransaction(bankId, { reconciled: true, matched_transaction_id: transactionId, assigned_purpose: expense.expense_category_name || expense.description || 'هزینه تن‌خواه' });
+    manualReviewTransaction(transactionId, true, 'تطبیق با برداشت بانکی');
+  };
+
   // Managers with Petty Cash cards
   const managersWithCards = users.filter((u) => u.role === 'manager' || u.petty_cash_card);
 
@@ -719,6 +759,28 @@ export const BankScreen: React.FC = () => {
                   );
                 })}
               </div>
+            </div>
+
+            {/* Bank withdrawals that may correspond to petty-cash expenses */}
+            <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+              <div className="font-bold text-sm text-amber-950">برداشت‌های بانکی منتظر تطبیق با تن‌خواه ({pettyCashWithdrawalRows.length})</div>
+              <p className="text-xs text-amber-900">برداشت از حساب‌های ۰۰۱ و ۰۰۲ بررسی می‌شود. پیشنهاد فقط بر اساس مدرسه، مبلغ و فاصلهٔ تاریخ تا ۳ روز است؛ در صورت وجود چند گزینه، انتخاب با شماست.</p>
+              {pettyCashWithdrawalRows.length === 0 ? (
+                <div className="text-xs text-gray-500">برداشت بانکی تطبیق‌نشده‌ای از حساب‌های ۰۰۱ یا ۰۰۲ وجود ندارد؛ ابتدا صورتحساب حساب را وارد کنید.</div>
+              ) : pettyCashWithdrawalRows.map((b) => {
+                const candidates = getPettyCashCandidates(b);
+                return <div key={b.id} className="rounded-xl border border-amber-200 bg-white p-3 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span className="font-bold text-gray-800">{b.description || 'برداشت بانکی'} — {b.school_name || schools.find((s) => s.id === b.school_id)?.name || 'مدرسه نامشخص'}</span>
+                    <span className="font-black text-rose-700">{formatRial(b.amount)} ریال</span>
+                  </div>
+                  <div className="text-[11px] text-gray-500">تاریخ: {jalaliFromGregorian(b.date)} | حساب: {b.bank_account || '—'} | کارت: {b.card_number || 'ثبت نشده'}</div>
+                  {candidates.length === 0 ? <div className="text-xs text-gray-500">هزینه‌ای با مبلغ و تاریخ نزدیک پیدا نشد.</div> : candidates.map((t) => <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-gray-50 p-2 text-xs">
+                    <span>{t.expense_category_name || t.description || t.comment || 'هزینه تن‌خواه'} — {jalaliFromGregorian(t.date)} — {formatRial(t.amount)} ریال</span>
+                    <button type="button" onClick={() => { if (window.confirm('این برداشت بانکی با هزینهٔ انتخاب‌شده تطبیق داده شود؟')) reconcilePettyCashPair(b.id, t.id); }} className="rounded-lg bg-emerald-600 px-3 py-1.5 font-bold text-white hover:bg-emerald-700">تأیید تطبیق</button>
+                  </div>)}
+                </div>;
+              })}
             </div>
 
             {/* Petty Cash Expenses List */}
