@@ -111,7 +111,9 @@ export interface BankTransaction {
   matched_transaction_id?: number;
   direction?: 'deposit' | 'withdrawal' | 'unknown';
   balance?: number;
-  card_number?: string;
+  card_number?: string; // سازگاری با نسخه‌های قبلی
+  source_card_number?: string; // شماره کارت مبدأ
+  destination_card_number?: string; // شماره کارت مقصد
   terminal_number?: string;
   assigned_student_id?: number;
   assigned_student_name?: string;
