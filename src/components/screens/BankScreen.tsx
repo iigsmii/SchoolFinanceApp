@@ -201,8 +201,9 @@ export const BankScreen: React.FC = () => {
         let feeCount = 0;
         let skipped = 0;
         const newItems = data.map((row) => {
-          const debit = toAmount(pick(row, ['برداشت','مبلغ برداشت','بدهکار','debit','withdrawal','برداشت (ریال)']));
-          const credit = toAmount(pick(row, ['واریز','مبلغ واریز','بستانکار','credit','deposit','واریز (ریال)']));
+          // POS reports have a "تاریخ واریز" column; never mistake that date for a credit amount.
+          const debit = isPosReport ? 0 : toAmount(pick(row, ['برداشت','مبلغ برداشت','بدهکار','debit','withdrawal','برداشت (ریال)']));
+          const credit = isPosReport ? 0 : toAmount(pick(row, ['واریز','مبلغ واریز','بستانکار','credit','deposit','واریز (ریال)']));
           const rawAmount = pick(row, ['مبلغ','مبلغ تراکنش','amount','transaction amount']);
           const amount = debit || credit || toAmount(rawAmount);
           const track = String(pick(row, ['شماره پیگیری','کد پیگیری','شماره مرجع','شماره ارجاع','ارجاع','tracking','reference','reference number']) || '').trim();
