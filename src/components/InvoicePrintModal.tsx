@@ -24,6 +24,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState('');
   const [paperSize, setPaperSize] = useState<'a4' | 'a5'>('a4');
+  const [hadithRandomSeed] = useState(() => Math.random());
 
   useEffect(() => {
     const handleAppBack = () => {
@@ -431,7 +432,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
                 source: 'الکافی، جلد ۲، صفحه ۴۷۴، باب الإنصاف والعدل'
               }
             ];
-            const [narration] = [shiaNarrations[Math.floor(Math.random() * shiaNarrations.length)]];
+            const narration = shiaNarrations[Math.floor(hadithRandomSeed * shiaNarrations.length)];
             return (
               <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center">
                 <div className="mb-1 text-[11px] font-bold text-amber-900">حدیثی از منابع شیعه درباره اخلاق و امانت‌داری</div>
