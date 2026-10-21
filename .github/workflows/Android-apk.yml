@@ -8,6 +8,10 @@ on:
     paths-ignore:
       - latest-version.json
 
+concurrency:
+  group: android-release-main
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
