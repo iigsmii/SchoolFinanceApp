@@ -198,7 +198,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
           </div>
         )}
 
-        <style>{`@media print { @page { size: ${'${paperSize}'} portrait; margin: 8mm; } .invoice-print-root { position: static !important; inset: auto !important; display: block !important; background: white !important; padding: 0 !important; overflow: visible !important; } #printable-invoice { overflow: visible !important; max-height: none !important; } }`}</style>
+        <style>{`@media print { @page { size: ${paperSize} portrait; margin: 8mm; } .invoice-print-root { position: static !important; inset: auto !important; display: block !important; background: white !important; padding: 0 !important; overflow: visible !important; } #printable-invoice { overflow: visible !important; max-height: none !important; } }`}</style>
 
         {/* Invoice Printable Area */}
         <div id="printable-invoice" className="p-6 sm:p-10 overflow-y-auto font-['Vazirmatn',sans-serif] bg-white text-[#232d3a] flex-1">
