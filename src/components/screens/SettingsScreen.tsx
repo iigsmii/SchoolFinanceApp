@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import {
@@ -64,6 +64,25 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
   const [updateNotes, setUpdateNotes] = useState('');
   const [forceUpdate, setForceUpdate] = useState(false);
   const [updateSaving, setUpdateSaving] = useState(false);
+
+  // Populate the manager's update form automatically from the latest successful GitHub build.
+  useEffect(() => {
+    if (!isSenior) return;
+    let cancelled = false;
+    fetch('https://raw.githubusercontent.com/iigsmii/SchoolFinanceApp/main/latest-version.json?t=' + Date.now(), { cache: 'no-store' })
+      .then(response => response.ok ? response.json() : null)
+      .then(latest => {
+        if (cancelled || !latest?.version || !latest?.apk_url) return;
+        setUpdateVersion(String(latest.version));
+        setUpdateUrl(String(latest.apk_url));
+        setUpdateNotes(String(latest.notes || ''));
+        setUpdateMsg('آخرین بیلد موفق به‌صورت خودکار بارگذاری شد؛ نسخه و لینک مستقیم آماده است.');
+      })
+      .catch(() => {
+        // The first successful signed build creates this manifest.
+      });
+    return () => { cancelled = true; };
+  }, [isSenior]);
 
   const handleCheckUpdate = async () => {
     setUpdateMsg('در حال دریافت خودکار آخرین نسخه و لینک مستقیم...');
