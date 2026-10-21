@@ -5,6 +5,7 @@ import { postToAppsScript } from '../services/googleSheets';
 import packageJson from '../../package.json';
 
 const CURRENT_VERSION = String(packageJson.version);
+const LATEST_MANIFEST_URL = 'https://raw.githubusercontent.com/iigsmii/SchoolFinanceApp/main/latest-version.json';
 type UpdateInfo = { version: string; apk_url: string; notes?: string; force_update?: boolean };
 function newer(remote: string, local: string) {
   const a = remote.split('.').map(Number), b = local.split('.').map(Number);
@@ -14,6 +15,22 @@ function newer(remote: string, local: string) {
   }
   return false;
 }
+async function getLatestUpdate(webAppUrl: string): Promise<UpdateInfo | null> {
+  // GitHub Actions updates this manifest after each successful signed APK release.
+  try {
+    const response = await fetch(LATEST_MANIFEST_URL + '?t=' + Date.now(), { cache: 'no-store' });
+    if (response.ok) {
+      const info = await response.json() as UpdateInfo;
+      if (info.version && info.apk_url && /^https:\/\//i.test(info.apk_url)) return info;
+    }
+  } catch (_) {
+    // Continue to the Apps Script configuration as a fallback.
+  }
+  const result = await postToAppsScript({ action: 'app_version' }, webAppUrl);
+  if (!result.success) return null;
+  const info = result as UpdateInfo;
+  return info.version && info.apk_url && /^https:\/\//i.test(info.apk_url) ? info : null;
+}
 export const AppUpdatePrompt: React.FC = () => {
   const { currentUser, webAppUrl } = useApp();
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
@@ -22,10 +39,9 @@ export const AppUpdatePrompt: React.FC = () => {
     if (!currentUser) { setUpdate(null); return; }
     let cancelled = false;
     const check = async () => {
-      const result = await postToAppsScript({ action: 'app_version' }, webAppUrl);
-      if (cancelled || !result.success) return;
-      const info = result as any as UpdateInfo;
-      if (info.apk_url && /^https:\/\//i.test(info.apk_url) && newer(info.version || '0.0.0', CURRENT_VERSION)) setUpdate(info);
+      const info = await getLatestUpdate(webAppUrl);
+      if (cancelled) return;
+      if (info && newer(info.version || '0.0.0', CURRENT_VERSION)) setUpdate(info);
       else setUpdate(null);
     };
     void check();
