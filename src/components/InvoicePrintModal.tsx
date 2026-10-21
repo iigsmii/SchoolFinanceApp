@@ -1,4 +1,7 @@
 import React, { useEffect, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Directory, Filesystem } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 import appLogo from '../assets/images/quran_school_finance_logo_1792312844966.jpg';
 import { Student, Transaction } from '../types';
 import { jalaliFromGregorian, todayJalali, formatRial } from '../utils/jalali';
@@ -130,7 +133,33 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
         page += 1;
       }
       const safeName = (student.name || 'دانش‌آموز').replace(/[\\/:*?"<>|]/g, '-').trim();
-      pdf.save(`رسید-شهریه-${safeName}-${student.id}.pdf`);
+      const fileName = `رسید-شهریه-${safeName}-${student.id}.pdf`;
+
+      if (Capacitor.isNativePlatform()) {
+        // Android WebView does not reliably handle browser download links.
+        // Save the generated PDF to the app cache and open the native share/save sheet.
+        const dataUri = pdf.output('datauristring');
+        const base64Data = dataUri.substring(dataUri.indexOf(',') + 1);
+        const filePath = `invoices/${fileName}`;
+        await Filesystem.writeFile({
+          path: filePath,
+          data: base64Data,
+          directory: Directory.Cache,
+          recursive: true,
+        });
+        const savedFile = await Filesystem.getUri({
+          path: filePath,
+          directory: Directory.Cache,
+        });
+        await Share.share({
+          title: 'فاکتور شهریه دانش‌آموز',
+          text: `فاکتور شهریه ${student.name}`,
+          url: savedFile.uri,
+          dialogTitle: 'ذخیره یا ارسال فایل PDF',
+        });
+      } else {
+        pdf.save(fileName);
+      }
     } catch (error) {
       setPdfError((error instanceof Error ? error.message : 'ساخت فایل PDF ناموفق بود.') + ' پنجره چاپ باز می‌شود؛ در مقصد چاپ، «ذخیره به‌صورت PDF» را انتخاب کنید.');
       // Fallback for Android WebView or blocked external PDF libraries.
