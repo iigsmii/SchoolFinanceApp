@@ -51,7 +51,7 @@ export interface Transaction {
   student_id?: number;
   student_name?: string;
   student_grade?: string;
-  kind: 'شهریه' | 'شهریه_بدهی' | 'هزینه';
+  kind: 'شهریه' | 'شهریه_بدهی' | 'هزینه' | 'دریافت متفرقه';
   amount: number;
   debit: number;
   credit: number;
@@ -68,6 +68,9 @@ export interface Transaction {
   review_status?: 'pending' | 'approved' | 'rejected';
   attachment_url?: string;
   source_id?: number;
+  bank_transaction_id?: number;
+  linked_account_name?: string;
+  petty_cash_card?: string;
 }
 
 export interface Cheque {
