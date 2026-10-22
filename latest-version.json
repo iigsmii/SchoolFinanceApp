@@ -1,7 +1,7 @@
 {
-  "version": "2.16.200",
+  "version": "2.16.214",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Group bank transaction report by card with separate deposits and withdrawals",
-  "build": 200,
-  "published_at": "2026-10-22T15:57:29Z"
+  "notes": "Fix type error in tuition transaction fields",
+  "build": 214,
+  "published_at": "2026-10-22T16:52:13Z"
 }
