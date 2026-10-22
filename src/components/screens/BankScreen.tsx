@@ -837,40 +837,6 @@ export const BankScreen: React.FC = () => {
         {/* TAB 2: Managers' Petty Cash Cards & Reconciliation */}
         {activeTab === 'petty_cash' && (
           <div className="space-y-5">
-            {isSenior && (
-              <section className="space-y-3 rounded-2xl border border-indigo-200 bg-indigo-50/50 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <div className="font-bold text-sm text-indigo-950">قواعد تطبیق قابل اصلاح توسط مدیر ارشد</div>
-                    <p className="mt-1 text-xs leading-6 text-indigo-900">تعریف کارت‌های تن‌خواه، پایانه‌های پوز، حساب‌های مستثنا و بازهٔ زمانی در اینجا نگهداری می‌شود. قواعد در Google Sheets ذخیره می‌شود تا بعداً بدون انتشار نسخهٔ جدید قابل اصلاح باشد.</p>
-                  </div>
-                  <button type="button" disabled={bankRulesLoading} onClick={async () => {
-                    setBankRulesLoading(true);
-                    try {
-                      const result = await postToAppsScript({ action: 'bank_rules_get' });
-                      if (!result?.success) throw new Error(result?.error || 'دریافت قواعد ناموفق بود.');
-                      const merged = { ...defaultBankRules, ...result.rules, matching: { ...defaultBankRules.matching, ...(result.rules?.matching || {}) } };
-                      setBankRules(merged);
-                      setBankRulesJson(JSON.stringify(merged, null, 2));
-                      setBankRulesNotice('قواعد آخرین نسخه از سرور دریافت شد.');
-                    } catch (err) { setBankRulesNotice(String(err)); }
-                    finally { setBankRulesLoading(false); }
-                  }} className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-xs font-bold text-indigo-900 disabled:opacity-50">دریافت دوباره از سرور</button>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={addPettyCashCardRule} className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-xs font-bold text-indigo-900">افزودن / اصلاح کارت تن‌خواه</button>
-                  <button type="button" onClick={addPosTerminalRule} className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-xs font-bold text-indigo-900">افزودن / اصلاح پایانه پوز</button>
-                  <button type="button" onClick={() => removeRuleMapping('card')} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-800">حذف نگاشت کارت</button>
-                  <button type="button" onClick={() => removeRuleMapping('terminal')} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-800">حذف نگاشت پایانه</button>
-                </div>
-                <div className="rounded-xl border border-indigo-100 bg-white p-3 text-sm leading-6 text-gray-700">قواعد به‌صورت فرم و فهرست مدیریت می‌شوند؛ نیازی به ویرایش متن فنی نیست. کارت بدون مدرسه به‌عنوان «تن‌خواه گردان» قابل استفاده برای هزینهٔ هر مدرسه خواهد بود.</div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button type="button" onClick={saveBankRules} disabled={bankRulesLoading} className="rounded-lg bg-indigo-700 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-800 disabled:opacity-50">اعتبارسنجی و ذخیره قواعد</button>
-                </div>
-                {bankRulesNotice && <p className="rounded-lg bg-white p-2 text-xs leading-5 text-indigo-900">{bankRulesNotice}</p>}
-                <p className="text-[11px] leading-5 text-gray-600">ساختار قابل ویرایش: pettyCashCards برای کارت/نام مدیر/مدرسه/فعال بودن؛ posTerminals برای کد پایانه و شناسه مدرسه؛ excludedAccountSuffixes برای حساب‌های خارج از محاسبات؛ matching.dateWindowDays برای بازهٔ تطبیق. پس از تغییر، ابتدا ذخیره را بزنید.</p>
-              </section>
-            )}
 
             {/* Cards Overview Grid */}
             <div>
