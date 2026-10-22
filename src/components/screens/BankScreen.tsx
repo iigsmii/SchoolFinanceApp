@@ -255,7 +255,7 @@ export const BankScreen: React.FC = () => {
         if (!data.length) throw new Error('ستون‌های تاریخ و مبلغ/برداشت/واریز در ۱۲ ردیف ابتدایی هیچ برگه‌ای پیدا نشد.');
         // The account printed on a POS report is a merchant/report identifier, not the bank account suffix.
         const bankAccountSuffix = !isPosReport && fileAccountNumber ? fileAccountNumber.replace(/\D/g, '').slice(-3) : '';
-        if ((bankRules.excludedAccountSuffixes || ['009']).map((v) => String(v).replace(/\\D/g, '')).includes(bankAccountSuffix)) {
+        if ((bankRules.excludedAccountSuffixes || ['009']).map((v) => String(v).replace(/\D/g, '')).includes(bankAccountSuffix)) {
           alert('این صورتحساب مربوط به حساب ۰۰۹ (غدیر و خیریه) است و برای جلوگیری از ورود اطلاعات غیرمدرسه‌ای، وارد نشد.');
           return;
         }
