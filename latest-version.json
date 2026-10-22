@@ -1,7 +1,7 @@
 {
-  "version": "2.16.196",
+  "version": "2.16.197",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Package only one APK in Android build artifact",
-  "build": 196,
-  "published_at": "2026-10-22T15:26:50Z"
+  "notes": "Package only the versioned release APK artifact",
+  "build": 197,
+  "published_at": "2026-10-22T15:31:30Z"
 }
