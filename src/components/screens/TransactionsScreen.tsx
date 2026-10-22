@@ -89,6 +89,7 @@ export const TransactionsScreen: React.FC = () => {
               const isDebt = t.kind === 'شهریه_بدهی';
               const isExpense = t.kind === 'هزینه';
               const isPayment = t.kind === 'شهریه';
+              const isOtherReceipt = t.kind === 'دریافت متفرقه';
 
               return (
                 <div
@@ -106,7 +107,7 @@ export const TransactionsScreen: React.FC = () => {
                             : 'bg-emerald-100 text-emerald-800'
                         }`}
                       >
-                        {isDebt ? 'بدهی شهریه' : isExpense ? 'هزینه جاری' : 'دریافت شهریه'}
+                        {isDebt ? 'بدهی شهریه' : isExpense ? 'هزینه جاری' : isOtherReceipt ? 'واریزی تن‌خواه' : 'دریافت شهریه'}
                       </span>
                       <h4 className="font-bold text-sm text-[#341648] truncate">
                         {t.student_name || t.expense_category_name || t.description}
@@ -123,6 +124,8 @@ export const TransactionsScreen: React.FC = () => {
                       )}
                     </div>
 
+                    {t.linked_account_name && <div className="text-xs text-indigo-700">حساب مرتبط: {t.linked_account_name}</div>}
+                    {t.petty_cash_card && <div className="text-xs text-gray-500">کارت تن‌خواه: <span className="font-mono">{t.petty_cash_card}</span></div>}
                     {t.description && (
                       <div className="text-xs text-gray-600 break-words line-clamp-2">
                         شرح: {t.description}
