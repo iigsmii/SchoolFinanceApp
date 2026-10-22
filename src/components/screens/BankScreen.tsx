@@ -108,9 +108,22 @@ export const BankScreen: React.FC = () => {
     .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
     .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
     .replace(/\D/g, '');
+  const normalizeManagerIdentity = (value: unknown) => String(value || '').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[\u064B-\u065F\u0670]/g, '').replace(/\s+/g, ' ').trim();
+  const knownManagerCardRoster = [
+    { card: '6037691263360788', managerName: 'محمد عربی' },
+    { card: '6037691263360796', managerName: 'آرزو میرزایی' },
+    { card: '6037691263360804', managerName: 'فریبا سبزواری' },
+    { card: '6037691263360812', managerName: 'علی هاشمیان' },
+    { card: '6037691263360770', managerName: 'محمدرضا آقاسی' },
+    { card: '6037691261822597', managerName: 'سید محمدرضا گلزاری' },
+    { card: '6037691263357097', managerName: 'سید محمدرضا گلزاری' },
+    { card: '6037691263357071', managerName: 'علی هاشمیان' },
+  ];
+  const managerIdentity = normalizeManagerIdentity(currentUser?.name);
   const managerCards = Array.from(new Set([
     normalizeCardNumber(currentUser?.petty_cash_card),
-    ...bankRules.pettyCashCards.filter((x) => x.active !== false && String(x.managerName || '').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').trim() === String(currentUser?.name || '').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').trim()).map((x) => normalizeCardNumber(x.card)),
+    ...bankRules.pettyCashCards.filter((x) => x.active !== false && normalizeManagerIdentity(x.managerName) === managerIdentity).map((x) => normalizeCardNumber(x.card)),
+    ...knownManagerCardRoster.filter((x) => normalizeManagerIdentity(x.managerName) === managerIdentity).map((x) => normalizeCardNumber(x.card)),
   ].filter((x) => x.length === 16)));
   const registrationRequiredRows = bankTransactions.filter((row) => {
     if (row.direction !== 'deposit' && row.direction !== 'withdrawal') return false;
