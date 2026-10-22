@@ -268,7 +268,7 @@ function doPost(e) {
     }
 
     // POST carries tokens in its body, but read-only actions do not need a write lock.
-    const reads={schools:schools_,staff:staff_,students:students_,tuition:tuition_,expenses:expenses_,transactions:transactions_,bank:bank_,bank_review:bankReview_,categories:categories_,messages:messages_,managers:managers_,cheques:cheques_,cheque_list:chequeList_,cheque_alerts:chequeAlerts_,summary:summary_,my_claim:myClaim_,app_version:appVersion_,activity_logs:activityLogs_,parsian_export:parsianExport_,parsian_school_map:parsianSchoolMap_,parsian_student_accounts:parsianStudentAccounts_,attachment_read:attachmentRead_};
+    const reads={schools:schools_,staff:staff_,students:students_,tuition:tuition_,expenses:expenses_,transactions:transactions_,bank:bank_,bank_review:bankReview_,bank_rules_get:bankRulesGet_,categories:categories_,messages:messages_,managers:managers_,cheques:cheques_,cheque_list:chequeList_,cheque_alerts:chequeAlerts_,summary:summary_,my_claim:myClaim_,app_version:appVersion_,activity_logs:activityLogs_,parsian_export:parsianExport_,parsian_school_map:parsianSchoolMap_,parsian_student_accounts:parsianStudentAccounts_,attachment_read:attachmentRead_};
     if(reads[action])return json_(reads[action](body));
     lock.waitLock(30000);locked=true;writeLockHeld_=true;
     ensureStructure_();
@@ -328,6 +328,7 @@ function doPost(e) {
       case 'bank_match': result=bankMatch_(body); break;
       case 'bank_reconcile': result=bankReconcile_(body); break;
       case 'bank_upload': result=bankUpload_(body); break;
+      case 'bank_rules_save': result=bankRulesSave_(body); break;
       case 'bank_annotation': result=bankAnnotationSave_(body); break;
       case 'transaction_review': result=transactionReview_(body); break;
       case 'categories': result=categories_(body); break;
@@ -1417,6 +1418,45 @@ function bankReconcile_(b){
   });
   return {success:true,matched:matched,unmatched:unmatched};
 }
+function defaultBankRules_(){
+  return {
+    version:1,
+    excludedAccountSuffixes:['009'],
+    schoolAccounts:[
+      {suffix:'001',purpose:'petty_cash'},
+      {suffix:'002',purpose:'pos_aggregate_and_petty_cash'}
+    ],
+    pettyCashCards:[],
+    posTerminals:[],
+    matching:{dateWindowDays:3,requireExactAmount:true,requireSourceCardWhenKnown:true}
+  };
+}
+function bankRulesGet_(b){
+  auth_(b,['senior','admin']);
+  const hit=rows_('Settings').find(x=>String(x.obj.key||'')==='bank_reconciliation_rules');
+  if(!hit)return {success:true,rules:defaultBankRules_(),configured:false};
+  try{return {success:true,rules:Object.assign(defaultBankRules_(),JSON.parse(String(hit.obj.value||'{}'))),configured:true};}
+  catch(e){return {success:false,error:'قواعد تطبیق ذخیره‌شده قابل خواندن نیست؛ مدیر ارشد باید آن را اصلاح کند.'};}
+}
+function bankRulesSave_(b){
+  auth_(b,['senior','admin']);
+  const rules=b.rules;
+  if(!rules || typeof rules!=='object' || Array.isArray(rules))throw new Error('ساختار قواعد تطبیق نامعتبر است.');
+  const cards=Array.isArray(rules.pettyCashCards)?rules.pettyCashCards:[];
+  const terminals=Array.isArray(rules.posTerminals)?rules.posTerminals:[];
+  if(cards.length>500 || terminals.length>500)throw new Error('حداکثر ۵۰۰ کارت و ۵۰۰ پایانه قابل تعریف است.');
+  const days=Number(rules.matching&&rules.matching.dateWindowDays);
+  if(!Number.isFinite(days)||days<0||days>30)throw new Error('بازه تطبیق تاریخ باید بین صفر تا ۳۰ روز باشد.');
+  const normalized=Object.assign(defaultBankRules_(),rules,{version:1,pettyCashCards:cards,posTerminals:terminals,matching:Object.assign(defaultBankRules_().matching,rules.matching||{})});
+  const serialized=JSON.stringify(normalized);
+  if(serialized.length>45000)throw new Error('حجم قواعد بیش از حد مجاز است.');
+  const hit=rows_('Settings').find(x=>String(x.obj.key||'')==='bank_reconciliation_rules');
+  if(hit){sheet_('Settings').getRange(hit.row,2).setValue(serialized);sheet_('Settings').getRange(hit.row,3).setValue(now_());}
+  else sheet_('Settings').appendRow(['bank_reconciliation_rules',serialized,now_()]);
+  SpreadsheetApp.flush();
+  return {success:true,message:'قواعد تطبیق در Google Sheets ذخیره شد.',rules:normalized};
+}
+
 function bankUpload_(b){
   auth_(b,['senior','admin']);
   if(Array.isArray(b.rows)){
