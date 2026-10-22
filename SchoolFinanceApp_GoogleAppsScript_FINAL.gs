@@ -1426,7 +1426,19 @@ function defaultBankRules_(){
       {suffix:'001',purpose:'petty_cash'},
       {suffix:'002',purpose:'pos_aggregate_and_petty_cash'}
     ],
-    pettyCashCards:[],
+    pettyCashCards:[
+      {card:'6037691263360788',managerName:'محمد عربی',active:true},
+      {card:'6037691263360796',managerName:'آرزو میرزایی',active:true},
+      {card:'6037691263360804',managerName:'فریبا سبزواری',active:true},
+      {card:'6037691263360812',managerName:'علی هاشمیان',active:true},
+      {card:'6037691263360770',managerName:'محمدرضا آقاسی',active:true},
+      {card:'6037691263360762',managerName:'مدیر - غیرفعال',active:false},
+      {card:'6037691261822597',managerName:'سید محمدرضا گلزاری',active:true},
+      {card:'6037691261822589',managerName:'سید محمدرضا گلزاری - غیرفعال',active:false},
+      {card:'6037691263357097',managerName:'سید محمدرضا گلزاری',active:true},
+      {card:'6037691263357089',managerName:'کارت غیرفعال',active:false},
+      {card:'6037691263357071',managerName:'علی هاشمیان',active:true}
+    ],
     posTerminals:[],
     matching:{dateWindowDays:3,requireExactAmount:true,requireSourceCardWhenKnown:true}
   };
