@@ -156,6 +156,9 @@ interface AppContextType {
     comment: string;
     school_id?: number;
     attachment_url?: string;
+    petty_cash_card?: string;
+    linked_account_name?: string;
+    bank_transaction_id?: number;
   }) => Transaction;
   addPettyCashIncome: (data: { amount: number; date: string; tracking_code: string; comment: string; school_id: number; card: string; linked_account_name: string; bank_transaction_id: number }) => Transaction;
   deleteExpense: (id: number) => void;
