@@ -10,7 +10,7 @@ on:
 
 concurrency:
   group: android-release-main
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -209,11 +209,36 @@ jobs:
             "published_at": "${BUILD_TIME}"
           }
           EOF
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add latest-version.json
-          git commit -m "chore: update latest Android build manifest [skip ci]" || echo "Manifest unchanged"
-          git push origin HEAD:main
+          # Update the manifest through the GitHub Contents API using the current file SHA.
+          # This avoids a non-fast-forward push when main changes during the Android build.
+          MANIFEST_BASE64="$(base64 -w 0 latest-version.json)"
+          UPDATED=false
+          for attempt in 1 2 3 4 5; do
+            CURRENT_SHA="$(gh api "repos/$GITHUB_REPOSITORY/contents/latest-version.json" --jq .sha 2>/dev/null || true)"
+            if [ -n "$CURRENT_SHA" ]; then
+              if gh api --method PUT "repos/$GITHUB_REPOSITORY/contents/latest-version.json" \
+                -f message="chore: update latest Android build manifest [skip ci]" \
+                -f content="$MANIFEST_BASE64" \
+                -f sha="$CURRENT_SHA" \
+                -f branch="main" >/dev/null; then
+                UPDATED=true
+                break
+              fi
+            else
+              if gh api --method PUT "repos/$GITHUB_REPOSITORY/contents/latest-version.json" \
+                -f message="chore: initialize latest Android build manifest [skip ci]" \
+                -f content="$MANIFEST_BASE64" \
+                -f branch="main" >/dev/null; then
+                UPDATED=true
+                break
+              fi
+            fi
+            sleep 2
+          done
+          if [ "$UPDATED" != true ]; then
+            echo "::error::Could not update latest-version.json after 5 attempts"
+            exit 1
+          fi
           {
             echo "## نسخه آماده نصب اندروید"
             echo ""
