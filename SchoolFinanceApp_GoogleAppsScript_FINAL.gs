@@ -18,7 +18,7 @@ const CFG = {
   SESSION_HOURS: 6,
   SHEETS: [
     'Managers','Schools','Students','Tuition','Expenses','Transactions',
-    'Bank','ExpenseCategories','Messages','Attachments','ParsianAccounts','Settings','ActivityLogs','Cheques','Requests','Staff'
+    'Bank','BankDetails','ExpenseCategories','Messages','Attachments','ParsianAccounts','Settings','ActivityLogs','Cheques','Requests','Staff'
   ]
 };
 
@@ -32,6 +32,7 @@ const HEADERS = {
   Expenses: ['id','date','school_id','category','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','payment_source'],
   Transactions: ['id','date','school_id','kind','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','source_id','payment_source'],
   Bank: ['id','date','school_id','amount','description','tracking_code','bank_account','created_at','matched_transaction_id','matched','approved'],
+  BankDetails: ['bank_id','source_card_number','destination_card_number','terminal_number','direction','balance','reference_number','pos_reference_code','fee_amount','account_suffix','transaction_time','settlement_date'],
   BankAnnotations: ['id','school_id','date','amount','tracking_code','bank_account','student_id','student_name','purpose','manager_id','updated_at','direction','balance','card_number'],
   ExpenseCategories: ['id','name','active','created_at'],
   Messages: ['id','message','created_by','created_at','active','target_school_id','target_role'],
@@ -1267,6 +1268,20 @@ function bank_(b) {
     reconciled:String(x.obj.matched)==='true',
     matched_transaction_id:x.obj.matched_transaction_id?Number(x.obj.matched_transaction_id):undefined
   }));
+  const detailById={}; rows_('BankDetails').forEach(x=>detailById[String(x.obj.bank_id)]=x.obj);
+  data=data.map(x=>{const d=detailById[String(x.id)];return d?Object.assign({},x,{
+    source_card_number:d.source_card_number||'',
+    destination_card_number:d.destination_card_number||'',
+    terminal_number:d.terminal_number||'',
+    direction:d.direction||'unknown',
+    balance:d.balance!==''&&d.balance!==undefined?Number(d.balance):undefined,
+    reference_number:d.reference_number||'',
+    pos_reference_code:d.pos_reference_code||'',
+    fee_amount:d.fee_amount!==''&&d.fee_amount!==undefined?Number(d.fee_amount):undefined,
+    account_suffix:d.account_suffix||'',
+    transaction_time:d.transaction_time||'',
+    settlement_date:d.settlement_date||''
+  }):x;});
   const annotations=rows_('BankAnnotations').map(x=>x.obj);
   const byKey={}; annotations.forEach(a=>byKey[bankAnnotationKey_(a)]=a);
   data=data.map(x=>{const a=byKey[bankAnnotationKey_(x)];return a?Object.assign({},x,{assigned_student_id:a.student_id?Number(a.student_id):undefined,assigned_student_name:a.student_name||'',assigned_purpose:a.purpose||'',annotation_updated_at:a.updated_at,direction:a.direction||'unknown',balance:a.balance!==''&&a.balance!==undefined?Number(a.balance):undefined,card_number:a.card_number||a.bank_account||''}):x;});
@@ -1484,7 +1499,14 @@ function bankUpload_(b){
       if(terminal){const match=schools.find(s=>settings[String(s.id)]===terminal);schoolId=match?String(match.id):'';}
       const dup=existing.some(x=>Number(x.amount)===amount&&String(x.tracking_code||'').trim()===track&&String(x.school_id||'')===schoolId&&String(x.date||'')===String(r.date||''));
       if(dup){skipped++;return;}
-      appendByHeaders_('Bank',[nextId_('Bank'),String(r.date||''),schoolId,amount,String(r.description||''),track,String(r.bank_account||r.card_number||''),now_(),'','false','false']);
+      const bankId=nextId_('Bank');
+      appendByHeaders_('Bank',[bankId,String(r.date||''),schoolId,amount,String(r.description||''),track,String(r.bank_account||r.card_number||''),now_(),'','false','false']);
+      appendByHeaders_('BankDetails',[
+        bankId,String(r.source_card_number||''),String(r.destination_card_number||''),String(r.terminal_number||''),
+        String(r.direction||'unknown'),r.balance===''?'':Number(r.balance||0),String(r.reference_number||''),
+        String(r.pos_reference_code||''),r.fee_amount===''?'':Number(r.fee_amount||0),String(r.account_suffix||''),
+        String(r.transaction_time||''),String(r.settlement_date||'')
+      ]);
       existing.push({amount:amount,tracking_code:track,school_id:schoolId,date:String(r.date||'')});added++;
     });
     SpreadsheetApp.flush();
