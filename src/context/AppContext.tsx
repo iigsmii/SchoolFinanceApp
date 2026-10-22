@@ -975,6 +975,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       reconciled: data.payment_method === 'پول نقد',
       review_status: 'approved',
       attachment_url: data.attachment_url,
+      petty_cash_card: data.petty_cash_card,
+      linked_account_name: data.linked_account_name,
+      bank_transaction_id: data.bank_transaction_id,
     };
 
     setTransactions((prev) => [newTx, ...prev]);
@@ -1035,6 +1038,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     comment: string;
     school_id?: number;
     attachment_url?: string;
+    petty_cash_card?: string;
+    linked_account_name?: string;
+    bank_transaction_id?: number;
   }): Transaction => {
     const newId = 100000 + (transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101);
     const cat = categories.find((c) => c.id === data.category_id);
