@@ -599,6 +599,68 @@ export const BankScreen: React.FC = () => {
       <Header title="تطبیق بانک، کارت تن‌خواه و کارمزدها" />
 
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-5 w-full min-w-0">
+        {!isSenior && registrationRequiredRows.length > 0 && (
+          <section className="rounded-2xl border-2 border-rose-300 bg-rose-50 p-4 space-y-3">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-6 h-6 text-rose-700 shrink-0" />
+              <div>
+                <h3 className="font-extrabold text-rose-900">ثبت تراکنش‌های کارت تن‌خواه الزامی است</h3>
+                <p className="mt-1 text-sm leading-6 text-rose-800">برای کارت شما {registrationRequiredRows.length} تراکنش ثبت‌نشده پیدا شده است. هر برداشت باید به‌عنوان هزینه و هر واریز به‌عنوان دریافت ثبت شود. تا ثبت هر مورد، این فهرست باقی می‌ماند.</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {registrationRequiredRows.map((row) => (
+                <div key={row.id} className="rounded-xl border border-rose-200 bg-white p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-bold text-sm">{row.direction === 'withdrawal' ? 'برداشت — ثبت هزینه' : 'واریز — ثبت دریافت'} · {formatRial(row.amount)} ریال</div>
+                    <div className="text-xs text-gray-600 mt-1">{jalaliFromGregorian(row.date)} · {row.description || 'بدون شرح'} · پیگیری {row.tracking_code || row.reference_number || 'ثبت نشده'}</div>
+                  </div>
+                  <button type="button" onClick={() => openRegistration(row)} className="shrink-0 rounded-xl bg-rose-700 text-white font-bold text-xs px-4 py-2.5">ثبت این تراکنش</button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+        {registrationRow && (
+          <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-3" role="dialog" aria-modal="true">
+            <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-3xl bg-white p-5 space-y-4 shadow-2xl">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-extrabold text-lg text-[#341648]">{registrationKind === 'expense' ? 'ثبت اجباری هزینه کارت تن‌خواه' : 'ثبت اجباری واریزی کارت تن‌خواه'}</h3>
+                  <p className="text-xs text-gray-500 mt-1">مبلغ {formatRial(registrationRow.amount)} ریال · {jalaliFromGregorian(registrationRow.date)}</p>
+                </div>
+                {!registrationRequiredRows.some((row) => row.id === registrationRow.id) && <button type="button" onClick={() => setRegistrationRow(null)} aria-label="بستن"><X className="w-5 h-5" /></button>}
+              </div>
+              <div className="rounded-xl bg-gray-50 p-3 text-sm space-y-1">
+                <div><b>شرح فایل بانک:</b> {registrationRow.description || '—'}</div>
+                <div><b>کارت:</b> <span className="font-mono">{normalizeCardNumber(registrationKind === 'expense' ? (registrationRow.source_card_number || registrationRow.card_number) : (registrationRow.destination_card_number || registrationRow.card_number)) || 'نامشخص'}</span></div>
+                <div><b>شماره پیگیری:</b> {registrationRow.tracking_code || registrationRow.reference_number || 'در فایل موجود نیست'}</div>
+              </div>
+              {isSenior && <label className="block text-xs font-bold">مدرسه
+                <select value={registrationSchool} onChange={(e) => setRegistrationSchool(Number(e.target.value))} className="mt-1 w-full rounded-xl border p-3 text-sm">
+                  {schools.filter((s) => s.active).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </label>}
+              <label className="block text-xs font-bold">حسابی که باید در ریزگردش آن ثبت شود
+                <input value={registrationAccount} onChange={(e) => setRegistrationAccount(e.target.value)} placeholder="مثلاً حساب تن‌خواه / حساب مدرسه" className="mt-1 w-full rounded-xl border p-3 text-sm" required />
+              </label>
+              {registrationKind === 'expense' && <label className="block text-xs font-bold">سرفصل هزینه
+                <select value={registrationCategory} onChange={(e) => setRegistrationCategory(e.target.value)} className="mt-1 w-full rounded-xl border p-3 text-sm">
+                  {categories.filter((cat) => cat.active).map((cat) => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                </select>
+              </label>}
+              <label className="block text-xs font-bold">شرح / بابت
+                <textarea value={registrationComment} onChange={(e) => setRegistrationComment(e.target.value)} rows={3} className="mt-1 w-full rounded-xl border p-3 text-sm" required />
+              </label>
+              <p className="text-xs text-gray-500">مبلغ، تاریخ و شماره پیگیری از صورتحساب خوانده می‌شود. ثبت هزینه/دریافت در دفتر تراکنش‌ها انجام می‌شود و به همین ردیف بانکی پیوند می‌خورد.</p>
+              {registrationError && <div className="rounded-xl bg-rose-50 text-rose-800 p-3 text-sm">{registrationError}</div>}
+              <div className="flex gap-2">
+                <button type="button" onClick={saveRegistration} className="flex-1 rounded-xl bg-[#62205f] text-white font-bold p-3">ثبت در دفتر حساب</button>
+                {!registrationRequiredRows.some((row) => row.id === registrationRow.id) && <button type="button" onClick={() => setRegistrationRow(null)} className="rounded-xl border px-4 py-3">انصراف</button>}
+              </div>
+            </div>
+          </div>
+        )}
         {/* Sacred Banner with Description */}
         <div
           className="rounded-3xl p-6 text-white shadow-xl relative overflow-hidden"
