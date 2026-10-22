@@ -938,6 +938,61 @@ export const BankScreen: React.FC = () => {
               </div>
             </div>
 
+            {/* Per-card bank activity report: keep deposits and withdrawals separate. */}
+            <section className="space-y-3 rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4">
+              <div>
+                <h3 className="font-bold text-sm text-indigo-950">گزارش تراکنش‌ها به تفکیک کارت</h3>
+                <p className="mt-1 text-xs leading-5 text-indigo-900">واریز و برداشت هر کارت جداگانه نمایش داده می‌شود. کارت مبدأ برای برداشت و کارت مقصد برای واریز اولویت دارد؛ ردیف‌هایی که شماره کارت ندارند در «کارت نامشخص» قرار می‌گیرند.</p>
+              </div>
+              {(() => {
+                const normalizeCard = (v: unknown) => String(v || '').replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/\D/g, '');
+                const activeCardMap = (bankRules.pettyCashCards || []).filter((x) => x.active !== false);
+                const cardName = (card: string) => activeCardMap.find((x) => normalizeCard(x.card) === card)?.managerName || users.find((u) => normalizeCard(u.petty_cash_card) === card)?.name || 'صاحب کارت ثبت نشده';
+                const rows = bankTransactions.filter((t) => t.direction === 'deposit' || t.direction === 'withdrawal');
+                const groups = new Map<string, { deposits: typeof rows; withdrawals: typeof rows }>();
+                rows.forEach((t) => {
+                  const card = normalizeCard(t.direction === 'withdrawal' ? (t.source_card_number || t.card_number) : (t.destination_card_number || t.card_number)) || 'نامشخص';
+                  if (!groups.has(card)) groups.set(card, { deposits: [], withdrawals: [] });
+                  const g = groups.get(card)!;
+                  if (t.direction === 'deposit') g.deposits.push(t); else g.withdrawals.push(t);
+                });
+                const ordered = Array.from(groups.entries()).sort((a,b) => a[0] === 'نامشخص' ? 1 : b[0] === 'نامشخص' ? -1 : a[0].localeCompare(b[0]));
+                const total = (list: typeof rows) => list.reduce((sum,t) => sum + Number(t.amount || 0), 0);
+                return ordered.length ? ordered.map(([card, group]) => (
+                  <details key={card} className="rounded-xl border border-white bg-white p-3 shadow-xs">
+                    <summary className="cursor-pointer list-none">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="font-bold text-sm text-gray-900">{card === 'نامشخص' ? 'کارت نامشخص' : cardName(card)}</div>
+                          <div className="font-mono text-xs text-gray-500" dir="ltr">{card === 'نامشخص' ? 'شماره کارت در فایل ثبت نشده' : card}</div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-[11px] font-bold">
+                          <span className="rounded-lg bg-emerald-50 px-2 py-1 text-emerald-800">واریز {group.deposits.length} · {formatRial(total(group.deposits))} ریال</span>
+                          <span className="rounded-lg bg-rose-50 px-2 py-1 text-rose-800">برداشت {group.withdrawals.length} · {formatRial(total(group.withdrawals))} ریال</span>
+                        </div>
+                      </div>
+                    </summary>
+                    <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
+                      <div className="rounded-lg border border-emerald-100 p-2">
+                        <div className="mb-2 font-bold text-xs text-emerald-800">واریزها ({group.deposits.length})</div>
+                        {group.deposits.length ? group.deposits.map(t => <div key={t.id} className="border-t border-gray-100 py-2 text-xs">
+                          <div className="flex justify-between gap-2"><span>{t.description || 'واریز بانکی'}</span><b className="text-emerald-800">{formatRial(t.amount)} ریال</b></div>
+                          <div className="mt-1 text-[10px] text-gray-500">تاریخ {jalaliFromGregorian(t.date)} · حساب {t.account_suffix || t.bank_account || '—'} · پیگیری {t.tracking_code || t.reference_number || '—'} · {t.reconciled ? 'تطبیق‌شده' : 'تطبیق‌نشده'}</div>
+                        </div>) : <p className="text-xs text-gray-400">واریزی ثبت نشده</p>}
+                      </div>
+                      <div className="rounded-lg border border-rose-100 p-2">
+                        <div className="mb-2 font-bold text-xs text-rose-800">برداشت‌ها ({group.withdrawals.length})</div>
+                        {group.withdrawals.length ? group.withdrawals.map(t => <div key={t.id} className="border-t border-gray-100 py-2 text-xs">
+                          <div className="flex justify-between gap-2"><span>{t.description || 'برداشت بانکی'}</span><b className="text-rose-800">{formatRial(t.amount)} ریال</b></div>
+                          <div className="mt-1 text-[10px] text-gray-500">تاریخ {jalaliFromGregorian(t.date)} · حساب {t.account_suffix || t.bank_account || '—'} · پیگیری {t.tracking_code || t.reference_number || '—'} · {t.reconciled ? 'تطبیق‌شده' : 'تطبیق‌نشده'}</div>
+                        </div>) : <p className="text-xs text-gray-400">برداشتی ثبت نشده</p>}
+                      </div>
+                    </div>
+                  </details>
+                )) : <p className="text-xs text-gray-500">ابتدا فایل صورتحساب بانکی را وارد کنید تا گزارش کارت‌ها ساخته شود.</p>;
+              })()}
+            </section>
+
             {/* Bank withdrawals that may correspond to petty-cash expenses */}
             <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
               <div className="font-bold text-sm text-amber-950">برداشت‌های بانکی منتظر تطبیق با تن‌خواه ({pettyCashWithdrawalRows.length})</div>
