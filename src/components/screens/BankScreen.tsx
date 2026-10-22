@@ -427,6 +427,7 @@ export const BankScreen: React.FC = () => {
       if (Number(t.school_id) !== Number(b.school_id) || Number(t.amount) !== Number(b.amount)) return false;
       if (dayDistance(t.date, b.date) > Number(bankRules.matching?.dateWindowDays ?? 3)) return false;
       const configuredCard = digitsOnly(t.petty_cash_card || users.find((u) => u.school_id === t.school_id && u.role === 'manager')?.petty_cash_card || schools.find((s) => s.id === t.school_id)?.petty_cash_card);
+      if (bankCard && mappedCard && !configuredCard) return false;
       if (bankCard && configuredCard && !bankCard.endsWith(configuredCard.slice(-4))) return false;
       if (mappedCard?.schoolId && Number(mappedCard.schoolId) !== Number(t.school_id)) return false;
       return true;
