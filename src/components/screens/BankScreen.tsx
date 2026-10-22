@@ -116,6 +116,60 @@ export const BankScreen: React.FC = () => {
     return true;
   });
 
+  const normalizeRuleDigits = (value: unknown) => String(value ?? '')
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+    .replace(/\D/g, '');
+  const mutateRulesDraft = (mutator: (rules: any) => any) => {
+    try {
+      const parsed = JSON.parse(bankRulesJson);
+      const next = mutator(parsed);
+      setBankRulesJson(JSON.stringify(next, null, 2));
+      setBankRulesNotice('تغییر در پیش‌نویس انجام شد؛ برای اعمال مشترک روی کاربران، «اعتبارسنجی و ذخیره قواعد» را بزنید.');
+    } catch {
+      setBankRulesNotice('ابتدا خطای JSON موجود را اصلاح کنید یا پیش‌نویس را به نسخهٔ ذخیره‌شده بازگردانید.');
+    }
+  };
+  const addPettyCashCardRule = () => {
+    const card = normalizeRuleDigits(window.prompt('شماره ۱۶ رقمی کارت تن‌خواه را وارد کنید:') || '');
+    if (!card) return;
+    if (card.length !== 16) { alert('شماره کارت باید ۱۶ رقم باشد.'); return; }
+    const managerName = (window.prompt('نام مدیر یا صاحب کارت:') || '').trim();
+    if (!managerName) return;
+    const schoolChoices = schools.map((s) => `${s.id}: ${s.name}`).join('\n');
+    const schoolInput = (window.prompt('شناسه مدرسه را وارد کنید؛ برای کارت مشترک/نامشخص خالی بگذارید.\n' + schoolChoices, '') || '').trim();
+    const schoolId = schoolInput ? Number(normalizeRuleDigits(schoolInput)) : undefined;
+    if (schoolInput && (!Number.isInteger(schoolId) || !schools.some((s) => s.id === schoolId))) {
+      alert('شناسه مدرسه معتبر نیست.'); return;
+    }
+    mutateRulesDraft((rules) => {
+      const cards = Array.isArray(rules.pettyCashCards) ? rules.pettyCashCards : [];
+      const nextCard = { card, managerName, active: true, ...(schoolId ? { schoolId } : {}) };
+      return { ...rules, pettyCashCards: [...cards.filter((x: any) => normalizeRuleDigits(x.card) !== card), nextCard] };
+    });
+  };
+  const addPosTerminalRule = () => {
+    const terminal = normalizeRuleDigits(window.prompt('کد پایانه پوز را وارد کنید:') || '');
+    if (!terminal) return;
+    const schoolChoices = schools.map((s) => `${s.id}: ${s.name}`).join('\n');
+    const schoolInput = (window.prompt('شناسه مدرسه‌ای که این پایانه متعلق به آن است:\n' + schoolChoices, '') || '').trim();
+    if (!schoolInput) return;
+    const schoolId = Number(normalizeRuleDigits(schoolInput));
+    const school = schools.find((s) => s.id === schoolId);
+    if (!Number.isInteger(schoolId) || !school) { alert('شناسه مدرسه معتبر نیست.'); return; }
+    mutateRulesDraft((rules) => {
+      const terminals = Array.isArray(rules.posTerminals) ? rules.posTerminals : [];
+      return { ...rules, posTerminals: [...terminals.filter((x: any) => normalizeRuleDigits(x.terminal) !== terminal), { terminal, schoolId, schoolName: school.name }] };
+    });
+  };
+  const removeRuleMapping = (kind: 'card' | 'terminal') => {
+    const value = normalizeRuleDigits(window.prompt(kind === 'card' ? 'شماره کارت برای حذف نگاشت را وارد کنید:' : 'کد پایانه برای حذف نگاشت را وارد کنید:') || '');
+    if (!value) return;
+    mutateRulesDraft((rules) => kind === 'card'
+      ? { ...rules, pettyCashCards: (rules.pettyCashCards || []).filter((x: any) => normalizeRuleDigits(x.card) !== value) }
+      : { ...rules, posTerminals: (rules.posTerminals || []).filter((x: any) => normalizeRuleDigits(x.terminal) !== value) });
+  };
+
   const saveBankRules = async () => {
     try {
       const parsed = JSON.parse(bankRulesJson);
@@ -798,6 +852,12 @@ export const BankScreen: React.FC = () => {
                     } catch (err) { setBankRulesNotice(String(err)); }
                     finally { setBankRulesLoading(false); }
                   }} className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-xs font-bold text-indigo-900 disabled:opacity-50">دریافت دوباره از سرور</button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={addPettyCashCardRule} className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-xs font-bold text-indigo-900">افزودن / اصلاح کارت تن‌خواه</button>
+                  <button type="button" onClick={addPosTerminalRule} className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-xs font-bold text-indigo-900">افزودن / اصلاح پایانه پوز</button>
+                  <button type="button" onClick={() => removeRuleMapping('card')} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-800">حذف نگاشت کارت</button>
+                  <button type="button" onClick={() => removeRuleMapping('terminal')} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-800">حذف نگاشت پایانه</button>
                 </div>
                 <textarea value={bankRulesJson} onChange={(e) => setBankRulesJson(e.target.value)} rows={12} spellCheck={false} dir="ltr" className="w-full rounded-xl border border-indigo-200 bg-white p-3 font-mono text-[11px] leading-5 text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300" aria-label="قواعد تطبیق بانکی به صورت JSON" />
                 <div className="flex flex-wrap items-center gap-2">
