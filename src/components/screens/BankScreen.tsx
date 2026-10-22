@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { formatRial, jalaliFromGregorian, todayGregorian, todayJalali, jalaliToIso } from '../../utils/jalali';
@@ -50,6 +50,49 @@ export const BankScreen: React.FC = () => {
     isSenior ? 0 : currentUser?.school_id || 0
   );
 
+  // Senior-managed rules live in the shared Google Sheets Settings table so edits
+  // can be made later without shipping a new app build.
+  const defaultBankRules = {
+    version: 1,
+    excludedAccountSuffixes: ['009'],
+    schoolAccounts: [
+      { suffix: '001', purpose: 'petty_cash' },
+      { suffix: '002', purpose: 'pos_aggregate_and_petty_cash' },
+    ],
+    pettyCashCards: [] as Array<{ card: string; managerName: string; schoolId?: number; active: boolean }>,
+    posTerminals: [] as Array<{ terminal: string; schoolId: number; schoolName?: string }>,
+    matching: { dateWindowDays: 3, requireExactAmount: true, requireSourceCardWhenKnown: true },
+  };
+  const [bankRules, setBankRules] = useState(defaultBankRules);
+  const [bankRulesJson, setBankRulesJson] = useState(JSON.stringify(defaultBankRules, null, 2));
+  const [bankRulesNotice, setBankRulesNotice] = useState<string | null>(null);
+  const [bankRulesLoading, setBankRulesLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isSenior) return;
+    let cancelled = false;
+    setBankRulesLoading(true);
+    postToAppsScript({ action: 'bank_rules_get' }).then((result) => {
+      if (cancelled) return;
+      if (result?.success && result.rules) {
+        const merged = { ...defaultBankRules, ...result.rules,
+          matching: { ...defaultBankRules.matching, ...(result.rules.matching || {}) },
+          pettyCashCards: Array.isArray(result.rules.pettyCashCards) ? result.rules.pettyCashCards : [],
+          posTerminals: Array.isArray(result.rules.posTerminals) ? result.rules.posTerminals : [],
+          excludedAccountSuffixes: Array.isArray(result.rules.excludedAccountSuffixes) ? result.rules.excludedAccountSuffixes : ['009'],
+          schoolAccounts: Array.isArray(result.rules.schoolAccounts) ? result.rules.schoolAccounts : defaultBankRules.schoolAccounts,
+        };
+        setBankRules(merged);
+        setBankRulesJson(JSON.stringify(merged, null, 2));
+      } else if (result?.error) {
+        setBankRulesNotice('دریافت قواعد از سرور ناموفق بود: ' + result.error);
+      }
+    }).catch((err) => {
+      if (!cancelled) setBankRulesNotice('ارتباط برای دریافت قواعد برقرار نشد: ' + String(err));
+    }).finally(() => { if (!cancelled) setBankRulesLoading(false); });
+    return () => { cancelled = true; };
+  }, [isSenior]);
+
   // Filter bank eligible transactions (main account)
   const bankTxs = transactions.filter((t) => {
     if (t.payment_method === 'پول نقد') return false;
@@ -72,6 +115,25 @@ export const BankScreen: React.FC = () => {
     if (!isSenior && t.school_id !== currentUser?.school_id) return false;
     return true;
   });
+
+  const saveBankRules = async () => {
+    try {
+      const parsed = JSON.parse(bankRulesJson);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('ریشهٔ JSON باید یک شیء باشد.');
+      if (!Array.isArray(parsed.pettyCashCards) || !Array.isArray(parsed.posTerminals) || !Array.isArray(parsed.excludedAccountSuffixes)) {
+        throw new Error('فیلدهای pettyCashCards، posTerminals و excludedAccountSuffixes باید آرایه باشند.');
+      }
+      const days = Number(parsed.matching?.dateWindowDays);
+      if (!Number.isFinite(days) || days < 0 || days > 30) throw new Error('بازهٔ تطبیق تاریخ باید بین صفر تا ۳۰ روز باشد.');
+      const result = await postToAppsScript({ action: 'bank_rules_save', rules: parsed });
+      if (!result?.success) throw new Error(result?.error || 'ذخیره در سرور تأیید نشد.');
+      setBankRules({ ...defaultBankRules, ...result.rules, matching: { ...defaultBankRules.matching, ...(result.rules?.matching || {}) } });
+      setBankRulesJson(JSON.stringify(result.rules || parsed, null, 2));
+      setBankRulesNotice('قواعد با موفقیت در Google Sheets ذخیره شد و برای کاربران بعدی قابل دریافت است.');
+    } catch (err) {
+      setBankRulesNotice('قواعد ذخیره نشد: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  };
 
   const handleReconcile = () => {
     const res = reconcileBank();
@@ -193,7 +255,7 @@ export const BankScreen: React.FC = () => {
         if (!data.length) throw new Error('ستون‌های تاریخ و مبلغ/برداشت/واریز در ۱۲ ردیف ابتدایی هیچ برگه‌ای پیدا نشد.');
         // The account printed on a POS report is a merchant/report identifier, not the bank account suffix.
         const bankAccountSuffix = !isPosReport && fileAccountNumber ? fileAccountNumber.replace(/\D/g, '').slice(-3) : '';
-        if (bankAccountSuffix === '009') {
+        if ((bankRules.excludedAccountSuffixes || ['009']).map((v) => String(v).replace(/\\D/g, '')).includes(bankAccountSuffix)) {
           alert('این صورتحساب مربوط به حساب ۰۰۹ (غدیر و خیریه) است و برای جلوگیری از ورود اطلاعات غیرمدرسه‌ای، وارد نشد.');
           return;
         }
@@ -247,15 +309,19 @@ export const BankScreen: React.FC = () => {
         const withdrawalTotal = withdrawalRows.reduce((sum, item) => sum + item.amount, 0);
         const posDepositRows = isPosReport ? depositRows : [];
 
-        const normalizeTerminal = (v: unknown) => toDigits(v).replace(/\\D/g, '').replace(/^0+/, '');
+        const normalizeTerminal = (v: unknown) => toDigits(v).replace(/\D/g, '').replace(/^0+/, '');
         const configured = schools.filter((sc) => String(sc.pos_terminal_number || '').trim());
+        const customTerminals = (bankRules.posTerminals || []).filter((x) => x && x.terminal && Number(x.schoolId) > 0);
         const usedTxIds = new Set<number>();
         const assignedItems = newItems.map((item) => {
           const terminalNo = normalizeTerminal(item.terminal_number || '');
-          const terminalSchool = terminalNo
-            ? configured.find((sc) => normalizeTerminal(sc.pos_terminal_number) === terminalNo)
-            : (configured.length === 1 ? configured[0] : undefined);
-          const schoolId = terminalNo ? (terminalSchool?.id || 0) : (terminalSchool?.id || item.school_id);
+          const customTerminal = terminalNo ? customTerminals.find((x) => normalizeTerminal(x.terminal) === terminalNo) : undefined;
+          const terminalSchool = customTerminal
+            ? schools.find((sc) => Number(sc.id) === Number(customTerminal.schoolId))
+            : terminalNo
+              ? configured.find((sc) => normalizeTerminal(sc.pos_terminal_number) === terminalNo)
+              : (configured.length === 1 ? configured[0] : undefined);
+          const schoolId = customTerminal ? Number(customTerminal.schoolId) : terminalNo ? (terminalSchool?.id || 0) : (terminalSchool?.id || item.school_id);
           const candidates = transactions.filter((t) =>
             !usedTxIds.has(t.id) && !t.reconciled && Boolean(t.student_id) &&
             Number(t.school_id) === Number(schoolId) &&
@@ -335,13 +401,15 @@ export const BankScreen: React.FC = () => {
   );
   const getPettyCashCandidates = (b: typeof bankTransactions[number]) => {
     // On withdrawals, source_card_number identifies the spending card.
-    const bankCard = digitsOnly(b.source_card_number || b.card_number);
+    const bankCard = digitsOnly(b.source_card_number || (b.card_number && !b.destination_card_number ? b.card_number : ''));
+    const mappedCard = (bankRules.pettyCashCards || []).find((x) => x.active !== false && digitsOnly(x.card) === bankCard);
     return pettyCashTxs.filter((t) => {
       if (t.reconciled || t.review_status === 'rejected') return false;
       if (Number(t.school_id) !== Number(b.school_id) || Number(t.amount) !== Number(b.amount)) return false;
-      if (dayDistance(t.date, b.date) > 3) return false;
+      if (dayDistance(t.date, b.date) > Number(bankRules.matching?.dateWindowDays ?? 3)) return false;
       const configuredCard = digitsOnly(t.petty_cash_card || users.find((u) => u.school_id === t.school_id && u.role === 'manager')?.petty_cash_card || schools.find((s) => s.id === t.school_id)?.petty_cash_card);
       if (bankCard && configuredCard && !bankCard.endsWith(configuredCard.slice(-4))) return false;
+      if (mappedCard?.schoolId && Number(mappedCard.schoolId) !== Number(t.school_id)) return false;
       return true;
     });
   };
@@ -691,6 +759,36 @@ export const BankScreen: React.FC = () => {
         {/* TAB 2: Managers' Petty Cash Cards & Reconciliation */}
         {activeTab === 'petty_cash' && (
           <div className="space-y-5">
+            {isSenior && (
+              <section className="space-y-3 rounded-2xl border border-indigo-200 bg-indigo-50/50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="font-bold text-sm text-indigo-950">قواعد تطبیق قابل اصلاح توسط مدیر ارشد</div>
+                    <p className="mt-1 text-xs leading-6 text-indigo-900">تعریف کارت‌های تن‌خواه، پایانه‌های پوز، حساب‌های مستثنا و بازهٔ زمانی در اینجا نگهداری می‌شود. قواعد در Google Sheets ذخیره می‌شود تا بعداً بدون انتشار نسخهٔ جدید قابل اصلاح باشد.</p>
+                  </div>
+                  <button type="button" disabled={bankRulesLoading} onClick={async () => {
+                    setBankRulesLoading(true);
+                    try {
+                      const result = await postToAppsScript({ action: 'bank_rules_get' });
+                      if (!result?.success) throw new Error(result?.error || 'دریافت قواعد ناموفق بود.');
+                      const merged = { ...defaultBankRules, ...result.rules, matching: { ...defaultBankRules.matching, ...(result.rules?.matching || {}) } };
+                      setBankRules(merged);
+                      setBankRulesJson(JSON.stringify(merged, null, 2));
+                      setBankRulesNotice('قواعد آخرین نسخه از سرور دریافت شد.');
+                    } catch (err) { setBankRulesNotice(String(err)); }
+                    finally { setBankRulesLoading(false); }
+                  }} className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-xs font-bold text-indigo-900 disabled:opacity-50">دریافت دوباره از سرور</button>
+                </div>
+                <textarea value={bankRulesJson} onChange={(e) => setBankRulesJson(e.target.value)} rows={12} spellCheck={false} dir="ltr" className="w-full rounded-xl border border-indigo-200 bg-white p-3 font-mono text-[11px] leading-5 text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300" aria-label="قواعد تطبیق بانکی به صورت JSON" />
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" onClick={saveBankRules} disabled={bankRulesLoading} className="rounded-lg bg-indigo-700 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-800 disabled:opacity-50">اعتبارسنجی و ذخیره قواعد</button>
+                  <button type="button" onClick={() => setBankRulesJson(JSON.stringify(bankRules, null, 2))} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold text-gray-700">بازگردانی ویرایش‌های ذخیره‌نشده</button>
+                </div>
+                {bankRulesNotice && <p className="rounded-lg bg-white p-2 text-xs leading-5 text-indigo-900">{bankRulesNotice}</p>}
+                <p className="text-[11px] leading-5 text-gray-600">ساختار قابل ویرایش: pettyCashCards برای کارت/نام مدیر/مدرسه/فعال بودن؛ posTerminals برای کد پایانه و شناسه مدرسه؛ excludedAccountSuffixes برای حساب‌های خارج از محاسبات؛ matching.dateWindowDays برای بازهٔ تطبیق. پس از تغییر، ابتدا ذخیره را بزنید.</p>
+              </section>
+            )}
+
             {/* Cards Overview Grid */}
             <div>
               <div className="text-xs font-bold text-gray-600 mb-2.5">
@@ -782,7 +880,7 @@ export const BankScreen: React.FC = () => {
                     <span className="font-bold text-gray-800">{b.description || 'برداشت بانکی'} — {b.school_name || schools.find((s) => s.id === b.school_id)?.name || 'مدرسه نامشخص'}</span>
                     <span className="font-black text-rose-700">{formatRial(b.amount)} ریال</span>
                   </div>
-                  <div className="text-[11px] text-gray-500">تاریخ: {jalaliFromGregorian(b.date)} | حساب: {b.bank_account || '—'} | کارت: {b.card_number || 'ثبت نشده'}</div>
+                  <div className="text-[11px] text-gray-500">تاریخ: {jalaliFromGregorian(b.date)} | حساب: {b.bank_account || '—'} | کارت مبدأ: {b.source_card_number || b.card_number || 'ثبت نشده'} | کارت مقصد: {b.destination_card_number || '—'} | {(bankRules.pettyCashCards || []).find((x) => x.active !== false && digitsOnly(x.card) === digitsOnly(b.source_card_number || b.card_number))?.managerName || 'صاحب کارت نامشخص'}</div>
                   {candidates.length === 0 ? <div className="text-xs text-gray-500">هزینه‌ای با مبلغ و تاریخ نزدیک پیدا نشد.</div> : candidates.map((t) => <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-gray-50 p-2 text-xs">
                     <span>{t.expense_category_name || t.description || t.comment || 'هزینه تن‌خواه'} — {jalaliFromGregorian(t.date)} — {formatRial(t.amount)} ریال</span>
                     <button type="button" onClick={() => { if (window.confirm('این برداشت بانکی با هزینهٔ انتخاب‌شده تطبیق داده شود؟')) reconcilePettyCashPair(b.id, t.id); }} className="rounded-lg bg-emerald-600 px-3 py-1.5 font-bold text-white hover:bg-emerald-700">تأیید تطبیق</button>
