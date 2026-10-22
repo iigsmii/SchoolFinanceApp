@@ -865,7 +865,10 @@ export const BankScreen: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                 {schools.map((sc) => {
                   const manager = users.find((u) => u.school_id === sc.id && u.role === 'manager');
-                  const cardNum = manager?.petty_cash_card || sc.petty_cash_card || ''; 
+                  const managerKnownCards = manager ? knownActiveCards.filter((item) => normalizeManagerName(item.managerName) === normalizeManagerName(manager.name)).map((item) => item.card) : [];
+                  const savedCard = String(manager?.petty_cash_card || sc.petty_cash_card || '').replace(/\\D/g, '');
+                  const schoolCards = Array.from(new Set([...(savedCard ? [savedCard] : []), ...managerKnownCards]));
+                  const cardNum = schoolCards.join('، ');
                   const limit = manager?.petty_cash_limit || 0;
 
                   // Sum of expenses paid with petty cash for this school
