@@ -50,6 +50,7 @@ import {
   apiSaveManager,
   apiSaveSchool,
   apiSaveStaffMember,
+  postToAppsScript,
 } from '../services/googleSheets';
 import {
   playSuccessSound,
@@ -1095,7 +1096,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setTransactions((prev) => [newTx, ...prev]);
     logActivity('ثبت واریزی کارت تن‌خواه', `ثبت واریزی ${data.amount.toLocaleString('fa-IR')} ریال برای ${schoolObj?.name || 'مدرسه'}`, 'transaction', newId);
-    apiSaveExpense(newTx).catch((e) => console.warn('Cloud sync petty cash income notice:', e));
+    postToAppsScript({ action: 'finance_transaction', kind: 'cash_receipt', amount: data.amount, date: data.date, school_id: data.school_id, person: currentUser?.name || 'مدیر تن‌خواه', description: data.comment + ' | کارت: ' + data.card + ' | حساب: ' + data.linked_account_name + ' | شناسه ردیف بانک: ' + data.bank_transaction_id, tracking_code: data.tracking_code }).catch((e) => console.warn('Cloud sync petty cash receipt notice:', e));
     return newTx;
   };
 
