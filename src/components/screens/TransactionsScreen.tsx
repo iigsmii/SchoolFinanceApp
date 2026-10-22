@@ -11,13 +11,16 @@ export const TransactionsScreen: React.FC = () => {
 
   const [filterKind, setFilterKind] = useState<'all' | 'debt' | 'payment' | 'expense'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterAccount, setFilterAccount] = useState('all');
   const [selectedAttachment, setSelectedAttachment] = useState<{ url: string; title: string } | null>(null);
 
   const scopedTxs = isSenior
     ? transactions
     : transactions.filter((t) => t.school_id === currentUser?.school_id);
 
+  const linkedAccounts = Array.from(new Set(scopedTxs.map((t) => t.linked_account_name).filter((x): x is string => !!x))).sort();
   const filtered = scopedTxs.filter((t) => {
+    if (filterAccount !== 'all' && t.linked_account_name !== filterAccount) return false;
     if (filterKind === 'debt' && t.kind !== 'شهریه_بدهی') return false;
     if (filterKind === 'payment' && t.kind !== 'شهریه') return false;
     if (filterKind === 'expense' && t.kind !== 'هزینه') return false;
@@ -51,6 +54,14 @@ export const TransactionsScreen: React.FC = () => {
             <Search className="w-5 h-5 text-gray-400 absolute right-3.5 top-3.5" />
           </div>
 
+          {linkedAccounts.length > 0 && (
+            <label className="block text-xs font-bold text-gray-700">ریزگردش حساب
+              <select value={filterAccount} onChange={(e) => setFilterAccount(e.target.value)} className="mt-1 w-full rounded-xl border border-[#e5dde8] bg-white p-3 text-sm">
+                <option value="all">همه حساب‌ها</option>
+                {linkedAccounts.map((account) => <option key={account} value={account}>{account}</option>)}
+              </select>
+            </label>
+          )}
           <div className="flex flex-wrap gap-2">
             {[
               { id: 'all', label: 'همه تراکنش‌ها' },
