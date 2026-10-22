@@ -157,6 +157,7 @@ interface AppContextType {
     school_id?: number;
     attachment_url?: string;
   }) => Transaction;
+  addPettyCashIncome: (data: { amount: number; date: string; tracking_code: string; comment: string; school_id: number; card: string; linked_account_name: string; bank_transaction_id: number }) => Transaction;
   deleteExpense: (id: number) => void;
   updateExpense: (id: number, data: Partial<Transaction>) => void;
   addCategory: (name: string) => void;
@@ -1070,6 +1071,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return newTx;
   };
 
+  const addPettyCashIncome = (data: { amount: number; date: string; tracking_code: string; comment: string; school_id: number; card: string; linked_account_name: string; bank_transaction_id: number }): Transaction => {
+    const newId = 100000 + (transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101);
+    const schoolObj = schools.find((s) => s.id === data.school_id);
+    const newTx: Transaction = {
+      id: newId, date: data.date, jalali_date: jalaliFromGregorian(data.date),
+      school_id: data.school_id, school_name: schoolObj?.name,
+      kind: 'دریافت متفرقه', amount: data.amount, debit: 0, credit: data.amount,
+      payment_method: 'کارت تن‌خواه', payment_source: 'petty_cash', petty_cash_card: data.card,
+      tracking_code: data.tracking_code, comment: data.comment,
+      description: data.comment || 'واریزی به کارت تن‌خواه',
+      reconciled: true, review_status: 'approved',
+      bank_transaction_id: data.bank_transaction_id, linked_account_name: data.linked_account_name,
+    };
+    setTransactions((prev) => [newTx, ...prev]);
+    logActivity('ثبت واریزی کارت تن‌خواه', `ثبت واریزی ${data.amount.toLocaleString('fa-IR')} ریال برای ${schoolObj?.name || 'مدرسه'}`, 'transaction', newId);
+    apiSaveExpense(newTx).catch((e) => console.warn('Cloud sync petty cash income notice:', e));
+    return newTx;
+  };
+
   const deleteExpense = (id: number) => {
     deleteTransaction(id);
   };
@@ -1702,6 +1722,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteTransaction,
         updateTransaction,
         addExpense,
+        addPettyCashIncome,
         deleteExpense,
         updateExpense,
         addCategory,
