@@ -70,7 +70,6 @@ export interface Transaction {
   source_id?: number;
   bank_transaction_id?: number;
   linked_account_name?: string;
-  petty_cash_card?: string;
 }
 
 export interface Cheque {
