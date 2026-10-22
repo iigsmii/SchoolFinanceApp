@@ -1,7 +1,7 @@
 {
-  "version": "2.16.195",
+  "version": "2.16.196",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Add clear imported Excel data control",
-  "build": 195,
-  "published_at": "2026-10-22T15:17:08Z"
+  "notes": "Package only one APK in Android build artifact",
+  "build": 196,
+  "published_at": "2026-10-22T15:26:50Z"
 }
