@@ -1,7 +1,7 @@
 {
-  "version": "2.16.216",
+  "version": "2.16.217",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Fix release manifest update race in Android build workflow",
-  "build": 216,
-  "published_at": "2026-10-22T17:42:45Z"
+  "notes": "feat: add Parsian accounting export functionality",
+  "build": 217,
+  "published_at": "2026-10-22T21:17:31Z"
 }
