@@ -36,6 +36,7 @@ export const BankScreen: React.FC = () => {
     reconcileBank,
     manualReviewTransaction,
     importBankTransactions,
+    clearImportedBankTransactions,
     updateBankTransaction,
     updateManager,
     addExpense,
@@ -540,7 +541,7 @@ export const BankScreen: React.FC = () => {
             style={activeTab === 'petty_cash' ? { backgroundColor: accentColor } : {}}
           >
             <CreditCard className="w-4 h-4" />
-            <span>کارت‌های تن‌خواه مدیران و کارمزد بانک ({pettyCashTxs.length})</span>
+            <span>برداشت کارت‌ها و کارمزد بانک ({bankTransactions.length})</span>
           </button>
         </div>
 
@@ -567,6 +568,14 @@ export const BankScreen: React.FC = () => {
             <span>تطبیق هوشمند تراکنش‌ها</span>
           </button>
 
+          {isSenior && (
+            <button type="button" onClick={() => {
+              if (window.confirm('تمام ردیف‌های واردشدهٔ صورتحساب بانک و پوز از این دستگاه پاک شوند؟ هزینه‌ها و اسناد حسابداری حذف نمی‌شوند.')) clearImportedBankTransactions();
+            }} className="flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 font-bold text-xs shadow-xs active:scale-95 transition-all">
+              <XCircle className="w-4 h-4" />
+              <span>صفر کردن اطلاعات اکسل</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={handleScanAndIdentifyBankFees}
