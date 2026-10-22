@@ -1507,7 +1507,9 @@ function bankUpload_(b){
         // If no terminal rule exists, preserve the school ID supplied by the client;
         // an unresolved terminal with school_id 0 remains unassigned for manual review.
       }
-      const dup=existing.some(x=>Number(x.amount)===amount&&String(x.tracking_code||'').trim()===track&&String(x.school_id||'')===schoolId&&String(x.date||'')===String(r.date||''));
+      const direction=String(r.direction||'unknown');
+      const sourceCard=String(r.source_card_number||'').replace(/\D/g,'');
+      const dup=existing.some(x=>Number(x.amount)===amount&&String(x.tracking_code||'').trim()===track&&String(x.school_id||'')===schoolId&&String(x.date||'')===String(r.date||'')&&String(x.direction||'unknown')===direction&&String(x.source_card_number||'').replace(/\D/g,'')===sourceCard);
       if(dup){skipped++;return;}
       const bankId=nextId_('Bank');
       appendByHeaders_('Bank',[bankId,String(r.date||''),schoolId,amount,String(r.description||''),track,String(r.bank_account||r.card_number||''),now_(),'','false','false']);
@@ -1517,11 +1519,14 @@ function bankUpload_(b){
         String(r.pos_reference_code||''),r.fee_amount===''?'':Number(r.fee_amount||0),String(r.account_suffix||''),
         String(r.transaction_time||''),String(r.settlement_date||'')
       ]);
-      existing.push({amount:amount,tracking_code:track,school_id:schoolId,date:String(r.date||'')});added++;
+      existing.push({amount:amount,tracking_code:track,school_id:schoolId,date:String(r.date||''),direction:direction,source_card_number:sourceCard});added++;
     });
     SpreadsheetApp.flush();
-    const reconciliation=bankReconcile_(b);
-    return {success:true,message:'فایل بانک پردازش شد.',count:added,skipped:skipped,matched:reconciliation.matched,unmatched:reconciliation.unmatched};
+    let reconciliation={matched:0,unmatched:added};
+    let reconcileWarning='';
+    try { reconciliation=bankReconcile_(b)||reconciliation; }
+    catch(reconcileError) { reconcileWarning=' اطلاعات ذخیره شد، اما تطبیق خودکار نیازمند بررسی است: '+String(reconcileError&&reconcileError.message||reconcileError); }
+    return {success:true,message:'فایل بانک پردازش شد.',count:added,skipped:skipped,matched:reconciliation.matched||0,unmatched:reconciliation.unmatched??added,warning:reconcileWarning};
   }
   if(!b.base64) throw new Error('فایل بانک ارسال نشده است.');
   if(b.school_id) activeSchool_(b.school_id);
