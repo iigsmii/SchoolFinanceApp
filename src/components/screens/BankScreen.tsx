@@ -56,6 +56,7 @@ export const BankScreen: React.FC = () => {
   const [registrationCategory, setRegistrationCategory] = useState<string>(categories.find((x) => x.active)?.id || '1');
   const [registrationSchool, setRegistrationSchool] = useState<number>(currentUser?.school_id || schools[0]?.id || 1);
   const [registrationAccount, setRegistrationAccount] = useState('');
+  const [registrationTracking, setRegistrationTracking] = useState('');
   const [registrationComment, setRegistrationComment] = useState('');
   const [registrationError, setRegistrationError] = useState('');
 
@@ -140,6 +141,7 @@ export const BankScreen: React.FC = () => {
     setRegistrationSchool(currentUser?.school_id || row.school_id || schools[0]?.id || 1);
     const card = normalizeCardNumber(row.direction === 'withdrawal' ? (row.source_card_number || row.card_number) : (row.destination_card_number || row.card_number));
     setRegistrationAccount(card ? 'کارت تن‌خواه ' + card : (row.bank_account || 'حساب بانکی'));
+    setRegistrationTracking(row.tracking_code || row.reference_number || '');
     setRegistrationComment(row.description || (row.direction === 'withdrawal' ? 'هزینه کارت تن‌خواه' : 'واریزی به کارت تن‌خواه'));
     setRegistrationError('');
   };
@@ -147,8 +149,8 @@ export const BankScreen: React.FC = () => {
     if (!registrationRow) return;
     if (!registrationAccount.trim()) { setRegistrationError('حساب مقصد/مبدأ را انتخاب یا وارد کنید.'); return; }
     if (!registrationComment.trim()) { setRegistrationError('شرح تراکنش الزامی است.'); return; }
-    if (!registrationRow.tracking_code && !registrationRow.reference_number) { setRegistrationError('شماره پیگیری در فایل موجود نیست؛ برای ثبت، شماره پیگیری را وارد کنید.'); return; }
-    const tracking = registrationRow.tracking_code || registrationRow.reference_number || '';
+    if (!registrationTracking.trim()) { setRegistrationError('شماره پیگیری یا رسید الزامی است.'); return; }
+    const tracking = registrationTracking.trim();
     const card = normalizeCardNumber(registrationKind === 'expense' ? (registrationRow.source_card_number || registrationRow.card_number) : (registrationRow.destination_card_number || registrationRow.card_number));
     try {
       if (registrationKind === 'expense') {
@@ -654,6 +656,9 @@ export const BankScreen: React.FC = () => {
                   {schools.filter((s) => s.active).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </label>}
+              <label className="block text-xs font-bold">شماره پیگیری / رسید
+                <input value={registrationTracking} onChange={(e) => setRegistrationTracking(e.target.value)} className="mt-1 w-full rounded-xl border p-3 text-sm" required />
+              </label>
               <label className="block text-xs font-bold">حسابی که باید در ریزگردش آن ثبت شود
                 <input value={registrationAccount} onChange={(e) => setRegistrationAccount(e.target.value)} placeholder="مثلاً حساب تن‌خواه / حساب مدرسه" className="mt-1 w-full rounded-xl border p-3 text-sm" required />
               </label>
