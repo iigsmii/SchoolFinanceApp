@@ -478,7 +478,8 @@ export const BankScreen: React.FC = () => {
     const mappedCard = (bankRules.pettyCashCards || []).find((x) => x.active !== false && digitsOnly(x.card) === bankCard);
     return pettyCashTxs.filter((t) => {
       if (t.reconciled || t.review_status === 'rejected') return false;
-      if (Number(t.school_id) !== Number(b.school_id) || Number(t.amount) !== Number(b.amount)) return false;
+      const sharedCard = Boolean(mappedCard && !mappedCard.schoolId);
+      if ((!sharedCard && Number(t.school_id) !== Number(b.school_id)) || Number(t.amount) !== Number(b.amount)) return false;
       if (dayDistance(t.date, b.date) > Number(bankRules.matching?.dateWindowDays ?? 3)) return false;
       const configuredCard = digitsOnly(t.petty_cash_card || users.find((u) => u.school_id === t.school_id && u.role === 'manager')?.petty_cash_card || schools.find((s) => s.id === t.school_id)?.petty_cash_card);
       if (bankCard && mappedCard && !configuredCard) return false;
@@ -491,11 +492,14 @@ export const BankScreen: React.FC = () => {
     const bankRow = bankTransactions.find((b) => b.id === bankId);
     const expense = transactions.find((t) => t.id === transactionId);
     if (!bankRow || !expense || expense.kind !== 'هزینه' || expense.payment_source !== 'petty_cash') return;
-    if (Number(bankRow.amount) !== Number(expense.amount) || Number(bankRow.school_id) !== Number(expense.school_id)) {
+    const sourceCard = digitsOnly(bankRow.source_card_number || bankRow.card_number || '');
+    const mappedCard = (bankRules.pettyCashCards || []).find((x) => x.active !== false && digitsOnly(x.card) === sourceCard);
+    const sharedCard = Boolean(mappedCard && !mappedCard.schoolId);
+    if (Number(bankRow.amount) !== Number(expense.amount) || (!sharedCard && Number(bankRow.school_id) !== Number(expense.school_id))) {
       alert('مبلغ یا مدرسهٔ تراکنش‌ها یکسان نیست؛ تطبیق انجام نشد.');
       return;
     }
-    updateBankTransaction(bankId, { reconciled: true, matched_transaction_id: transactionId, assigned_purpose: expense.expense_category_name || expense.description || 'هزینه تن‌خواه' });
+    updateBankTransaction(bankId, { reconciled: true, school_id: expense.school_id, school_name: schools.find((s) => Number(s.id) === Number(expense.school_id))?.name, matched_transaction_id: transactionId, assigned_purpose: expense.expense_category_name || expense.description || 'هزینه تن‌خواه' });
     manualReviewTransaction(transactionId, true, 'تطبیق با برداشت بانکی');
   };
 
@@ -859,10 +863,9 @@ export const BankScreen: React.FC = () => {
                   <button type="button" onClick={() => removeRuleMapping('card')} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-800">حذف نگاشت کارت</button>
                   <button type="button" onClick={() => removeRuleMapping('terminal')} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-800">حذف نگاشت پایانه</button>
                 </div>
-                <textarea value={bankRulesJson} onChange={(e) => setBankRulesJson(e.target.value)} rows={12} spellCheck={false} dir="ltr" className="w-full rounded-xl border border-indigo-200 bg-white p-3 font-mono text-[11px] leading-5 text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300" aria-label="قواعد تطبیق بانکی به صورت JSON" />
+                <div className="rounded-xl border border-indigo-100 bg-white p-3 text-sm leading-6 text-gray-700">قواعد به‌صورت فرم و فهرست مدیریت می‌شوند؛ نیازی به ویرایش متن فنی نیست. کارت بدون مدرسه به‌عنوان «تن‌خواه گردان» قابل استفاده برای هزینهٔ هر مدرسه خواهد بود.</div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button type="button" onClick={saveBankRules} disabled={bankRulesLoading} className="rounded-lg bg-indigo-700 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-800 disabled:opacity-50">اعتبارسنجی و ذخیره قواعد</button>
-                  <button type="button" onClick={() => setBankRulesJson(JSON.stringify(bankRules, null, 2))} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold text-gray-700">بازگردانی ویرایش‌های ذخیره‌نشده</button>
                 </div>
                 {bankRulesNotice && <p className="rounded-lg bg-white p-2 text-xs leading-5 text-indigo-900">{bankRulesNotice}</p>}
                 <p className="text-[11px] leading-5 text-gray-600">ساختار قابل ویرایش: pettyCashCards برای کارت/نام مدیر/مدرسه/فعال بودن؛ posTerminals برای کد پایانه و شناسه مدرسه؛ excludedAccountSuffixes برای حساب‌های خارج از محاسبات؛ matching.dateWindowDays برای بازهٔ تطبیق. پس از تغییر، ابتدا ذخیره را بزنید.</p>
