@@ -40,6 +40,7 @@ export const BankScreen: React.FC = () => {
     updateBankTransaction,
     updateManager,
     addExpense,
+    addPettyCashIncome,
     categories,
   } = useApp();
 
@@ -50,6 +51,14 @@ export const BankScreen: React.FC = () => {
   const [selectedSchoolId, setSelectedSchoolId] = useState<number>(
     isSenior ? 0 : currentUser?.school_id || 0
   );
+  const [registrationRow, setRegistrationRow] = useState<import('../../types').BankTransaction | null>(null);
+  const [registrationKind, setRegistrationKind] = useState<'expense' | 'income'>('expense');
+  const [registrationCategory, setRegistrationCategory] = useState<string>(categories.find((x) => x.active)?.id || '1');
+  const [registrationSchool, setRegistrationSchool] = useState<number>(currentUser?.school_id || schools[0]?.id || 1);
+  const [registrationAccount, setRegistrationAccount] = useState('');
+  const [registrationComment, setRegistrationComment] = useState('');
+  const [registrationError, setRegistrationError] = useState('');
+
 
   // Senior-managed rules live in the shared Google Sheets Settings table so edits
   // can be made later without shipping a new app build.
@@ -93,6 +102,74 @@ export const BankScreen: React.FC = () => {
     }).finally(() => { if (!cancelled) setBankRulesLoading(false); });
     return () => { cancelled = true; };
   }, [isSenior]);
+
+
+  const normalizeCardNumber = (value: unknown) => String(value || '')
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+    .replace(/\D/g, '');
+  const managerCards = Array.from(new Set([
+    normalizeCardNumber(currentUser?.petty_cash_card),
+    ...bankRules.pettyCashCards.filter((x) => x.active !== false && String(x.managerName || '').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').trim() === String(currentUser?.name || '').replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').trim()).map((x) => normalizeCardNumber(x.card)),
+  ].filter((x) => x.length === 16)));
+  const registrationRequiredRows = bankTransactions.filter((row) => {
+    if (row.direction !== 'deposit' && row.direction !== 'withdrawal') return false;
+    if (transactions.some((tx) => tx.bank_transaction_id === row.id)) return false;
+    if (isSenior) return false;
+    if (!managerCards.length) return false;
+    const card = normalizeCardNumber(row.direction === 'withdrawal' ? (row.source_card_number || row.card_number) : (row.destination_card_number || row.card_number));
+    return !!card && managerCards.includes(card);
+  });
+  const openRegistration = (row: import('../../types').BankTransaction) => {
+    setRegistrationRow(row);
+    setRegistrationKind(row.direction === 'withdrawal' ? 'expense' : 'income');
+    setRegistrationCategory(categories.find((x) => x.active)?.id || '1');
+    setRegistrationSchool(currentUser?.school_id || row.school_id || schools[0]?.id || 1);
+    const card = normalizeCardNumber(row.direction === 'withdrawal' ? (row.source_card_number || row.card_number) : (row.destination_card_number || row.card_number));
+    setRegistrationAccount(card ? 'کارت تن‌خواه ' + card : (row.bank_account || 'حساب بانکی'));
+    setRegistrationComment(row.description || (row.direction === 'withdrawal' ? 'هزینه کارت تن‌خواه' : 'واریزی به کارت تن‌خواه'));
+    setRegistrationError('');
+  };
+  const saveRegistration = () => {
+    if (!registrationRow) return;
+    if (!registrationAccount.trim()) { setRegistrationError('حساب مقصد/مبدأ را انتخاب یا وارد کنید.'); return; }
+    if (!registrationComment.trim()) { setRegistrationError('شرح تراکنش الزامی است.'); return; }
+    if (!registrationRow.tracking_code && !registrationRow.reference_number) { setRegistrationError('شماره پیگیری در فایل موجود نیست؛ برای ثبت، شماره پیگیری را وارد کنید.'); return; }
+    const tracking = registrationRow.tracking_code || registrationRow.reference_number || '';
+    const card = normalizeCardNumber(registrationKind === 'expense' ? (registrationRow.source_card_number || registrationRow.card_number) : (registrationRow.destination_card_number || registrationRow.card_number));
+    try {
+      if (registrationKind === 'expense') {
+        addExpense({
+          category_id: registrationCategory,
+          amount: Number(registrationRow.amount || 0),
+          date: registrationRow.date,
+          tracking_code: tracking,
+          payment_source: 'petty_cash',
+          comment: registrationComment.trim(),
+          school_id: registrationSchool,
+          petty_cash_card: card,
+          linked_account_name: registrationAccount.trim(),
+          bank_transaction_id: registrationRow.id,
+        });
+      } else {
+        addPettyCashIncome({
+          amount: Number(registrationRow.amount || 0),
+          date: registrationRow.date,
+          tracking_code: tracking,
+          comment: registrationComment.trim(),
+          school_id: registrationSchool,
+          card,
+          linked_account_name: registrationAccount.trim(),
+          bank_transaction_id: registrationRow.id,
+        });
+      }
+      updateBankTransaction(registrationRow.id, { reconciled: true, assigned_purpose: registrationKind === 'expense' ? 'هزینه ثبت‌شده' : 'واریزی ثبت‌شده', matched_manager_id: currentUser?.id, school_id: registrationSchool, school_name: schools.find((s) => s.id === registrationSchool)?.name });
+      setRegistrationRow(null);
+      setRegistrationError('');
+    } catch (err) {
+      setRegistrationError('ثبت انجام نشد: ' + String(err));
+    }
+  };
 
   // Filter bank eligible transactions (main account)
   const bankTxs = transactions.filter((t) => {
