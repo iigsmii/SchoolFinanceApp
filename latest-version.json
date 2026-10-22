@@ -1,7 +1,7 @@
 {
-  "version": "2.16.191",
+  "version": "2.16.195",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Merge pull request #11 from iigsmii/fix/petty-cash-shared-school-pos-upload",
-  "build": 191,
-  "published_at": "2026-10-22T14:08:25Z"
+  "notes": "Add clear imported Excel data control",
+  "build": 195,
+  "published_at": "2026-10-22T15:17:08Z"
 }
