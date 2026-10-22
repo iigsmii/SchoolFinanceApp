@@ -1,7 +1,7 @@
 {
-  "version": "2.16.214",
+  "version": "2.16.216",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Fix type error in tuition transaction fields",
-  "build": 214,
-  "published_at": "2026-10-22T16:52:13Z"
+  "notes": "Fix release manifest update race in Android build workflow",
+  "build": 216,
+  "published_at": "2026-10-22T17:42:45Z"
 }
