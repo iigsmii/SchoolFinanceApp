@@ -182,6 +182,7 @@ interface AppContextType {
   reconcileBank: () => { matched: number; unmatched: number };
   manualReviewTransaction: (id: number, approve: boolean, note?: string) => void;
   importBankTransactions: (txs: Array<Omit<BankTransaction, 'id' | 'reconciled'> & { reconciled?: boolean }>) => number;
+  clearImportedBankTransactions: () => void;
   updateBankTransaction: (id: number, data: Partial<BankTransaction>) => void;
 
   // Managers & Schools ops
@@ -1231,6 +1232,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logActivity('بررسی دستی تطبیق تراکنش', `${approve ? 'تأیید' : 'رد'} تراکنش شناسه ${id}`, 'transaction', id);
   };
 
+  const clearImportedBankTransactions = () => {
+    setBankTransactions([]);
+    saveToStorage('bank_txs', []);
+    logActivity('پاک‌سازی صورتحساب بانکی', 'تمام ردیف‌های واردشدهٔ بانک و پوز از این دستگاه پاک شد؛ اسناد هزینه حذف نشدند.', 'bank', 0);
+  };
+
   const importBankTransactions = (txs: Array<Omit<BankTransaction, 'id' | 'reconciled'> & { reconciled?: boolean }>) => {
     let maxId = bankTransactions.length > 0 ? Math.max(...bankTransactions.map((b) => b.id)) : 0;
     const newItems: BankTransaction[] = txs.map((t) => {
@@ -1712,6 +1719,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         reconcileBank,
         manualReviewTransaction,
         importBankTransactions,
+        clearImportedBankTransactions,
         updateBankTransaction,
         addManager,
         updateManager,
