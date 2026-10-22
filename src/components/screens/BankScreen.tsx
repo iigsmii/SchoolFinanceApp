@@ -35,7 +35,9 @@ import {
   Layers,
   Printer,
   GraduationCap,
-  CheckCircle,
+  Banknote,
+  FileText,
+  Tag,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { postToAppsScript } from '../../services/googleSheets';
@@ -76,6 +78,24 @@ export const BankScreen: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'unmatched' | 'matched' | 'fees'>('all');
   const [directionFilter, setDirectionFilter] = useState<'all' | 'deposit' | 'withdrawal'>('all');
 
+  // Performance Pagination / Visible Count state
+  const [visibleBankCount, setVisibleBankCount] = useState(50);
+  const [visibleLedgerCount, setVisibleLedgerCount] = useState(40);
+
+  // Reset pagination when filter criteria change
+  useEffect(() => {
+    setVisibleBankCount(50);
+    setVisibleLedgerCount(40);
+  }, [searchQuery, statusFilter, directionFilter, selectedSchoolId, activeTab]);
+
+  // Dedicated Record Expense Modal State
+  const [expenseModalRow, setExpenseModalRow] = useState<BankTransaction | null>(null);
+  const [expenseCategory, setExpenseCategory] = useState<string>(categories.find((c) => c.active)?.id || '1');
+  const [expenseSchoolId, setExpenseSchoolId] = useState<number>(currentUser?.school_id || schools[0]?.id || 1);
+  const [expenseComment, setExpenseComment] = useState('');
+  const [expensePaymentSource, setExpensePaymentSource] = useState<'bank' | 'petty_cash'>('bank');
+  const [expenseError, setExpenseError] = useState('');
+
   // Manual Matching Modal State
   const [manualMatchBankRow, setManualMatchBankRow] = useState<BankTransaction | null>(null);
   const [manualMatchSearch, setManualMatchSearch] = useState('');
@@ -93,6 +113,7 @@ export const BankScreen: React.FC = () => {
   // Dedicated Assign Student to Bank Row Modal
   const [assignStudentBankRow, setAssignStudentBankRow] = useState<BankTransaction | null>(null);
   const [assignStudentSearch, setAssignStudentSearch] = useState('');
+  const [assignStudentSchoolFilter, setAssignStudentSchoolFilter] = useState<number>(0);
   const [assignStudentSelected, setAssignStudentSelected] = useState<Student | null>(null);
   const [assignStudentPurpose, setAssignStudentPurpose] = useState('');
   const [assignStudentCreateLedger, setAssignStudentCreateLedger] = useState(false);
@@ -250,7 +271,6 @@ export const BankScreen: React.FC = () => {
     }
   };
 
-  // Helper date distance
   const dayDistance = (a: string, b: string) => {
     const da = new Date(a).getTime();
     const db = new Date(b).getTime();
@@ -305,28 +325,61 @@ export const BankScreen: React.FC = () => {
   const matchedBankRows = useMemo(() => currentBankRows.filter((t) => t.reconciled), [currentBankRows]);
   const unmatchedBankRows = useMemo(() => currentBankRows.filter((t) => !t.reconciled), [currentBankRows]);
 
-  // RECONCILIATION STATEMENT COMPUTATION (صورت مغایرت بانکی استاندارد)
+  // HIGH-PERFORMANCE RECONCILIATION STATEMENT COMPUTATION (Single-Pass Loop)
   const reconciliationStatement = useMemo(() => {
-    const bookDebits = bookTxs.filter((t) => t.kind === 'شهریه' || t.kind === 'دریافت متفرقه').reduce((sum, t) => sum + (t.amount || 0), 0);
-    const bookCredits = bookTxs.filter((t) => t.kind === 'هزینه').reduce((sum, t) => sum + (t.amount || 0), 0);
+    let bookDebits = 0;
+    let bookCredits = 0;
+    const bookUnmatchedDeposits: Transaction[] = [];
+    const bookUnmatchedWithdrawals: Transaction[] = [];
+    let totalBookUnmatchedDeposits = 0;
+    let totalBookUnmatchedWithdrawals = 0;
+
+    for (let i = 0; i < bookTxs.length; i++) {
+      const t = bookTxs[i];
+      const amt = Number(t.amount || 0);
+      if (t.kind === 'شهریه' || t.kind === 'دریافت متفرقه') {
+        bookDebits += amt;
+        if (!t.reconciled) {
+          bookUnmatchedDeposits.push(t);
+          totalBookUnmatchedDeposits += amt;
+        }
+      } else if (t.kind === 'هزینه') {
+        bookCredits += amt;
+        if (!t.reconciled) {
+          bookUnmatchedWithdrawals.push(t);
+          totalBookUnmatchedWithdrawals += amt;
+        }
+      }
+    }
+
     const bookBalance = bookDebits - bookCredits;
 
-    const bookUnmatchedDeposits = bookTxs.filter((t) => !t.reconciled && (t.kind === 'شهریه' || t.kind === 'دریافت متفرقه'));
-    const totalBookUnmatchedDeposits = bookUnmatchedDeposits.reduce((sum, t) => sum + (t.amount || 0), 0);
+    let totalBankDeposits = 0;
+    let totalBankWithdrawals = 0;
+    const bankUnmatchedDeposits: BankTransaction[] = [];
+    const bankUnmatchedWithdrawals: BankTransaction[] = [];
+    let totalBankUnmatchedDeposits = 0;
+    let totalBankUnmatchedWithdrawals = 0;
 
-    const bookUnmatchedWithdrawals = bookTxs.filter((t) => !t.reconciled && t.kind === 'هزینه');
-    const totalBookUnmatchedWithdrawals = bookUnmatchedWithdrawals.reduce((sum, t) => sum + (t.amount || 0), 0);
+    for (let i = 0; i < currentBankRows.length; i++) {
+      const b = currentBankRows[i];
+      const amt = Number(b.amount || 0);
+      if (b.direction === 'deposit' || b.direction === 'pos_sale') {
+        totalBankDeposits += amt;
+        if (!b.reconciled) {
+          bankUnmatchedDeposits.push(b);
+          totalBankUnmatchedDeposits += amt;
+        }
+      } else if (b.direction === 'withdrawal') {
+        totalBankWithdrawals += amt;
+        if (!b.reconciled) {
+          bankUnmatchedWithdrawals.push(b);
+          totalBankUnmatchedWithdrawals += amt;
+        }
+      }
+    }
 
-    const bankUnmatchedDeposits = currentBankRows.filter((b) => !b.reconciled && b.direction === 'deposit');
-    const totalBankUnmatchedDeposits = bankUnmatchedDeposits.reduce((sum, b) => sum + (b.amount || 0), 0);
-
-    const bankUnmatchedWithdrawals = currentBankRows.filter((b) => !b.reconciled && b.direction === 'withdrawal');
-    const totalBankUnmatchedWithdrawals = bankUnmatchedWithdrawals.reduce((sum, b) => sum + (b.amount || 0), 0);
-
-    const totalBankDeposits = currentBankRows.filter((b) => b.direction === 'deposit' || b.direction === 'pos_sale').reduce((sum, b) => sum + (b.amount || 0), 0);
-    const totalBankWithdrawals = currentBankRows.filter((b) => b.direction === 'withdrawal').reduce((sum, b) => sum + (b.amount || 0), 0);
     const bankCalculatedBalance = totalBankDeposits - totalBankWithdrawals;
-
     const adjustedBookBalance = bookBalance + totalBankUnmatchedDeposits - totalBankUnmatchedWithdrawals;
     const adjustedBankBalance = bankCalculatedBalance + totalBookUnmatchedDeposits - totalBookUnmatchedWithdrawals;
     const discrepancy = Math.abs(adjustedBookBalance - adjustedBankBalance);
@@ -351,19 +404,28 @@ export const BankScreen: React.FC = () => {
     };
   }, [bookTxs, currentBankRows]);
 
-  // Students filtering helpers for instant register and assign
+  // ROBUST STUDENT LIST FOR INSTANT REGISTER
   const availableStudentsForInstant = useMemo(() => {
     return students.filter((s) => {
       if (s.active === false) return false;
-      if (!isSenior && Number(s.school_id) !== Number(currentUser?.school_id)) return false;
-      if (instantSchoolId && isSenior && Number(s.school_id) !== Number(instantSchoolId)) return false;
+      if (!isSenior && currentUser?.school_id && Number(s.school_id) !== Number(currentUser.school_id)) return false;
+      if (instantSchoolId > 0 && isSenior && Number(s.school_id) !== Number(instantSchoolId)) return false;
       return true;
     });
   }, [students, isSenior, currentUser, instantSchoolId]);
 
   const filteredStudentsForInstant = useMemo(() => {
-    if (!instantStudentSearch.trim()) return availableStudentsForInstant.slice(0, 30);
-    return availableStudentsForInstant.filter((st) => matchesStudentSearch(st, instantStudentSearch)).slice(0, 30);
+    const q = instantStudentSearch.trim().toLowerCase();
+    if (!q) return availableStudentsForInstant.slice(0, 40);
+
+    return availableStudentsForInstant.filter((st) => {
+      if (matchesStudentSearch(st, q)) return true;
+      const name = (st.name || '').toLowerCase();
+      const nid = (st.national_id || '').toLowerCase();
+      const phone = (st.phone || st.father_phone || st.mother_phone || '').toLowerCase();
+      const grade = (st.grade || '').toLowerCase();
+      return name.includes(q) || nid.includes(q) || phone.includes(q) || grade.includes(q);
+    }).slice(0, 40);
   }, [availableStudentsForInstant, instantStudentSearch]);
 
   const selectedInstantStudentObj = useMemo(() => {
@@ -371,26 +433,35 @@ export const BankScreen: React.FC = () => {
     return students.find((s) => s.id === Number(instantStudentId)) || null;
   }, [students, instantStudentId]);
 
-  // Students filtering helpers for assign student modal
+  // ROBUST STUDENT LIST FOR DEDICATED ASSIGN MODAL
   const availableStudentsForAssign = useMemo(() => {
-    if (!assignStudentBankRow) return [];
-    const b = assignStudentBankRow;
     return students.filter((s) => {
       if (s.active === false) return false;
-      if (!isSenior && Number(s.school_id) !== Number(currentUser?.school_id)) return false;
-      if (b.school_id && isSenior && Number(s.school_id) !== Number(b.school_id)) return false;
+      if (!isSenior && currentUser?.school_id && Number(s.school_id) !== Number(currentUser.school_id)) return false;
+      if (assignStudentSchoolFilter > 0 && Number(s.school_id) !== Number(assignStudentSchoolFilter)) return false;
       return true;
     });
-  }, [students, isSenior, currentUser, assignStudentBankRow]);
+  }, [students, isSenior, currentUser, assignStudentSchoolFilter]);
 
   const filteredStudentsForAssign = useMemo(() => {
-    if (!assignStudentSearch.trim()) return availableStudentsForAssign.slice(0, 30);
-    return availableStudentsForAssign.filter((st) => matchesStudentSearch(st, assignStudentSearch)).slice(0, 30);
+    const q = assignStudentSearch.trim().toLowerCase();
+    if (!q) return availableStudentsForAssign.slice(0, 40);
+
+    return availableStudentsForAssign.filter((st) => {
+      if (matchesStudentSearch(st, q)) return true;
+      const name = (st.name || '').toLowerCase();
+      const nid = (st.national_id || '').toLowerCase();
+      const phone = (st.phone || st.father_phone || st.mother_phone || '').toLowerCase();
+      const grade = (st.grade || '').toLowerCase();
+      return name.includes(q) || nid.includes(q) || phone.includes(q) || grade.includes(q);
+    }).slice(0, 40);
   }, [availableStudentsForAssign, assignStudentSearch]);
 
   const openAssignStudent = (b: BankTransaction) => {
     setAssignStudentBankRow(b);
     setAssignStudentSearch('');
+    // Default to bank row's school if known, or 0 (all schools)
+    setAssignStudentSchoolFilter(b.school_id || (isSenior ? 0 : currentUser?.school_id || 0));
     const existing = students.find((s) => s.id === b.assigned_student_id || (b.assigned_student_name && s.name.trim() === b.assigned_student_name.trim()));
     setAssignStudentSelected(existing || null);
     setAssignStudentPurpose(b.assigned_purpose || (existing ? `شهریه ${existing.name}` : 'شهریه دانش‌آموز'));
@@ -444,6 +515,67 @@ export const BankScreen: React.FC = () => {
     }).catch((err) => console.warn('Cloud annotation failed:', err));
 
     setAssignStudentBankRow(null);
+  };
+
+  // OPEN DEDICATED EXPENSE MODAL
+  const openRecordExpense = (b: BankTransaction) => {
+    setExpenseModalRow(b);
+    setExpenseSchoolId(b.school_id || currentUser?.school_id || schools[0]?.id || 1);
+    setExpenseComment(b.description || 'هزینه بانکی');
+    setExpensePaymentSource(b.bank_account?.includes('۰۰۱') || b.bank_account?.includes('تن') ? 'petty_cash' : 'bank');
+
+    // Auto select fee category if keywords detected
+    const isFee = /(کارمزد|پایا|ساتنا|fee|آبونمان)/i.test(b.description || '');
+    const feeCat = categories.find((c) => c.active && (c.name.includes('کارمزد') || c.name.includes('بانک')));
+    if (isFee && feeCat) {
+      setExpenseCategory(feeCat.id);
+    } else {
+      setExpenseCategory(categories.find((c) => c.active)?.id || '1');
+    }
+    setExpenseError('');
+  };
+
+  // SAVE EXPENSE
+  const handleSaveExpense = () => {
+    if (!expenseModalRow) return;
+    const b = expenseModalRow;
+    if (!expenseComment.trim()) {
+      setExpenseError('لطفاً شرح یا بابت هزینه را وارد کنید.');
+      return;
+    }
+
+    try {
+      const tracking = b.tracking_code || b.reference_number || 'بانکی';
+      const amount = Number(b.amount || 0);
+      const date = b.date;
+
+      const newTx = addExpense({
+        category_id: expenseCategory,
+        amount,
+        date,
+        tracking_code: tracking,
+        payment_source: expensePaymentSource,
+        comment: expenseComment.trim(),
+        school_id: expenseSchoolId,
+        bank_transaction_id: b.id,
+      });
+
+      const categoryObj = categories.find((c) => c.id === expenseCategory);
+
+      updateBankTransaction(b.id, {
+        reconciled: true,
+        matched_transaction_id: newTx.id,
+        assigned_purpose: categoryObj?.name || expenseComment.trim(),
+        school_id: expenseSchoolId,
+        school_name: schools.find((s) => s.id === expenseSchoolId)?.name,
+      });
+
+      setExpenseModalRow(null);
+      setExpenseError('');
+      setReconcileResult(`هزینه به مبلغ ${formatRial(amount)} ریال در دفاتر ثبت شد و با ردیف بانک تطبیق یافت.`);
+    } catch (err) {
+      setExpenseError('خطا در ثبت هزینه: ' + String(err));
+    }
   };
 
   // Advanced Multi-Tier Auto Reconcile Engine
@@ -510,7 +642,7 @@ export const BankScreen: React.FC = () => {
       }
     });
 
-    // TIER 3: Exact Amount + Date within 2 days + Same School (Fuzzy Tuition / Fee Match)
+    // TIER 3: Exact Amount + Date within 2 days + Same School
     updatedBank.forEach((bt) => {
       if (bt.reconciled) return;
       if (!bt.school_id && !isSenior) return;
@@ -569,7 +701,7 @@ export const BankScreen: React.FC = () => {
     );
   };
 
-  // Automatic Bank Fee Scanner & Identification
+  // Automatic Bank Fee Scanner
   const handleScanAndIdentifyBankFees = () => {
     const pattern = /(کارمزد|هزینه خدمات|هزینه انتقال|پایا|ساتنا|fee|commission|service charge|transfer charge|آبونمان|پیامک)/i;
     const candidates = bankTransactions.filter(
@@ -589,7 +721,7 @@ export const BankScreen: React.FC = () => {
     );
   };
 
-  // File Upload Handler (with complete header and format coverage)
+  // File Upload Handler
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -983,6 +1115,11 @@ export const BankScreen: React.FC = () => {
     });
   }, [bankTxs, statusFilter, searchQuery]);
 
+  // Paginated visible ledger transactions for ultra-fast rendering
+  const displayedBankTxs = useMemo(() => {
+    return filteredBankTxs.slice(0, visibleLedgerCount);
+  }, [filteredBankTxs, visibleLedgerCount]);
+
   const filteredStatementRows = useMemo(() => {
     return currentBankRows.filter((b) => {
       if (statusFilter === 'matched' && !b.reconciled) return false;
@@ -1002,6 +1139,11 @@ export const BankScreen: React.FC = () => {
       return desc.includes(q) || track.includes(q) || card.includes(q) || amountStr.includes(q) || student.includes(q);
     });
   }, [currentBankRows, statusFilter, directionFilter, searchQuery]);
+
+  // Paginated visible bank transactions for ultra-fast 60 FPS rendering
+  const displayedStatementRows = useMemo(() => {
+    return filteredStatementRows.slice(0, visibleBankCount);
+  }, [filteredStatementRows, visibleBankCount]);
 
   // Candidates for manual match modal
   const manualMatchCandidates = useMemo(() => {
@@ -1165,7 +1307,7 @@ export const BankScreen: React.FC = () => {
                 تطبیق هوشمند صورتحساب، تراز دفاتر و ردیابی کارمزدها
               </h2>
               <p className="text-xs text-[#f5dff2]/90 max-w-3xl leading-relaxed mt-1.5">
-                تطبیق چندمرحله‌ای شهریه و واریزی‌های پوز شاپرک با اسناد دفاتر، تفکیک خودکار کارمزدهای بانکی و صدور صورت مغایرت بانکی رسمی به همراه گزارش‌های تفکیکی تن‌خواه مدیران.
+                تطبیق چندمرحله‌ای شهریه و واریزی‌های پوز شاپرک با اسناد دفاتر، ثبت مستقیم هزینه‌ها و کارمزدهای بانکی به همراه صدور صورت مغایرت بانکی رسمی.
               </p>
             </div>
 
@@ -1451,7 +1593,7 @@ export const BankScreen: React.FC = () => {
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {filteredStatementRows.map((b) => (
+                  {displayedStatementRows.map((b) => (
                     <div
                       key={b.id}
                       className={`rounded-2xl p-4 border transition-all shadow-xs ${
@@ -1523,7 +1665,17 @@ export const BankScreen: React.FC = () => {
                             className="px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-900 border border-indigo-200 hover:bg-indigo-100 font-bold transition-all flex items-center gap-1.5 shadow-xs"
                           >
                             <User className="w-3.5 h-3.5 text-indigo-700" />
-                            <span>{b.assigned_student_name ? `تغییر دانش‌آموز: ${b.assigned_student_name}` : 'جستجو و انتخاب دانش‌آموز'}</span>
+                            <span>{b.assigned_student_name ? `دانش‌آموز: ${b.assigned_student_name}` : 'جستجو و انتخاب دانش‌آموز'}</span>
+                          </button>
+
+                          {/* Dedicated Record Expense Button */}
+                          <button
+                            type="button"
+                            onClick={() => openRecordExpense(b)}
+                            className="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100 font-bold transition-all flex items-center gap-1.5 shadow-xs"
+                          >
+                            <Receipt className="w-3.5 h-3.5 text-rose-600" />
+                            <span>ثبت به عنوان هزینه</span>
                           </button>
 
                           {!b.reconciled ? (
@@ -1554,7 +1706,7 @@ export const BankScreen: React.FC = () => {
                                 className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 font-bold transition-all flex items-center gap-1.5 shadow-xs"
                               >
                                 <PlusCircle className="w-3.5 h-3.5" />
-                                <span>ثبت آنی سند در دفاتر</span>
+                                <span>ثبت مستقیم سند</span>
                               </button>
                             </>
                           ) : (
@@ -1571,6 +1723,23 @@ export const BankScreen: React.FC = () => {
                       </div>
                     </div>
                   ))}
+
+                  {/* Load More Pagination Button */}
+                  {filteredStatementRows.length > visibleBankCount && (
+                    <div className="flex flex-col items-center justify-center gap-2 py-4">
+                      <div className="text-xs text-gray-500 font-semibold">
+                        نمایش {displayedStatementRows.length} از {filteredStatementRows.length} ردیف صورتحساب بانک
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setVisibleBankCount((prev) => prev + 50)}
+                        className="px-5 py-2.5 rounded-2xl bg-purple-50 hover:bg-purple-100 border border-purple-200 text-[#62205f] font-bold text-xs shadow-xs transition-all flex items-center gap-2 active:scale-95"
+                      >
+                        <ChevronDown className="w-4 h-4" />
+                        <span>نمایش ۵۰ ردیف بعدی</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </section>
@@ -1580,7 +1749,7 @@ export const BankScreen: React.FC = () => {
               <div className="flex items-center justify-between">
                 <h3 className="font-extrabold text-sm text-[#341648] flex items-center gap-2">
                   <Landmark className="w-4 h-4 text-emerald-700" />
-                  <span>اسناد ثبت‌شده در دفاتر مدرسه (شهریه و دریافت‌ها — {filteredBankTxs.length} سند)</span>
+                  <span>اسناد ثبت‌شده در دفاتر مدرسه ({filteredBankTxs.length} سند)</span>
                 </h3>
                 <div className="text-xs text-gray-500 font-semibold">
                   مجموع: {formatRial(filteredBankTxs.reduce((s, t) => s + (t.amount || 0), 0))} ریال
@@ -1593,7 +1762,7 @@ export const BankScreen: React.FC = () => {
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {filteredBankTxs.map((t) => (
+                  {displayedBankTxs.map((t) => (
                     <div
                       key={t.id}
                       className="bg-white rounded-2xl p-4 border border-[#e5dde8] shadow-xs space-y-3 hover:border-purple-300 transition-all"
@@ -1690,6 +1859,23 @@ export const BankScreen: React.FC = () => {
                       )}
                     </div>
                   ))}
+
+                  {/* Load More Ledger Pagination */}
+                  {filteredBankTxs.length > visibleLedgerCount && (
+                    <div className="flex flex-col items-center justify-center gap-2 py-4">
+                      <div className="text-xs text-gray-500 font-semibold">
+                        نمایش {displayedBankTxs.length} از {filteredBankTxs.length} سند دفتری
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setVisibleLedgerCount((prev) => prev + 40)}
+                        className="px-5 py-2.5 rounded-2xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 font-bold text-xs shadow-xs transition-all flex items-center gap-2 active:scale-95"
+                      >
+                        <ChevronDown className="w-4 h-4" />
+                        <span>نمایش ۴۰ سند بعدی</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </section>
@@ -1856,12 +2042,20 @@ export const BankScreen: React.FC = () => {
                           تاریخ: {jalaliFromGregorian(b.date)} | حساب: {b.bank_account || '—'} | کارت: {b.source_card_number || b.card_number || 'ثبت نشده'}
                         </div>
 
-                        {candidates.length === 0 ? (
-                          <div className="text-xs text-gray-400 bg-gray-50 p-2 rounded-xl">
-                            هزینه‌ای با مبلغ و تاریخ نزدیک پیدا نشد. می‌توانید با دکمه «تطبیق دستی» سند معادل را انتخاب کنید.
-                          </div>
-                        ) : (
-                          <div className="space-y-1.5 pt-1">
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => openRecordExpense(b)}
+                            className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-xs transition-all flex items-center gap-1.5"
+                          >
+                            <Receipt className="w-3.5 h-3.5" />
+                            <span>ثبت مستقیم هزینه تن‌خواه</span>
+                          </button>
+                        </div>
+
+                        {candidates.length > 0 && (
+                          <div className="space-y-1.5 pt-1 border-t border-gray-100">
+                            <span className="text-[11px] font-bold text-gray-700">هزینه‌های پیشنهادی نزدیک:</span>
                             {candidates.map((t) => (
                               <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-purple-50/60 border border-purple-100 p-2.5 text-xs">
                                 <span>{t.expense_category_name || t.description || t.comment || 'هزینه تن‌خواه'} — {jalaliFromGregorian(t.date)} — <b className="font-mono">{formatRial(t.amount)} ریال</b></span>
@@ -2187,14 +2381,10 @@ export const BankScreen: React.FC = () => {
                           <div className="font-mono font-bold text-rose-700">{formatRial(b.amount)}</div>
                           <button
                             type="button"
-                            onClick={() => {
-                              setInstantRegisterRow(b);
-                              setInstantType('bank_fee');
-                              setInstantDesc(b.description || 'کارمزد بانک');
-                            }}
-                            className="text-[10px] text-purple-700 font-bold hover:underline"
+                            onClick={() => openRecordExpense(b)}
+                            className="text-[10px] text-rose-700 font-bold hover:underline"
                           >
-                            ثبت به عنوان کارمزد
+                            ثبت به عنوان هزینه
                           </button>
                         </div>
                       </div>
@@ -2207,6 +2397,142 @@ export const BankScreen: React.FC = () => {
         )}
 
       </main>
+
+      {/* MODAL: DEDICATED RECORD EXPENSE MODAL */}
+      {expenseModalRow && (
+        <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-3" role="dialog" aria-modal="true">
+          <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-3xl bg-white p-5 space-y-4 shadow-2xl">
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-gray-100">
+              <div>
+                <h3 className="font-black text-base text-rose-950 flex items-center gap-2">
+                  <Receipt className="w-5 h-5 text-rose-700" />
+                  <span>ثبت هزینه بانکی در دفاتر</span>
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  مبلغ: <b className="font-mono text-rose-800">{formatRial(expenseModalRow.amount)} ریال</b> · تاریخ: {jalaliFromGregorian(expenseModalRow.date)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExpenseModalRow(null)}
+                className="p-1 rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Target row details banner */}
+            <div className="rounded-2xl bg-rose-50/70 border border-rose-200 p-3 space-y-1.5 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-600">شرح در صورتحساب بانک:</span>
+                <span className="font-bold text-gray-900">{expenseModalRow.description || '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">شماره پیگیری:</span>
+                <span className="font-mono text-gray-900">{expenseModalRow.tracking_code || expenseModalRow.reference_number || '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">حساب / کارت:</span>
+                <span className="font-mono text-gray-900" dir="ltr">{expenseModalRow.card_number || expenseModalRow.bank_account || '—'}</span>
+              </div>
+            </div>
+
+            {/* School selection */}
+            {isSenior && (
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-gray-700">مدرسه مربوطه:</label>
+                <select
+                  value={expenseSchoolId}
+                  onChange={(e) => setExpenseSchoolId(Number(e.target.value))}
+                  className="w-full rounded-xl border border-gray-200 p-2.5 text-xs font-bold text-gray-800 bg-white"
+                >
+                  {schools.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Expense Category selection */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-gray-700">سرفصل هزینه:</label>
+              <select
+                value={expenseCategory}
+                onChange={(e) => setExpenseCategory(e.target.value)}
+                className="w-full rounded-xl border border-gray-200 p-2.5 text-xs font-bold text-gray-800 bg-white"
+              >
+                {categories.filter((c) => c.active).map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Payment Source */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-gray-700">منبع پرداخت:</label>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setExpensePaymentSource('bank')}
+                  className={`py-2 px-3 rounded-xl font-bold border transition-all text-center ${
+                    expensePaymentSource === 'bank'
+                      ? 'bg-rose-700 text-white border-rose-700 shadow-xs'
+                      : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                  }`}
+                >
+                  حساب جاری بانک
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExpensePaymentSource('petty_cash')}
+                  className={`py-2 px-3 rounded-xl font-bold border transition-all text-center ${
+                    expensePaymentSource === 'petty_cash'
+                      ? 'bg-purple-700 text-white border-purple-700 shadow-xs'
+                      : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                  }`}
+                >
+                  کارت تن‌خواه
+                </button>
+              </div>
+            </div>
+
+            {/* Comment */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-gray-700">شرح و توضیحات هزینه:</label>
+              <textarea
+                value={expenseComment}
+                onChange={(e) => setExpenseComment(e.target.value)}
+                rows={2}
+                placeholder="توضیحاتی در مورد بابت این هزینه..."
+                className="w-full rounded-xl border border-gray-200 p-2.5 text-xs focus:outline-none focus:border-rose-600"
+              />
+            </div>
+
+            {expenseError && (
+              <div className="rounded-xl bg-rose-50 border border-rose-200 text-rose-800 p-2.5 text-xs">
+                {expenseError}
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={handleSaveExpense}
+                className="flex-1 py-3 rounded-xl bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs shadow-md transition-all"
+              >
+                ثبت قطعی هزینه و تطبیق سند
+              </button>
+              <button
+                type="button"
+                onClick={() => setExpenseModalRow(null)}
+                className="px-4 py-3 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 font-bold text-xs"
+              >
+                انصراف
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL 1: Interactive Manual Link / Match with Ledger */}
       {manualMatchBankRow && (
@@ -2315,15 +2641,19 @@ export const BankScreen: React.FC = () => {
                 onClick={() => {
                   const b = manualMatchBankRow;
                   setManualMatchBankRow(null);
-                  setInstantRegisterRow(b);
-                  setInstantType(b.direction === 'withdrawal' ? 'expense' : 'tuition');
-                  setInstantDesc(b.description || '');
-                  setInstantStudentId(b.assigned_student_id || '');
-                  setInstantStudentSearch('');
+                  if (b.direction === 'withdrawal') {
+                    openRecordExpense(b);
+                  } else {
+                    setInstantRegisterRow(b);
+                    setInstantType('tuition');
+                    setInstantDesc(b.description || '');
+                    setInstantStudentId(b.assigned_student_id || '');
+                    setInstantStudentSearch('');
+                  }
                 }}
                 className="flex-1 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 font-bold text-xs transition-all"
               >
-                یا ثبت به عنوان سند جدید در دفاتر
+                ثبت به عنوان سند جدید در دفاتر
               </button>
               <button
                 type="button"
@@ -2623,10 +2953,29 @@ export const BankScreen: React.FC = () => {
               </div>
             </div>
 
+            {/* School Filter Selector inside Assign Modal */}
+            {isSenior && (
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-700">فیلتر بر اساس مدرسه:</label>
+                <select
+                  value={assignStudentSchoolFilter}
+                  onChange={(e) => setAssignStudentSchoolFilter(Number(e.target.value))}
+                  className="w-full rounded-xl border border-gray-200 p-2 text-xs font-bold text-gray-800 bg-gray-50"
+                >
+                  <option value={0}>همه مدارس ({schools.length})</option>
+                  {schools.map((sc) => (
+                    <option key={sc.id} value={sc.id}>{sc.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Selected Student Card or Search Box */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-gray-700">دانش‌آموز مربوط به این واریزی:</label>
+                <label className="text-xs font-bold text-gray-700">
+                  انتخاب دانش‌آموز ({filteredStudentsForAssign.length} از {availableStudentsForAssign.length}):
+                </label>
                 {assignStudentSelected && (
                   <button
                     type="button"
@@ -2681,7 +3030,7 @@ export const BankScreen: React.FC = () => {
                       type="text"
                       value={assignStudentSearch}
                       onChange={(e) => setAssignStudentSearch(e.target.value)}
-                      placeholder="جستجوی نام، کدملی، پایه یا تلفن دانش‌آموز..."
+                      placeholder="نام، کدملی، پایه یا تلفن دانش‌آموز را جستجو کنید..."
                       className="w-full pl-8 pr-9 py-2.5 rounded-xl border border-gray-200 text-xs sm:text-sm focus:outline-none focus:border-indigo-600 bg-gray-50 focus:bg-white"
                       autoFocus
                     />
@@ -2699,7 +3048,7 @@ export const BankScreen: React.FC = () => {
                   <div className="max-h-52 overflow-y-auto rounded-xl border border-gray-200 bg-white divide-y divide-gray-100 shadow-xs">
                     {filteredStudentsForAssign.length === 0 ? (
                       <div className="p-4 text-center text-xs text-gray-400">
-                        دانش‌آموزی با این مشخصات یافت نشد.
+                        دانش‌آموزی با این مشخصات یافت نشد. می‌توانید فیلتر مدرسه را تغییر دهید.
                       </div>
                     ) : (
                       filteredStudentsForAssign.map((st) => (

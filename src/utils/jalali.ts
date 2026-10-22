@@ -4,15 +4,11 @@
  */
 
 export function latinDigits(str: string = ''): string {
-  const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
-  const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-
-  let result = str;
-  for (let i = 0; i < 10; i++) {
-    result = result.replace(new RegExp(persianDigits[i], 'g'), String(i));
-    result = result.replace(new RegExp(arabicDigits[i], 'g'), String(i));
-  }
-  return result;
+  if (!str) return '';
+  return str.replace(/[۰-۹٠-٩]/g, (char) => {
+    const code = char.charCodeAt(0);
+    return String(code >= 0x06f0 && code <= 0x06f9 ? code - 0x06f0 : code - 0x0660);
+  });
 }
 
 export function toGregorian(jy: number, jm: number, jd: number): [number, number, number] {

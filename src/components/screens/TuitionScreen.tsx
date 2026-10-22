@@ -17,6 +17,10 @@ import {
   Banknote,
   Camera,
   Image,
+  Sparkles,
+  Tag,
+  Layers,
+  Award,
 } from 'lucide-react';
 import { ReceiptImageUploader } from '../ReceiptImageUploader';
 import { InvoicePrintModal } from '../InvoicePrintModal';
@@ -67,6 +71,7 @@ export const TuitionScreen: React.FC = () => {
     accentColor,
     getStudentBalance,
     addTuitionDebt,
+    addTuitionDiscount,
     addTuitionPayment,
     addBulkDebt,
     deleteTransaction,
@@ -80,7 +85,15 @@ export const TuitionScreen: React.FC = () => {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
 
   // Modals state
-  const [modalType, setModalType] = useState<'debt' | 'payment' | 'bulk_debt' | null>(null);
+  const [modalType, setModalType] = useState<'debt' | 'payment' | 'bulk_debt' | 'discount' | null>(null);
+
+  // Debt Item Type & Installment state
+  const [debtItemType, setDebtItemType] = useState<Transaction['debt_item_type']>('tuition');
+  const [enableInstallments, setEnableInstallments] = useState(false);
+  const [installmentCount, setInstallmentCount] = useState<number>(3);
+
+  // Discount state
+  const [discountReason, setDiscountReason] = useState('فرزند فرهنگی و همکار');
 
   // Single Debt / Payment Form state
   const [formAmount, setFormAmount] = useState('');
@@ -88,6 +101,7 @@ export const TuitionScreen: React.FC = () => {
   const [formDesc, setFormDesc] = useState('');
   const [formMethod, setFormMethod] = useState('کارت خوان');
   const [formTracking, setFormTracking] = useState('');
+  const [formPosTerminal, setFormPosTerminal] = useState('');
   const [formAttachment, setFormAttachment] = useState<string>('');
   const [formError, setFormError] = useState('');
 
@@ -125,7 +139,7 @@ export const TuitionScreen: React.FC = () => {
   const studentBalance = selectedStudent ? getStudentBalance(selectedStudent.id) : null;
 
   const studentTxs = selectedStudent
-    ? transactions.filter((t) => t.student_id === selectedStudent.id && (t.kind === 'شهریه' || t.kind === 'شهریه_بدهی'))
+    ? transactions.filter((t) => t.student_id === selectedStudent.id && (t.kind === 'شهریه' || t.kind === 'شهریه_بدهی' || t.kind === 'تخفیف_شهریه'))
     : [];
 
   const handleOpenDebt = () => {
@@ -135,10 +149,26 @@ export const TuitionScreen: React.FC = () => {
     }
     setFormAmount('');
     setFormJalaliDate(todayJalali());
-    setFormDesc('شهریه مصوب');
+    setDebtItemType('tuition');
+    setFormDesc('شهریه مصوب آموزشی');
+    setEnableInstallments(false);
+    setInstallmentCount(3);
     setFormAttachment('');
     setFormError('');
     setModalType('debt');
+  };
+
+  const handleOpenDiscount = () => {
+    if (!selectedStudent) {
+      alert('ابتدا یک دانش‌آموز را انتخاب کنید.');
+      return;
+    }
+    setFormAmount('');
+    setFormJalaliDate(todayJalali());
+    setDiscountReason('فرزند فرهنگی و همکار');
+    setFormDesc('تخفیف مصوب فرزند همکار');
+    setFormError('');
+    setModalType('discount');
   };
 
   const handleOpenPayment = () => {
@@ -151,6 +181,7 @@ export const TuitionScreen: React.FC = () => {
     setFormDesc('پرداخت قسط شهریه');
     setFormMethod('کارت خوان');
     setFormTracking('');
+    setFormPosTerminal('');
     setSayadId('');
     setChequeDueDate(todayJalali());
     setInFavorSchool(false);
@@ -184,13 +215,66 @@ export const TuitionScreen: React.FC = () => {
       setFormError('عنوان یا شرح بدهی را وارد کنید.');
       return;
     }
+
+    try {
+      const baseIsoDate = jalaliToIso(formJalaliDate);
+      const baseDateObj = new Date(baseIsoDate);
+
+      if (enableInstallments && installmentCount > 1) {
+        // Multi-installment distribution
+        const perInstallment = Math.floor(amt / installmentCount);
+        const remainder = amt - (perInstallment * installmentCount);
+
+        for (let i = 0; i < installmentCount; i++) {
+          const installmentDate = new Date(baseDateObj);
+          installmentDate.setDate(installmentDate.getDate() + (i * 30));
+          const instIso = installmentDate.toISOString().slice(0, 10);
+          const instAmount = i === installmentCount - 1 ? perInstallment + remainder : perInstallment;
+
+          addTuitionDebt({
+            student_id: selectedStudent!.id,
+            amount: instAmount,
+            date: instIso,
+            description: `قسط ${i + 1} از ${installmentCount}: ${formDesc.trim()}`,
+            school_id: selectedStudent!.school_id,
+            debt_item_type: debtItemType,
+            installment_index: i + 1,
+            total_installments: installmentCount,
+          });
+        }
+      } else {
+        addTuitionDebt({
+          student_id: selectedStudent!.id,
+          amount: amt,
+          date: baseIsoDate,
+          description: formDesc.trim(),
+          school_id: selectedStudent!.school_id,
+          debt_item_type: debtItemType,
+        });
+      }
+
+      setModalType(null);
+    } catch (err) {
+      setFormError(String(err));
+    }
+  };
+
+  const handleSaveDiscount = (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError('');
+    const amt = Number(latinDigits(formAmount).replace(/[,٬]/g, '').trim());
+    if (isNaN(amt) || amt <= 0) {
+      setFormError('مبلغ تخفیف را به ریال وارد کنید.');
+      return;
+    }
     try {
       const isoDate = jalaliToIso(formJalaliDate);
-      addTuitionDebt({
+      addTuitionDiscount({
         student_id: selectedStudent!.id,
         amount: amt,
         date: isoDate,
-        description: formDesc.trim(),
+        description: formDesc.trim() || `تخفیف شهریه (${discountReason})`,
+        discount_reason: discountReason,
         school_id: selectedStudent!.school_id,
       });
       setModalType(null);
@@ -277,6 +361,7 @@ export const TuitionScreen: React.FC = () => {
         description: formDesc.trim(),
         payment_method: formMethod,
         tracking_code: formTracking.trim(),
+        pos_terminal_number: formPosTerminal.trim() || undefined,
         school_id: selectedStudent!.school_id,
         attachment_url: formAttachment,
       });
@@ -422,22 +507,30 @@ export const TuitionScreen: React.FC = () => {
             </div>
 
             {/* Action Buttons for this student */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-5">
               <button
                 onClick={handleOpenDebt}
-                className="py-3 px-4 rounded-xl text-white font-bold text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 bg-rose-600 hover:bg-rose-700"
+                className="py-3 px-3 rounded-xl text-white font-bold text-xs sm:text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-700"
               >
-                <PlusCircle className="w-5 h-5" />
-                ثبت بدهی شهریه برای این دانش‌آموز
+                <PlusCircle className="w-4 h-4 shrink-0" />
+                <span>ثبت بدهی جدید</span>
               </button>
 
               <button
                 onClick={handleOpenPayment}
-                className="py-3 px-4 rounded-xl text-white font-bold text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2"
+                className="py-3 px-3 rounded-xl text-white font-bold text-xs sm:text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5"
                 style={{ backgroundColor: accentColor }}
               >
-                <CreditCard className="w-5 h-5" />
-                ثبت پرداخت شهریه / فیش واریز
+                <CreditCard className="w-4 h-4 shrink-0" />
+                <span>ثبت پرداخت / فیش</span>
+              </button>
+
+              <button
+                onClick={handleOpenDiscount}
+                className="py-3 px-3 rounded-xl text-[#341648] bg-amber-100 hover:bg-amber-200 border border-amber-300 font-bold text-xs sm:text-sm shadow-xs active:scale-95 transition-all flex items-center justify-center gap-1.5"
+              >
+                <Sparkles className="w-4 h-4 text-amber-700 shrink-0" />
+                <span>ثبت تخفیف و بورسیه</span>
               </button>
             </div>
           </div>
@@ -474,6 +567,7 @@ export const TuitionScreen: React.FC = () => {
               <div className="space-y-3">
                 {studentTxs.map((tx) => {
                   const isDebt = tx.kind === 'شهریه_بدهی';
+                  const isDiscount = tx.kind === 'تخفیف_شهریه' || tx.payment_method?.includes('تخفیف');
                   return (
                     <div
                       key={tx.id}
@@ -483,10 +577,14 @@ export const TuitionScreen: React.FC = () => {
                         <div className="flex items-center gap-2">
                           <span
                             className={`px-2 py-0.5 rounded-md font-bold text-[11px] ${
-                              isDebt ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-800'
+                              isDebt
+                                ? 'bg-rose-100 text-rose-700'
+                                : isDiscount
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-emerald-100 text-emerald-800'
                             }`}
                           >
-                            {isDebt ? 'بدهی شهریه' : 'پرداخت شهریه'}
+                            {isDebt ? 'بدهی ثبت‌شده' : isDiscount ? 'تخفیف و بورسیه' : 'پرداخت شهریه'}
                           </span>
                           <span className="font-bold text-sm font-mono text-[#341648]">
                             {formatRial(tx.amount)} ریال
@@ -525,9 +623,9 @@ export const TuitionScreen: React.FC = () => {
       {/* Debt Modal */}
       {modalType === 'debt' && selectedStudent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-[#e5dde8]">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-[#e5dde8] max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-4 border-b border-[#e5dde8] mb-4">
-              <h3 className="text-base font-bold text-[#341648]">ثبت بدهی شهریه: {selectedStudent.name}</h3>
+              <h3 className="text-base font-bold text-[#341648]">ثبت بدهی جدید: {selectedStudent.name}</h3>
               <button onClick={() => setModalType(null)} className="text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
               </button>
@@ -540,9 +638,42 @@ export const TuitionScreen: React.FC = () => {
             )}
 
             <form onSubmit={handleSaveDebt} className="space-y-4">
+              {/* Itemized Category Pills */}
               <div>
                 <label className="block text-xs font-bold text-[#341648] mb-1.5">
-                  مبلغ بدهی (به ریال) <span className="text-rose-500">*</span>
+                  سرفصل و آیتم بدهی:
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 text-xs">
+                  {[
+                    { id: 'tuition', label: 'شهریه مصوب', desc: 'شهریه مصوب آموزشی' },
+                    { id: 'service', label: 'سرویس رفت‌وآمد', desc: 'هزینه سرویس ایاب و ذهاب' },
+                    { id: 'food', label: 'تغذیه و میان‌وعده', desc: 'هزینه تغذیه و صبحانه' },
+                    { id: 'uniform', label: 'لباس و پوشاک', desc: 'هزینه لباس فرم دانش‌آموز' },
+                    { id: 'activity', label: 'کلاس فوق‌برنامه', desc: 'هزینه کلاس‌های فوق‌برنامه' },
+                    { id: 'books', label: 'کتب و آزمون‌ها', desc: 'هزینه کتب و آزمون‌های سنجش' },
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        setDebtItemType(item.id as typeof debtItemType);
+                        setFormDesc(item.desc);
+                      }}
+                      className={`py-2 px-2.5 rounded-xl border text-[11px] font-bold transition-all text-center ${
+                        debtItemType === item.id
+                          ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
+                          : 'bg-[#fcfaff] text-gray-700 border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#341648] mb-1.5">
+                  مبلغ کل بدهی (به ریال) <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -558,8 +689,55 @@ export const TuitionScreen: React.FC = () => {
                 {formAmount && <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800" aria-live="polite">معادل به حروف (تومان): {amountInTomanWords(formAmount)}</div>}
               </div>
 
+              {/* Installment Plan Option */}
+              <div className="bg-purple-50/70 border border-purple-200 rounded-2xl p-3.5 space-y-2.5">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={enableInstallments}
+                    onChange={(e) => setEnableInstallments(e.target.checked)}
+                    className="rounded text-[#62205f] focus:ring-[#62205f]"
+                  />
+                  <span className="text-xs font-bold text-[#341648]">تقسیط خودکار این مبلغ به اقساط ماهانه</span>
+                </label>
+
+                {enableInstallments && (
+                  <div className="pt-2 border-t border-purple-100 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-600 font-medium">تعداد اقساط:</span>
+                      <div className="flex items-center gap-1">
+                        {[2, 3, 4, 5, 6].map((cnt) => (
+                          <button
+                            key={cnt}
+                            type="button"
+                            onClick={() => setInstallmentCount(cnt)}
+                            className={`px-2 py-1 rounded-lg text-xs font-bold transition-all ${
+                              installmentCount === cnt
+                                ? 'bg-[#62205f] text-white shadow-2xs'
+                                : 'bg-white border border-gray-300 text-gray-700'
+                            }`}
+                          >
+                            {cnt} قسط
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {formAmount && (
+                      <div className="text-[11px] text-purple-900 bg-white/80 p-2 rounded-lg border border-purple-200 font-medium">
+                        هر قسط: حدوداً{' '}
+                        <span className="font-bold font-mono">
+                          {formatRial(Math.floor(Number(formAmount.replace(/\D/g, '')) / installmentCount))}
+                        </span>{' '}
+                        ریال (با فاصله ۳۰ روزه از تاریخ انتخابی)
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <JalaliDatePicker
-                label="تاریخ ثبت بدهی"
+                label="تاریخ ثبت (یا شروع اقساط)"
                 value={formJalaliDate}
                 onChange={setFormJalaliDate}
                 required
@@ -584,7 +762,7 @@ export const TuitionScreen: React.FC = () => {
                   className="flex-1 py-3 px-4 rounded-xl text-white font-bold text-sm bg-rose-600 hover:bg-rose-700 active:scale-95 transition-all shadow-md flex items-center justify-center gap-2"
                 >
                   <Check className="w-4 h-4" />
-                  ثبت قطعی بدهی
+                  <span>{enableInstallments ? `ثبت ${installmentCount} قسط بدهی` : 'ثبت قطعی بدهی'}</span>
                 </button>
                 <button
                   type="button"
@@ -788,18 +966,36 @@ export const TuitionScreen: React.FC = () => {
                 </div>
               ) : (
                 formMethod !== 'پول نقد' && (
-                  <div>
-                    <label className="block text-xs font-bold text-[#341648] mb-1.5">
-                      شماره پیگیری واریز <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={formTracking}
-                      onChange={(e) => setFormTracking(e.target.value)}
-                      placeholder="مثال: 98452104"
-                      className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm text-[#302735] font-mono text-left focus:outline-hidden focus:border-[#62205f]"
-                      dir="ltr"
-                    />
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-bold text-[#341648] mb-1.5">
+                        شماره پیگیری واریز <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={formTracking}
+                        onChange={(e) => setFormTracking(e.target.value)}
+                        placeholder="مثال: 98452104"
+                        className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm text-[#302735] font-mono text-left focus:outline-hidden focus:border-[#62205f]"
+                        dir="ltr"
+                      />
+                    </div>
+
+                    {formMethod === 'کارت خوان' && (
+                      <div>
+                        <label className="block text-xs font-bold text-[#341648] mb-1.5">
+                          شماره پایانه کارتخوان (ترمینال پوز - اختیاری جهت تطبیق هوشمند بانک)
+                        </label>
+                        <input
+                          type="text"
+                          value={formPosTerminal}
+                          onChange={(e) => setFormPosTerminal(e.target.value)}
+                          placeholder="مثال: 89451230"
+                          className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm text-[#302735] font-mono text-left focus:outline-hidden focus:border-[#62205f]"
+                          dir="ltr"
+                        />
+                      </div>
+                    )}
                   </div>
                 )
               )}
@@ -832,6 +1028,120 @@ export const TuitionScreen: React.FC = () => {
                 >
                   <Check className="w-4 h-4" />
                   {formMethod === 'چک' ? 'ثبت چک جهت تأیید مدیر ارشد' : 'ثبت قطعی پرداخت'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalType(null)}
+                  className="py-3 px-4 rounded-xl text-gray-700 bg-gray-100 hover:bg-gray-200 active:scale-95 transition-all text-sm font-semibold"
+                >
+                  انصراف
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Discount Modal */}
+      {modalType === 'discount' && selectedStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-[#e5dde8] max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-4 border-b border-[#e5dde8] mb-4">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-amber-600" />
+                <h3 className="text-base font-bold text-[#341648]">ثبت تخفیف و بورسیه: {selectedStudent.name}</h3>
+              </div>
+              <button onClick={() => setModalType(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {formError && (
+              <div className="p-3 mb-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold">
+                ⚠️ {formError}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveDiscount} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-[#341648] mb-1.5">
+                  علت و نوع تخفیف:
+                </label>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  {[
+                    'فرزند فرهنگی و همکار',
+                    'چندفرزندی (فرزند دوم یا سوم)',
+                    'حافظ یا قاری قرآن',
+                    'ایثارگران و خانواده شهدا',
+                    'بورسیه خیریه و هیئت امنا',
+                    'سایر تخفیفات مصوب',
+                  ].map((reason) => (
+                    <button
+                      key={reason}
+                      type="button"
+                      onClick={() => {
+                        setDiscountReason(reason);
+                        setFormDesc(`تخفیف مصوب ${reason}`);
+                      }}
+                      className={`p-2 rounded-xl border text-[11px] font-bold transition-all text-center ${
+                        discountReason === reason
+                          ? 'bg-amber-100 border-amber-400 text-amber-900 shadow-2xs ring-1 ring-amber-400'
+                          : 'bg-[#fcfaff] text-gray-700 border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      {reason}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#341648] mb-1.5">
+                  مبلغ تخفیف (به ریال) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={formAmount}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/\D/g, '');
+                    setFormAmount(raw ? Number(raw).toLocaleString('en-US') : '');
+                  }}
+                  placeholder="مثال: ۳۰,۰۰۰,۰۰۰"
+                  className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm text-[#302735] font-mono text-left focus:outline-hidden focus:border-[#62205f]"
+                  dir="ltr"
+                />
+                {formAmount && (
+                  <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800" aria-live="polite">
+                    معادل به حروف (تومان): {amountInTomanWords(formAmount)}
+                  </div>
+                )}
+              </div>
+
+              <JalaliDatePicker
+                label="تاریخ اعمال تخفیف"
+                value={formJalaliDate}
+                onChange={setFormJalaliDate}
+                required
+              />
+
+              <div>
+                <label className="block text-xs font-bold text-[#341648] mb-1.5">توضیحات و مصوبه تخفیف</label>
+                <input
+                  type="text"
+                  value={formDesc}
+                  onChange={(e) => setFormDesc(e.target.value)}
+                  placeholder="مثال: تخفیف مصوبه هیئت امنا"
+                  className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm text-[#302735] focus:outline-hidden focus:border-[#62205f]"
+                />
+              </div>
+
+              <div className="flex items-center gap-3 pt-3">
+                <button
+                  type="submit"
+                  className="flex-1 py-3 px-4 rounded-xl text-white font-bold text-sm bg-amber-600 hover:bg-amber-700 active:scale-95 transition-all shadow-md flex items-center justify-center gap-2"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>ثبت قطعی تخفیف و کسر از بدهی</span>
                 </button>
                 <button
                   type="button"

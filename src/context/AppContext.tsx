@@ -123,7 +123,8 @@ interface AppContextType {
   importStudents: (newStudents: Array<Omit<Student, 'id' | 'parsian_code'>>) => { added: number; skipped: number; invalid: number };
 
   // Tuition & Transactions ops
-  addTuitionDebt: (data: { student_id: number; amount: number; date: string; description: string; school_id?: number }) => Transaction;
+  addTuitionDebt: (data: { student_id: number; amount: number; date: string; description: string; school_id?: number; debt_item_type?: Transaction['debt_item_type']; installment_index?: number; total_installments?: number }) => Transaction;
+  addTuitionDiscount: (data: { student_id: number; amount: number; date: string; description: string; discount_reason: string; school_id?: number }) => Transaction;
   addTuitionPayment: (data: {
     student_id: number;
     amount: number;
@@ -131,6 +132,7 @@ interface AppContextType {
     description: string;
     payment_method: string;
     tracking_code?: string;
+    pos_terminal_number?: string;
     school_id?: number;
     cheque_data?: {
       sayad_id?: string;
@@ -833,7 +835,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { added, skipped, invalid };
   };
 
-  const addTuitionDebt = (data: { student_id: number; amount: number; date: string; description: string; school_id?: number }): Transaction => {
+  const addTuitionDebt = (data: {
+    student_id: number;
+    amount: number;
+    date: string;
+    description: string;
+    school_id?: number;
+    debt_item_type?: Transaction['debt_item_type'];
+    installment_index?: number;
+    total_installments?: number;
+  }): Transaction => {
     const newId = transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101;
     const student = students.find((s) => s.id === data.student_id);
     const schoolId = data.school_id || student?.school_id || currentUser?.school_id || 1;
@@ -853,6 +864,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       debit: data.amount,
       credit: 0,
       description: data.description || 'شهریه تحصیلی مصوب',
+      debt_item_type: data.debt_item_type || 'tuition',
+      installment_index: data.installment_index,
+      total_installments: data.total_installments,
       reconciled: true,
       review_status: 'approved',
     };
@@ -862,6 +876,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logActivity('ثبت بدهی شهریه', `ثبت ${data.amount.toLocaleString('fa-IR')} ریال برای ${student?.name}`, 'transaction', newId);
 
     apiSaveTuition(newTx).catch((e) => console.warn('Cloud sync tuition debt notice:', e));
+    return newTx;
+  };
+
+  const addTuitionDiscount = (data: {
+    student_id: number;
+    amount: number;
+    date: string;
+    description: string;
+    discount_reason: string;
+    school_id?: number;
+  }): Transaction => {
+    const newId = transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101;
+    const student = students.find((s) => s.id === data.student_id);
+    const schoolId = data.school_id || student?.school_id || currentUser?.school_id || 1;
+    const schoolObj = schools.find((s) => s.id === schoolId);
+
+    const newTx: Transaction = {
+      id: newId,
+      date: data.date,
+      jalali_date: jalaliFromGregorian(data.date),
+      school_id: schoolId,
+      school_name: schoolObj?.name || student?.school_name,
+      student_id: data.student_id,
+      student_name: student?.name,
+      student_grade: student?.grade,
+      kind: 'تخفیف_شهریه',
+      amount: data.amount,
+      debit: 0,
+      credit: data.amount,
+      payment_method: 'تخفیف / بورسیه',
+      description: data.description || `تخفیف شهریه (${data.discount_reason})`,
+      discount_reason: data.discount_reason,
+      reconciled: true,
+      review_status: 'approved',
+    };
+
+    setTransactions((prev) => [newTx, ...prev]);
+    playTransactionSound();
+    logActivity('ثبت تخفیف شهریه', `تخفیف ${data.amount.toLocaleString('fa-IR')} ریال برای ${student?.name} (${data.discount_reason})`, 'transaction', newId);
+
+    apiSaveTuition(newTx).catch((e) => console.warn('Cloud sync tuition discount notice:', e));
     return newTx;
   };
 
@@ -1724,6 +1779,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         withdrawStudent,
         importStudents,
         addTuitionDebt,
+        addTuitionDiscount,
         addTuitionPayment,
         addBulkDebt,
         deleteTransaction,

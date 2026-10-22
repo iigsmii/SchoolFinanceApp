@@ -20,9 +20,11 @@ import { ActivityScreen } from './components/screens/ActivityScreen';
 import { SettingsScreen } from './components/screens/SettingsScreen';
 import { SmsScreen } from './components/screens/SmsScreen';
 import { StaffScreen } from './components/screens/StaffScreen';
+import { ParsianExportScreen } from './components/screens/ParsianExportScreen';
 import { PWAUpdatePrompt } from './components/PWAUpdatePrompt';
 import { AppUpdatePrompt } from './components/AppUpdatePrompt';
 import { LogOut, X, AlertTriangle } from 'lucide-react';
+import { installPersianLiveInputNormalizer } from './utils/persianInput';
 
 export const App: React.FC = () => {
   const {
@@ -35,34 +37,9 @@ export const App: React.FC = () => {
     accentColor,
   } = useApp();
 
-  // Convert Persian and Arabic numerals to ASCII in every editable text field.
-  // Capture phase ensures React's onChange handlers receive the normalized value.
+  // Live Persian & Arabic numeral and character normalization across the entire application
   useEffect(() => {
-    const normalizeDigits = (event: Event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
-      if (target instanceof HTMLInputElement && target.type === 'password') return;
-      const original = target.value;
-      const normalized = original.replace(/[۰-۹٠-٩]/g, (digit) => {
-        const code = digit.charCodeAt(0);
-        return String(code >= 0x06f0 && code <= 0x06f9
-          ? code - 0x06f0
-          : code - 0x0660);
-      });
-      if (normalized === original) return;
-      const start = target.selectionStart;
-      const end = target.selectionEnd;
-      target.value = normalized;
-      if (start !== null && end !== null) {
-        try {
-          target.setSelectionRange(start, end);
-        } catch {
-          // Some specialized input types do not support selection ranges.
-        }
-      }
-    };
-    document.addEventListener('input', normalizeDigits, true);
-    return () => document.removeEventListener('input', normalizeDigits, true);
+    return installPersianLiveInputNormalizer();
   }, []);
 
   // Keep a fresh navigation callback without repeatedly tearing down native listeners.
@@ -181,8 +158,9 @@ export const App: React.FC = () => {
           ? <SettingsScreen googleOnly />
           : <DashboardScreen />;
       case 'settings':
-      case 'export':
         return <SettingsScreen />;
+      case 'export':
+        return <ParsianExportScreen />;
       case 'dashboard':
       default:
         return <DashboardScreen />;

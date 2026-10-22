@@ -51,15 +51,20 @@ export interface Transaction {
   student_id?: number;
   student_name?: string;
   student_grade?: string;
-  kind: 'شهریه' | 'شهریه_بدهی' | 'هزینه' | 'دریافت متفرقه';
+  kind: 'شهریه' | 'شهریه_بدهی' | 'هزینه' | 'دریافت متفرقه' | 'تخفیف_شهریه';
   amount: number;
   debit: number;
   credit: number;
-  payment_method?: string; // 'پول نقد' | 'کارت به کارت' | 'کارت خوان' | 'چک' | 'کارت تن‌خواه'
+  payment_method?: string; // 'پول نقد' | 'کارت به کارت' | 'کارت خوان' | 'چک' | 'کارت تن‌خواه' | 'تخفیف / بورسیه'
   payment_source?: 'bank' | 'own' | 'petty_cash' | string; // 'petty_cash' = کارت تن‌خواه مدیر
   petty_cash_card?: string;
   is_bank_fee?: boolean; // کارمزد بانکی
   tracking_code?: string;
+  pos_terminal_number?: string;
+  debt_item_type?: 'tuition' | 'service' | 'food' | 'uniform' | 'activity' | 'books' | 'other';
+  installment_index?: number;
+  total_installments?: number;
+  discount_reason?: string;
   comment?: string;
   description?: string;
   expense_category_id?: string | number;
@@ -254,4 +259,50 @@ export type ScreenType =
   | 'messages'
   | 'sms_reminders'
   | 'staff';
+
+export interface JournalEntryRow {
+  row_number: number;
+  doc_number: number;
+  date_jalali: string; // YYYY/MM/DD
+  kol_code: string;
+  kol_name: string;
+  moeen_code: string;
+  moeen_name: string;
+  tafsili_code: string;
+  tafsili_name: string;
+  description: string;
+  debit: number;
+  credit: number;
+  tracking_code?: string;
+  school_id: number;
+  school_name: string;
+  source_type: 'tuition_debt' | 'tuition_payment' | 'expense' | 'cheque' | 'discount' | 'bank_sync';
+  source_id: number;
+}
+
+export interface ParsianJournalEntry {
+  doc_number: number;
+  date_jalali: string;
+  date_iso: string;
+  school_id: number;
+  school_name: string;
+  source_type: 'tuition_debt' | 'tuition_payment' | 'expense' | 'cheque' | 'discount' | 'bank_sync';
+  source_id: number;
+  description: string;
+  rows: JournalEntryRow[];
+  total_debit: number;
+  total_credit: number;
+  is_balanced: boolean;
+}
+
+export interface ParsianCodingConfig {
+  kol_receivable: string; // حساب‌های دریافتنی (دانش‌آموزان) - پیش‌فرض 11
+  kol_bank: string;       // موجودی نقد و بانک - پیش‌فرض 10
+  kol_cheques: string;    // اسناد دریافتنی (چک‌ها) - پیش‌فرض 12
+  kol_income: string;     // درآمد شهریه - پیش‌فرض 70
+  kol_discount: string;   // تخفیفات شهریه - پیش‌فرض 71
+  kol_expense: string;    // هزینه‌های عمومی و اداری - پیش‌فرض 60
+  kol_petty_cash: string; // حساب تنخواه گردان مدیران - پیش‌فرض 20
+  kol_payable: string;    // حساب‌های پرداختنی - پیش‌فرض 21
+}
 
