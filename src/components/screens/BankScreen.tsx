@@ -487,7 +487,34 @@ export const BankScreen: React.FC = () => {
     manualReviewTransaction(transactionId, true, 'تطبیق با برداشت بانکی');
   };
 
-  // Managers with Petty Cash cards
+  // Reconcile known bank-card roster with school managers by exact normalized manager name.
+  // Never overwrite a card already recorded in the manager profile; only fill missing cards when
+  // the roster has exactly one active card for that manager. Shared/rotating cards remain separate.
+  const knownActiveCards = [
+    { card: '6037691263360788', managerName: 'محمد عربی' },
+    { card: '6037691263360796', managerName: 'آرزو میرزایی' },
+    { card: '6037691263360804', managerName: 'فریبا سبزواری' },
+    { card: '6037691263360812', managerName: 'علی هاشمیان' },
+    { card: '6037691263360770', managerName: 'محمدرضا آقاسی' },
+    { card: '6037691261822597', managerName: 'سید محمدرضا گلزاری' },
+    { card: '6037691263357097', managerName: 'سید محمدرضا گلزاری' },
+    { card: '6037691263357071', managerName: 'علی هاشمیان' },
+  ];
+  const normalizeManagerName = (value: unknown) => String(value || '')
+    .replace(/[يى]/g, 'ی').replace(/ك/g, 'ک')
+    .replace(/[\u064B-\u065F\u0670]/g, '')
+    .replace(/\s+/g, ' ').trim();
+  useEffect(() => {
+    const activeManagers = users.filter((u) => u.role === 'manager' && u.id && !String(u.petty_cash_card || '').replace(/\D/g, ''));
+    activeManagers.forEach((manager) => {
+      const matches = knownActiveCards.filter((item) => normalizeManagerName(item.managerName) === normalizeManagerName(manager.name));
+      if (matches.length === 1) {
+        updateManager(manager.id, { petty_cash_card: matches[0].card });
+      }
+    });
+  // Run only when manager roster changes; updateManager is a context action.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [users]);
   const managersWithCards = users.filter((u) => u.role === 'manager' || u.petty_cash_card);
 
   return (
