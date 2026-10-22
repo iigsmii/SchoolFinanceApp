@@ -18,7 +18,7 @@ const CFG = {
   SESSION_HOURS: 6,
   SHEETS: [
     'Managers','Schools','Students','Tuition','Expenses','Transactions',
-    'Bank','ExpenseCategories','Messages','Attachments','ParsianAccounts','Settings','ActivityLogs','Cheques','Requests','Staff'
+    'Bank','BankDetails','ExpenseCategories','Messages','Attachments','ParsianAccounts','Settings','ActivityLogs','Cheques','Requests','Staff'
   ]
 };
 
@@ -32,6 +32,7 @@ const HEADERS = {
   Expenses: ['id','date','school_id','category','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','payment_source'],
   Transactions: ['id','date','school_id','kind','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','source_id','payment_source'],
   Bank: ['id','date','school_id','amount','description','tracking_code','bank_account','created_at','matched_transaction_id','matched','approved'],
+  BankDetails: ['bank_id','source_card_number','destination_card_number','terminal_number','direction','balance','reference_number','pos_reference_code','fee_amount','account_suffix','transaction_time','settlement_date'],
   BankAnnotations: ['id','school_id','date','amount','tracking_code','bank_account','student_id','student_name','purpose','manager_id','updated_at','direction','balance','card_number'],
   ExpenseCategories: ['id','name','active','created_at'],
   Messages: ['id','message','created_by','created_at','active','target_school_id','target_role'],
@@ -268,7 +269,7 @@ function doPost(e) {
     }
 
     // POST carries tokens in its body, but read-only actions do not need a write lock.
-    const reads={schools:schools_,staff:staff_,students:students_,tuition:tuition_,expenses:expenses_,transactions:transactions_,bank:bank_,bank_review:bankReview_,categories:categories_,messages:messages_,managers:managers_,cheques:cheques_,cheque_list:chequeList_,cheque_alerts:chequeAlerts_,summary:summary_,my_claim:myClaim_,app_version:appVersion_,activity_logs:activityLogs_,parsian_export:parsianExport_,parsian_school_map:parsianSchoolMap_,parsian_student_accounts:parsianStudentAccounts_,attachment_read:attachmentRead_};
+    const reads={schools:schools_,staff:staff_,students:students_,tuition:tuition_,expenses:expenses_,transactions:transactions_,bank:bank_,bank_review:bankReview_,bank_rules_get:bankRulesGet_,categories:categories_,messages:messages_,managers:managers_,cheques:cheques_,cheque_list:chequeList_,cheque_alerts:chequeAlerts_,summary:summary_,my_claim:myClaim_,app_version:appVersion_,activity_logs:activityLogs_,parsian_export:parsianExport_,parsian_school_map:parsianSchoolMap_,parsian_student_accounts:parsianStudentAccounts_,attachment_read:attachmentRead_};
     if(reads[action])return json_(reads[action](body));
     lock.waitLock(30000);locked=true;writeLockHeld_=true;
     ensureStructure_();
@@ -328,6 +329,7 @@ function doPost(e) {
       case 'bank_match': result=bankMatch_(body); break;
       case 'bank_reconcile': result=bankReconcile_(body); break;
       case 'bank_upload': result=bankUpload_(body); break;
+      case 'bank_rules_save': result=bankRulesSave_(body); break;
       case 'bank_annotation': result=bankAnnotationSave_(body); break;
       case 'transaction_review': result=transactionReview_(body); break;
       case 'categories': result=categories_(body); break;
@@ -1266,6 +1268,20 @@ function bank_(b) {
     reconciled:String(x.obj.matched)==='true',
     matched_transaction_id:x.obj.matched_transaction_id?Number(x.obj.matched_transaction_id):undefined
   }));
+  const detailById={}; rows_('BankDetails').forEach(x=>detailById[String(x.obj.bank_id)]=x.obj);
+  data=data.map(x=>{const d=detailById[String(x.id)];return d?Object.assign({},x,{
+    source_card_number:d.source_card_number||'',
+    destination_card_number:d.destination_card_number||'',
+    terminal_number:d.terminal_number||'',
+    direction:d.direction||'unknown',
+    balance:d.balance!==''&&d.balance!==undefined?Number(d.balance):undefined,
+    reference_number:d.reference_number||'',
+    pos_reference_code:d.pos_reference_code||'',
+    fee_amount:d.fee_amount!==''&&d.fee_amount!==undefined?Number(d.fee_amount):undefined,
+    account_suffix:d.account_suffix||'',
+    transaction_time:d.transaction_time||'',
+    settlement_date:d.settlement_date||''
+  }):x;});
   const annotations=rows_('BankAnnotations').map(x=>x.obj);
   const byKey={}; annotations.forEach(a=>byKey[bankAnnotationKey_(a)]=a);
   data=data.map(x=>{const a=byKey[bankAnnotationKey_(x)];return a?Object.assign({},x,{assigned_student_id:a.student_id?Number(a.student_id):undefined,assigned_student_name:a.student_name||'',assigned_purpose:a.purpose||'',annotation_updated_at:a.updated_at,direction:a.direction||'unknown',balance:a.balance!==''&&a.balance!==undefined?Number(a.balance):undefined,card_number:a.card_number||a.bank_account||''}):x;});
@@ -1417,22 +1433,90 @@ function bankReconcile_(b){
   });
   return {success:true,matched:matched,unmatched:unmatched};
 }
+function defaultBankRules_(){
+  return {
+    version:1,
+    excludedAccountSuffixes:['009'],
+    schoolAccounts:[
+      {suffix:'001',purpose:'petty_cash'},
+      {suffix:'002',purpose:'pos_aggregate_and_petty_cash'}
+    ],
+    pettyCashCards:[
+      {card:'6037691263360788',managerName:'محمد عربی',active:true},
+      {card:'6037691263360796',managerName:'آرزو میرزایی',active:true},
+      {card:'6037691263360804',managerName:'فریبا سبزواری',active:true},
+      {card:'6037691263360812',managerName:'علی هاشمیان',active:true},
+      {card:'6037691263360770',managerName:'محمدرضا آقاسی',active:true},
+      {card:'6037691263360762',managerName:'مدیر - غیرفعال',active:false},
+      {card:'6037691261822597',managerName:'سید محمدرضا گلزاری',active:true},
+      {card:'6037691261822589',managerName:'سید محمدرضا گلزاری - غیرفعال',active:false},
+      {card:'6037691263357097',managerName:'سید محمدرضا گلزاری',active:true},
+      {card:'6037691263357089',managerName:'کارت غیرفعال',active:false},
+      {card:'6037691263357071',managerName:'علی هاشمیان',active:true}
+    ],
+    posTerminals:[],
+    matching:{dateWindowDays:3,requireExactAmount:true,requireSourceCardWhenKnown:true}
+  };
+}
+function bankRulesGet_(b){
+  auth_(b,['senior','admin']);
+  const hit=rows_('Settings').find(x=>String(x.obj.key||'')==='bank_reconciliation_rules');
+  if(!hit)return {success:true,rules:defaultBankRules_(),configured:false};
+  try{return {success:true,rules:Object.assign(defaultBankRules_(),JSON.parse(String(hit.obj.value||'{}'))),configured:true};}
+  catch(e){return {success:false,error:'قواعد تطبیق ذخیره‌شده قابل خواندن نیست؛ مدیر ارشد باید آن را اصلاح کند.'};}
+}
+function bankRulesSave_(b){
+  auth_(b,['senior','admin']);
+  const rules=b.rules;
+  if(!rules || typeof rules!=='object' || Array.isArray(rules))throw new Error('ساختار قواعد تطبیق نامعتبر است.');
+  const cards=Array.isArray(rules.pettyCashCards)?rules.pettyCashCards:[];
+  const terminals=Array.isArray(rules.posTerminals)?rules.posTerminals:[];
+  if(cards.length>500 || terminals.length>500)throw new Error('حداکثر ۵۰۰ کارت و ۵۰۰ پایانه قابل تعریف است.');
+  const days=Number(rules.matching&&rules.matching.dateWindowDays);
+  if(!Number.isFinite(days)||days<0||days>30)throw new Error('بازه تطبیق تاریخ باید بین صفر تا ۳۰ روز باشد.');
+  const normalized=Object.assign(defaultBankRules_(),rules,{version:1,pettyCashCards:cards,posTerminals:terminals,matching:Object.assign(defaultBankRules_().matching,rules.matching||{})});
+  const serialized=JSON.stringify(normalized);
+  if(serialized.length>45000)throw new Error('حجم قواعد بیش از حد مجاز است.');
+  const hit=rows_('Settings').find(x=>String(x.obj.key||'')==='bank_reconciliation_rules');
+  if(hit){sheet_('Settings').getRange(hit.row,2).setValue(serialized);sheet_('Settings').getRange(hit.row,3).setValue(now_());}
+  else sheet_('Settings').appendRow(['bank_reconciliation_rules',serialized,now_()]);
+  SpreadsheetApp.flush();
+  return {success:true,message:'قواعد تطبیق در Google Sheets ذخیره شد.',rules:normalized};
+}
+
 function bankUpload_(b){
   auth_(b,['senior','admin']);
   if(Array.isArray(b.rows)){
     if(b.rows.length>10000)throw new Error('حداکثر ۱۰٬۰۰۰ ردیف در هر بار ورود مجاز است.');
     const schools=rows_('Schools').map(x=>x.obj);
     const settings={};rows_('Settings').forEach(x=>{const k=String(x.obj.key||'');if(k.indexOf('pos_terminal_')===0)settings[k.slice(13)]=String(x.obj.value||'').replace(/\D/g,'').replace(/^0+/,'');});
+    const savedRules=rows_('Settings').find(x=>String(x.obj.key||'')==='bank_reconciliation_rules');
+    let bankRules=defaultBankRules_();
+    if(savedRules){try{bankRules=Object.assign(bankRules,JSON.parse(String(savedRules.obj.value||'{}')));}catch(e){}}
     let added=0,skipped=0;const existing=rows_('Bank').map(x=>x.obj);
     b.rows.forEach(r=>{
       const amount=Number(r.amount)||0,track=String(r.tracking_code||'').trim();
       if(!amount||(!track&&!String(r.description||'').trim())){skipped++;return;}
       const terminal=String(r.terminal_number||'').replace(/\D/g,'').replace(/^0+/,'');
       let schoolId=String(r.school_id||'');
-      if(terminal){const match=schools.find(s=>settings[String(s.id)]===terminal);schoolId=match?String(match.id):'';}
+      if(terminal){
+        const configured=schools.find(s=>settings[String(s.id)]===terminal);
+        const custom=(Array.isArray(bankRules.posTerminals)?bankRules.posTerminals:[]).find(x=>String(x.terminal||'').replace(/\D/g,'').replace(/^0+/,'')===terminal&&Number(x.schoolId)>0);
+        if(custom)schoolId=String(custom.schoolId);
+        else if(configured)schoolId=String(configured.id);
+        // If no terminal rule exists, preserve the school ID supplied by the client;
+        // an unresolved terminal with school_id 0 remains unassigned for manual review.
+      }
       const dup=existing.some(x=>Number(x.amount)===amount&&String(x.tracking_code||'').trim()===track&&String(x.school_id||'')===schoolId&&String(x.date||'')===String(r.date||''));
       if(dup){skipped++;return;}
-      appendByHeaders_('Bank',[nextId_('Bank'),String(r.date||''),schoolId,amount,String(r.description||''),track,String(r.bank_account||r.card_number||''),now_(),'','false','false']);
+      const bankId=nextId_('Bank');
+      appendByHeaders_('Bank',[bankId,String(r.date||''),schoolId,amount,String(r.description||''),track,String(r.bank_account||r.card_number||''),now_(),'','false','false']);
+      appendByHeaders_('BankDetails',[
+        bankId,String(r.source_card_number||''),String(r.destination_card_number||''),String(r.terminal_number||''),
+        String(r.direction||'unknown'),r.balance===''?'':Number(r.balance||0),String(r.reference_number||''),
+        String(r.pos_reference_code||''),r.fee_amount===''?'':Number(r.fee_amount||0),String(r.account_suffix||''),
+        String(r.transaction_time||''),String(r.settlement_date||'')
+      ]);
       existing.push({amount:amount,tracking_code:track,school_id:schoolId,date:String(r.date||'')});added++;
     });
     SpreadsheetApp.flush();

@@ -109,10 +109,18 @@ export interface BankTransaction {
   description?: string;
   reconciled: boolean;
   matched_transaction_id?: number;
-  direction?: 'deposit' | 'withdrawal' | 'unknown';
+  direction?: 'deposit' | 'withdrawal' | 'pos_sale' | 'unknown';
   balance?: number;
-  card_number?: string;
+  card_number?: string; // سازگاری با نسخه‌های قبلی
+  source_card_number?: string; // شماره کارت مبدأ
+  destination_card_number?: string; // شماره کارت مقصد
   terminal_number?: string;
+  reference_number?: string;
+  pos_reference_code?: string;
+  fee_amount?: number;
+  account_suffix?: string;
+  transaction_time?: string;
+  settlement_date?: string;
   assigned_student_id?: number;
   assigned_student_name?: string;
   assigned_purpose?: string;
