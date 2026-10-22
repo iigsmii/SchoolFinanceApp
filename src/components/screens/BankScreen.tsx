@@ -268,10 +268,16 @@ export const BankScreen: React.FC = () => {
           const credit = isPosReport ? 0 : toAmount(pick(row, ['واریز','مبلغ واریز','بستانکار','credit','deposit','واریز (ریال)']));
           const rawAmount = pick(row, ['مبلغ','مبلغ تراکنش','amount','transaction amount']);
           const amount = debit || credit || toAmount(rawAmount);
-          const track = String(pick(row, ['شماره پیگیری','کد پیگیری','شماره مرجع','شماره ارجاع','ارجاع','tracking','reference','reference number']) || '').trim();
+          const track = String(pick(row, ['شماره پیگیری','کد پیگیری','tracking','tracking number']) || '').trim();
+          const referenceNumber = String(pick(row, ['شماره مرجع/قرارداد','شماره مرجع','شماره قرارداد','reference number','contract number']) || '').trim();
+          const posReferenceCode = String(pick(row, ['کد ارجاع','کد ارجاع تراکنش','pos reference code','reference code']) || '').trim();
+          const feeAmount = toAmount(pick(row, ['کارمزد','مبلغ کارمزد','fee','fee amount']));
           const terminal = toDigits(pick(row, ['شماره پایانه','شماره ترمینال','کد پایانه','پایانه','terminal id','terminal number','pos terminal','terminal'])).replace(/\D/g, '');
           const desc = String(pick(row, ['شرح','شرح تراکنش','توضیحات','بابت','description','details']) || '').trim();
           const date = toDate(pick(row, ['تاریخ','تاریخ تراکنش','تاریخ عملیات','date','transaction date']));
+          const transactionTime = String(pick(row, ['ساعت','ساعت تراکنش','time','transaction time']) || '').trim();
+          const settlementDateRaw = pick(row, ['تاریخ واریز','تاریخ تسویه','settlement date','deposit date']);
+          const settlementDate = settlementDateRaw === '' ? '' : toDate(settlementDateRaw);
           // Keep source and destination cards separate; don't collapse both into one field.
           const sourceCardNumber = toDigits(pick(row, ['شماره کارت مبدا','کارت مبدا','شماره کارت برداشت','کارت برداشت','source card number','from card','source card'])).replace(/\D/g, '');
           const destinationCardNumber = toDigits(pick(row, ['شماره کارت مقصد','کارت مقصد','شماره کارت واریز','کارت واریز','destination card number','to card','destination card'])).replace(/\D/g, '');
@@ -291,8 +297,14 @@ export const BankScreen: React.FC = () => {
             source_card_number: sourceCardNumber || undefined,
             destination_card_number: destinationCardNumber || undefined,
             terminal_number: terminal,
+            reference_number: referenceNumber,
+            pos_reference_code: posReferenceCode,
+            fee_amount: feeAmount || undefined,
+            account_suffix: fileAccountNumber ? fileAccountNumber.replace(/\D/g, '').slice(-3) : '',
+            transaction_time: transactionTime,
+            settlement_date: settlementDate,
             balance: balance || undefined,
-            direction: isPosReport ? 'deposit' as const : debit > 0 ? 'withdrawal' as const : credit > 0 ? 'deposit' as const : 'unknown' as const,
+            direction: isPosReport ? 'pos_sale' as const : debit > 0 ? 'withdrawal' as const : credit > 0 ? 'deposit' as const : 'unknown' as const,
             description: desc || (debit ? 'برداشت بانکی' : credit ? 'واریز بانکی' : 'تراکنش بانکی'),
           };
         }).filter((x): x is NonNullable<typeof x> => x !== null);
@@ -307,7 +319,8 @@ export const BankScreen: React.FC = () => {
         const withdrawalRows = newItems.filter((item) => item.direction === 'withdrawal');
         const depositTotal = depositRows.reduce((sum, item) => sum + item.amount, 0);
         const withdrawalTotal = withdrawalRows.reduce((sum, item) => sum + item.amount, 0);
-        const posDepositRows = isPosReport ? depositRows : [];
+        const posSaleRows = newItems.filter((item) => item.direction === 'pos_sale');
+        const posSalesTotal = posSaleRows.reduce((sum, item) => sum + item.amount, 0);
 
         const normalizeTerminal = (v: unknown) => toDigits(v).replace(/\D/g, '').replace(/^0+/, '');
         const configured = schools.filter((sc) => String(sc.pos_terminal_number || '').trim());
@@ -350,7 +363,13 @@ export const BankScreen: React.FC = () => {
             bank_account: item.bank_account || '', card_number: item.card_number || '',
             source_card_number: item.source_card_number || '', destination_card_number: item.destination_card_number || '',
             balance: item.balance ?? '', direction: item.direction || 'unknown',
-            terminal_number: item.terminal_number || ''
+            terminal_number: item.terminal_number || '',
+            reference_number: item.reference_number || '',
+            pos_reference_code: item.pos_reference_code || '',
+            fee_amount: item.fee_amount ?? '',
+            account_suffix: item.account_suffix || '',
+            transaction_time: item.transaction_time || '',
+            settlement_date: item.settlement_date || ''
           }));
           const upload = await postToAppsScript({
             action: 'bank_upload', file_name: file.name, school_id: currentUser?.school_id || 1,
@@ -370,7 +389,7 @@ export const BankScreen: React.FC = () => {
           msg += ` حساب مبدأ: ${accountLabel}؛ ${depositRows.length} واریز به مبلغ ${formatRial(depositTotal)} ریال؛ ${withdrawalRows.length} برداشت به مبلغ ${formatRial(withdrawalTotal)} ریال. برداشت‌های ۰۰۱ و ۰۰۲ باید با هزینه‌های تن‌خواه تطبیق داده شوند.`;
         }
         if (isPosReport) {
-          msg += ` گزارش پوز: ${posDepositRows.length} ردیف واریزی تجمیعی به مبلغ ${formatRial(depositTotal)} ریال؛ این ارقام جداگانه با واریزی حساب ۰۰۲ تطبیق داده شوند.`;
+          msg += ` گزارش پوز: ${posSaleRows.length} تراکنش خرید به مبلغ ${formatRial(posSalesTotal)} ریال؛ مجموع خریدها و کارمزدها باید با واریزی تجمیعی حساب ۰۰۲ و تاریخ واریز بررسی شوند. این گزارش به‌اشتباه به‌عنوان واریز بانکی طبقه‌بندی نشده است.`;
         }
         alert(msg);
       } catch (err) {
