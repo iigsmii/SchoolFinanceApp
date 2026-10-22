@@ -15,6 +15,7 @@ import {
   StaffMember,
   StaffWorkLog,
   PayrollPayment,
+  BankAccount,
 } from '../types';
 import {
   INITIAL_SCHOOLS,
@@ -30,6 +31,7 @@ import {
   INITIAL_STAFF,
   INITIAL_WORK_LOGS,
   INITIAL_PAYROLL,
+  INITIAL_BANK_ACCOUNTS,
 } from '../data/initialData';
 import { buildParsianCode } from '../utils/parsian';
 import { jalaliFromGregorian, todayGregorian } from '../utils/jalali';
@@ -199,6 +201,12 @@ interface AppContextType {
   addSchool: (s: Omit<School, 'id'>) => void;
   updateSchool: (id: number, s: Partial<School>) => void;
   deleteSchool: (id: number) => void;
+
+  // Bank accounts management
+  bankAccounts: BankAccount[];
+  addBankAccount: (acc: Omit<BankAccount, 'id'>) => BankAccount;
+  updateBankAccount: (id: number, data: Partial<BankAccount>) => void;
+  deleteBankAccount: (id: number) => void;
 
   // Senior message ops
   addSeniorMessage: (msg: string) => void;
@@ -415,6 +423,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>(() => loadFromStorage('staff_members', INITIAL_STAFF));
   const [staffWorkLogs, setStaffWorkLogs] = useState<StaffWorkLog[]>(() => loadFromStorage('staff_work_logs', INITIAL_WORK_LOGS));
   const [payrollPayments, setPayrollPayments] = useState<PayrollPayment[]>(() => loadFromStorage('payroll_payments', INITIAL_PAYROLL));
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>(() => loadFromStorage('bank_accounts', INITIAL_BANK_ACCOUNTS));
 
   // Google Sheets & Cloud Connection State - Hardcoded to official school cloud
   const [googleUser, setGoogleUser] = useState<any>({
@@ -1426,6 +1435,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logActivity('حذف مدرسه', `حذف مدرسه شناسه ${id}`, 'school', id);
   };
 
+  const addBankAccount = (acc: Omit<BankAccount, 'id'>): BankAccount => {
+    const newId = bankAccounts.length > 0 ? Math.max(...bankAccounts.map((b) => b.id)) + 1 : 1;
+    const schoolObj = schools.find((s) => s.id === acc.school_id);
+    const newAcc: BankAccount = {
+      ...acc,
+      id: newId,
+      school_name: schoolObj?.name || acc.school_name || 'مدرسه',
+      created_at: new Date().toISOString(),
+    };
+    const updated = [newAcc, ...bankAccounts];
+    setBankAccounts(updated);
+    saveToStorage('bank_accounts', updated);
+    logActivity('تعریف حساب بانکی', `ثبت حساب ${newAcc.name} (${newAcc.bank_name})`, 'bank_account', newId);
+    return newAcc;
+  };
+
+  const updateBankAccount = (id: number, data: Partial<BankAccount>) => {
+    const updated = bankAccounts.map((acc) => {
+      if (acc.id !== id) return acc;
+      const schoolObj = data.school_id ? schools.find((s) => s.id === data.school_id) : undefined;
+      return {
+        ...acc,
+        ...data,
+        school_name: schoolObj?.name || data.school_name || acc.school_name,
+      };
+    });
+    setBankAccounts(updated);
+    saveToStorage('bank_accounts', updated);
+    logActivity('ویرایش حساب بانکی', `ویرایش مشخصات حساب شناسه ${id}`, 'bank_account', id);
+  };
+
+  const deleteBankAccount = (id: number) => {
+    const target = bankAccounts.find((b) => b.id === id);
+    const updated = bankAccounts.filter((acc) => acc.id !== id);
+    setBankAccounts(updated);
+    saveToStorage('bank_accounts', updated);
+    logActivity('حذف حساب بانکی', `حذف حساب ${target?.name || id}`, 'bank_account', id);
+  };
+
   const addSeniorMessage = (message: string) => {
     const newMsg: SeniorMessage = {
       id: 'm_' + Date.now(),
@@ -1811,6 +1859,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addSchool,
         updateSchool,
         deleteSchool,
+        bankAccounts,
+        addBankAccount,
+        updateBankAccount,
+        deleteBankAccount,
         addSeniorMessage,
         deleteSeniorMessage,
         getStudentBalance,

@@ -63,6 +63,7 @@ export const BankScreen: React.FC = () => {
     addPettyCashIncome,
     addTuitionPayment,
     categories,
+    setCurrentScreen,
   } = useApp();
 
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
@@ -1385,6 +1386,21 @@ export const BankScreen: React.FC = () => {
           >
             <Download className="w-4 h-4 shrink-0" />
             <span>خروجی اکسل صورت مغایرت</span>
+          </button>
+        </div>
+
+        {/* Link to Bank Accounts Ledger Screen */}
+        <div className="bg-white rounded-2xl p-3 border border-emerald-200/80 shadow-2xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs font-bold text-[#341648]">
+            <Landmark className="w-4 h-4 text-emerald-600" />
+            <span>مدیریت حساب‌های بانکی، تعریف کد کل و معین و مشاهده کارتکس تراکنش‌های تطبیق‌یافته</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCurrentScreen('bank_accounts')}
+            className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition-all shrink-0"
+          >
+            <span>ورود به بخش بانک‌ها ⬅️</span>
           </button>
         </div>
 

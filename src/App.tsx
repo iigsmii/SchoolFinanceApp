@@ -21,6 +21,7 @@ import { SettingsScreen } from './components/screens/SettingsScreen';
 import { SmsScreen } from './components/screens/SmsScreen';
 import { StaffScreen } from './components/screens/StaffScreen';
 import { ParsianExportScreen } from './components/screens/ParsianExportScreen';
+import { BankAccountsScreen } from './components/screens/BankAccountsScreen';
 import { PWAUpdatePrompt } from './components/PWAUpdatePrompt';
 import { AppUpdatePrompt } from './components/AppUpdatePrompt';
 import { LogOut, X, AlertTriangle } from 'lucide-react';
@@ -141,6 +142,8 @@ export const App: React.FC = () => {
         return <ReportScreen />;
       case 'bank':
         return <BankScreen />;
+      case 'bank_accounts':
+        return <BankAccountsScreen />;
       case 'managers':
         return <ManagersScreen />;
       case 'schools':

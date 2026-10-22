@@ -253,12 +253,33 @@ export type ScreenType =
   | 'settings'
   | 'google_settings'
   | 'bank'
+  | 'bank_accounts'
   | 'managers'
   | 'schools'
   | 'export'
   | 'messages'
   | 'sms_reminders'
   | 'staff';
+
+export interface BankAccount {
+  id: number;
+  name: string; // عنوان نمایشی حساب e.g. 'حساب اصلی شهریه - بانک ملی'
+  bank_name: string; // نام بانک
+  branch_name?: string; // نام یا کد شعبه
+  account_number: string; // شماره حساب
+  card_number?: string; // شماره ۱۶ رقمی کارت بانکی
+  sheba_number?: string; // شماره شبا IR
+  school_id: number; // مدرسه متصل
+  school_name?: string;
+  pos_terminal_number?: string; // شماره پایانه پوز
+  kol_code: string; // کد کل حسابداری پارسیان (پیش‌فرض 10)
+  moeen_code: string; // کد معین حسابداری پارسیان
+  tafsili_code?: string; // کد تفصیلی
+  initial_balance?: number; // مانده آغازین به ریال
+  is_active: boolean;
+  notes?: string;
+  created_at?: string;
+}
 
 export interface JournalEntryRow {
   row_number: number;
