@@ -1490,13 +1490,23 @@ function bankUpload_(b){
     if(b.rows.length>10000)throw new Error('حداکثر ۱۰٬۰۰۰ ردیف در هر بار ورود مجاز است.');
     const schools=rows_('Schools').map(x=>x.obj);
     const settings={};rows_('Settings').forEach(x=>{const k=String(x.obj.key||'');if(k.indexOf('pos_terminal_')===0)settings[k.slice(13)]=String(x.obj.value||'').replace(/\D/g,'').replace(/^0+/,'');});
+    const savedRules=rows_('Settings').find(x=>String(x.obj.key||'')==='bank_reconciliation_rules');
+    let bankRules=defaultBankRules_();
+    if(savedRules){try{bankRules=Object.assign(bankRules,JSON.parse(String(savedRules.obj.value||'{}')));}catch(e){}}
     let added=0,skipped=0;const existing=rows_('Bank').map(x=>x.obj);
     b.rows.forEach(r=>{
       const amount=Number(r.amount)||0,track=String(r.tracking_code||'').trim();
       if(!amount||(!track&&!String(r.description||'').trim())){skipped++;return;}
       const terminal=String(r.terminal_number||'').replace(/\D/g,'').replace(/^0+/,'');
       let schoolId=String(r.school_id||'');
-      if(terminal){const match=schools.find(s=>settings[String(s.id)]===terminal);schoolId=match?String(match.id):'';}
+      if(terminal){
+        const configured=schools.find(s=>settings[String(s.id)]===terminal);
+        const custom=(Array.isArray(bankRules.posTerminals)?bankRules.posTerminals:[]).find(x=>String(x.terminal||'').replace(/\D/g,'').replace(/^0+/,'')===terminal&&Number(x.schoolId)>0);
+        if(custom)schoolId=String(custom.schoolId);
+        else if(configured)schoolId=String(configured.id);
+        // If no terminal rule exists, preserve the school ID supplied by the client;
+        // an unresolved terminal with school_id 0 remains unassigned for manual review.
+      }
       const dup=existing.some(x=>Number(x.amount)===amount&&String(x.tracking_code||'').trim()===track&&String(x.school_id||'')===schoolId&&String(x.date||'')===String(r.date||''));
       if(dup){skipped++;return;}
       const bankId=nextId_('Bank');
