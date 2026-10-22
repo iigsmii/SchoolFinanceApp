@@ -1,7 +1,7 @@
 {
-  "version": "2.16.197",
+  "version": "2.16.200",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Package only the versioned release APK artifact",
-  "build": 197,
-  "published_at": "2026-10-22T15:31:30Z"
+  "notes": "Group bank transaction report by card with separate deposits and withdrawals",
+  "build": 200,
+  "published_at": "2026-10-22T15:57:29Z"
 }
