@@ -198,31 +198,14 @@ export const BankScreen: React.FC = () => {
 
   // Automatic Bank Fee Scanner & Identification
   const handleScanAndIdentifyBankFees = () => {
-    const feeCategory = categories.find((c) => c.name === 'کارمزد بانک');
-    const feeCatId = feeCategory ? feeCategory.id : '9';
-
-    // Scan bank transactions or imported rows for fee keywords
-    let identifiedCount = 0;
-    let totalFeeAmount = 0;
-
-    // Look for transactions that mention کارمزد or پایا or ساتنا but aren't yet categorized as کارمزد بانک
-    transactions.forEach((t) => {
-      const desc = (t.description || t.comment || '').toLowerCase();
-      const isFee = desc.includes('کارمزد') || desc.includes('پایا') || desc.includes('ساتنا') || desc.includes('fee');
-      if (isFee && t.expense_category_name !== 'کارمزد بانک') {
-        identifiedCount++;
-        totalFeeAmount += t.amount;
-      }
+    const pattern = /(کارمزد|هزینه خدمات|هزینه انتقال|پایا|ساتنا|fee|commission|service charge|transfer charge)/i;
+    const candidates = bankTransactions.filter((t) => t.direction !== 'pos_sale' && pattern.test(String(t.description || '')) && !String(t.assigned_purpose || '').includes('کارمزد بانک'));
+    let total = 0;
+    candidates.forEach((t) => {
+      total += Number(t.fee_amount || t.amount || 0);
+      updateBankTransaction(t.id, { assigned_purpose: 'کارمزد بانک', expense_category_name: 'کارمزد بانک' } as any);
     });
-
-    if (identifiedCount > 0) {
-      setFeeNotice(
-        `تعداد ${identifiedCount} فقره کارمزد بانکی به مبلغ کل ${formatRial(totalFeeAmount)} ریال در سامانه شناسایی شد و به سرفصل «کارمزد بانک» تخصیص یافت.`
-      );
-    } else {
-      // Auto-generate standard bank transfer fee entries for recent transfers
-      setFeeNotice('کلیه کارمزدهای انتقال وجه بانکی و کارمزد تراکنش‌ها شناسایی شده و در سرفصل «کارمزد بانک» قرار دارند.');
-    }
+    setFeeNotice(candidates.length ? ('تعداد ' + candidates.length + ' ردیف مشکوک به کارمزد به مبلغ ' + formatRial(total) + ' ریال علامت‌گذاری شد؛ پیش از ثبت هزینه، ردیف‌ها را بررسی کنید.') : 'در شرح ردیف‌های بانکی کلیدواژهٔ تازه‌ای برای کارمزد پیدا نشد. ستون کارمزد فایل نیز باید جداگانه بررسی شود.');
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
