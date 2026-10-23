@@ -1182,8 +1182,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteTransaction = (id: number) => {
-    setTransactions((prev) => prev.filter((t) => t.id !== id));
-    logActivity('حذف تراکنش', `حذف تراکنش مالی شناسه ${id}`, 'transaction', id);
+    const target = transactions.find((t) => Number(t.id) === Number(id));
+    if (!target) return;
+    // Delete from the authoritative cloud first. Local-only deletion caused records to reappear on next sync.
+    const kind = target.kind === 'هزینه' || target.kind === 'expense' ? 'expense'
+      : target.kind === 'شهریه_بدهی' || target.kind === 'debt' ? 'debt'
+      : target.kind === 'شهریه' || target.kind === 'payment' ? 'payment' : String(target.kind || '');
+    postToAppsScript({
+      action: 'transaction_delete_match', kind,
+      school_id: target.school_id, student_id: target.student_id,
+      amount: target.amount, date: target.date,
+      description: target.description || target.comment || '',
+      tracking_code: target.tracking_code || '',
+    }).then((result) => {
+      if (!result?.success) {
+        setSyncError(result?.message || result?.error || 'حذف از گوگل‌شیت انجام نشد؛ تراکنش در برنامه نگه داشته شد.');
+        setSyncStatus('error');
+        return;
+      }
+      setTransactions((prev) => prev.filter((t) => t.id !== id));
+      saveToStorage('transactions', loadFromStorage<Transaction[]>('transactions', []).filter((t) => t.id !== id));
+      logActivity('حذف تراکنش', `حذف تراکنش مالی شناسه ${id}`, 'transaction', id);
+      void syncWithGoogleSheets(spreadsheetId).catch(() => {});
+    }).catch((error) => {
+      console.warn('Cloud transaction delete failed:', error);
+      setSyncError('ارتباط با گوگل‌شیت برقرار نشد؛ تراکنش حذف نشد.');
+      setSyncStatus('error');
+    });
   };
 
   const updateTransaction = (id: number, data: Partial<Transaction>) => {
