@@ -429,19 +429,6 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
           <span className="text-[11px] text-gray-400 font-normal">بخش‌های پرکاربرد</span>
         </div>
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 sm:gap-2.5">
-          <button
-            type="button"
-            onClick={() => {
-              playClickSound();
-              setCurrentScreen('tuition');
-            }}
-            className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-amber-50 border border-amber-300 hover:border-amber-500 hover:shadow-xs active:scale-95 transition-all text-center min-h-[78px] group"
-          >
-            <div className="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center mb-1 group-hover:scale-105 transition-transform">
-              <FileText className="w-4 h-4 text-amber-700" />
-            </div>
-            <span className="text-[11px] font-bold text-[#341648] leading-tight">ثبت پرداخت شهریه</span>
-          </button>
           {menuItems.map((item) => {
             const Icon = item.icon;
             return (
