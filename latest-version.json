@@ -1,7 +1,7 @@
 {
-  "version": "2.16.218",
+  "version": "2.16.219",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "feat: add BankAccountsScreen for account management",
-  "build": 218,
-  "published_at": "2026-10-22T22:06:47Z"
+  "notes": "feat(auth): restrict bank screens to senior roles",
+  "build": 219,
+  "published_at": "2026-10-23T22:19:50Z"
 }
