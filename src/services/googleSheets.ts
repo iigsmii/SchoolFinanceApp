@@ -219,6 +219,7 @@ export const apiSaveTuition = async (
     amount: tx.amount,
     description: tx.description,
     payment_source: tx.payment_method || 'بانک',
+    payment_method: tx.payment_method || 'بانک',
     tracking_code: tx.tracking_code || '',
     review_status: tx.review_status || (isDebt ? 'approved' : 'pending'),
     approved: isApproved,
