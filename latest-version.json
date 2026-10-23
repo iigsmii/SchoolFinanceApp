@@ -1,7 +1,7 @@
 {
-  "version": "2.16.225",
+  "version": "2.16.226",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Remove duplicate tuition payment dashboard shortcut",
-  "build": 225,
-  "published_at": "2026-10-23T22:56:28Z"
+  "notes": "Add durable AppData storage for complete cloud sync",
+  "build": 226,
+  "published_at": "2026-10-23T23:06:22Z"
 }
