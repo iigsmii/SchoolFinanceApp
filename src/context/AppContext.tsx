@@ -1185,9 +1185,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const target = transactions.find((t) => Number(t.id) === Number(id));
     if (!target) return;
     // Delete from the authoritative cloud first. Local-only deletion caused records to reappear on next sync.
-    const kind = target.kind === 'هزینه' || target.kind === 'expense' ? 'expense'
-      : target.kind === 'شهریه_بدهی' || target.kind === 'debt' ? 'debt'
-      : target.kind === 'شهریه' || target.kind === 'payment' ? 'payment' : String(target.kind || '');
+    const targetKind = String(target.kind || '');
+    const kind = targetKind === 'هزینه' || targetKind === 'expense' ? 'expense'
+      : targetKind === 'شهریه_بدهی' || targetKind === 'debt' ? 'debt'
+      : targetKind === 'شهریه' || targetKind === 'payment' ? 'payment' : targetKind;
     postToAppsScript({
       action: 'transaction_delete_match', kind,
       school_id: target.school_id, student_id: target.student_id,
