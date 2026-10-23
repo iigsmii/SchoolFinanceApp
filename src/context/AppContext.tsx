@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   User,
   School,
@@ -54,6 +54,8 @@ import {
   apiSaveSchool,
   apiSaveStaffMember,
   postToAppsScript,
+  apiGetAppData,
+  apiSaveAppData,
 } from '../services/googleSheets';
 import {
   playSuccessSound,
@@ -315,6 +317,8 @@ function mergeCloudAndLocal<T extends { id: string | number }>(remote: T[], loca
 }
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const extendedCloudHydrated = useRef(false);
+  const extendedSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [themeIndex, setThemeIndexState] = useState<number>(() => loadFromStorage('theme_index', 0));
   const [fontScale, setFontScaleState] = useState<number>(() => loadFromStorage('font_scale', 1));
 
@@ -481,6 +485,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => saveToStorage('staff_work_logs', staffWorkLogs), [staffWorkLogs]);
   useEffect(() => saveToStorage('payroll_payments', payrollPayments), [payrollPayments]);
 
+  // Persist every extended collection as one atomic JSON snapshot in AppData.
+  // Debounced to avoid excessive writes during rapid edits; only active after a successful authenticated cloud read.
+  useEffect(() => {
+    if (!extendedCloudHydrated.current || !currentUser) return;
+    if (extendedSaveTimer.current) clearTimeout(extendedSaveTimer.current);
+    extendedSaveTimer.current = setTimeout(() => {
+      const snapshot = {
+        staffWorkLogs, payrollPayments, bankAccounts, seniorMessages, activityLogs,
+        smsLogs, smsConfig, autoSmsEnabled, smsTemplate,
+        captured_at: new Date().toISOString(),
+        schema_version: 1,
+      };
+      void apiSaveAppData('extended_state', snapshot).then((result) => {
+        if (!result?.success) {
+          setSyncError(result?.error || 'ذخیره اطلاعات تکمیلی در گوگل‌شیت ناموفق بود.');
+          setSyncStatus('error');
+        }
+      }).catch((error) => {
+        console.warn('Extended state cloud save failed:', error);
+        setSyncError('ذخیره اطلاعات تکمیلی در گوگل‌شیت انجام نشد؛ اتصال را بررسی کنید.');
+        setSyncStatus('error');
+      });
+    }, 900);
+    return () => { if (extendedSaveTimer.current) clearTimeout(extendedSaveTimer.current); };
+  }, [currentUser, staffWorkLogs, payrollPayments, bankAccounts, seniorMessages, activityLogs, smsLogs, smsConfig, autoSmsEnabled, smsTemplate]);
+
   const setThemeIndex = (idx: number) => setThemeIndexState(Math.max(0, Math.min(idx, THEME_ACCENTS.length - 1)));
   const setFontScale = (scale: number) => setFontScaleState(Math.max(0.85, Math.min(scale, 1.3)));
   const setCurrentUser = (u: User | null) => setCurrentUserState(u);
@@ -613,6 +643,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const gasResult = await loadDataFromAppsScript(DEFAULT_WEBAPP_URL);
       if (gasResult && gasResult.success) {
+        // Hydrate extended collections before enabling cloud writes, so starter/local demo values never overwrite cloud data.
+        try {
+          const extended = await apiGetAppData('extended_state');
+          const cloudState = extended?.success ? extended.value : null;
+          if (cloudState && typeof cloudState === 'object') {
+            if (Array.isArray(cloudState.staffWorkLogs)) { setStaffWorkLogs(cloudState.staffWorkLogs); saveToStorage('staff_work_logs', cloudState.staffWorkLogs); }
+            if (Array.isArray(cloudState.payrollPayments)) { setPayrollPayments(cloudState.payrollPayments); saveToStorage('payroll_payments', cloudState.payrollPayments); }
+            if (Array.isArray(cloudState.bankAccounts)) { setBankAccounts(cloudState.bankAccounts); saveToStorage('bank_accounts', cloudState.bankAccounts); }
+            if (Array.isArray(cloudState.seniorMessages)) { setSeniorMessages(cloudState.seniorMessages); saveToStorage('senior_msgs', cloudState.seniorMessages); }
+            if (Array.isArray(cloudState.activityLogs)) { setActivityLogs(cloudState.activityLogs); saveToStorage('activity_logs', cloudState.activityLogs); }
+            if (Array.isArray(cloudState.smsLogs)) { setSmsLogs(cloudState.smsLogs); saveToStorage('sms_logs', cloudState.smsLogs); }
+            if (cloudState.smsConfig && typeof cloudState.smsConfig === 'object') { setSmsConfigState(cloudState.smsConfig); saveToStorage('sms_config', cloudState.smsConfig); }
+            if (typeof cloudState.autoSmsEnabled === 'boolean') { setAutoSmsEnabledState(cloudState.autoSmsEnabled); saveToStorage('auto_sms_enabled', cloudState.autoSmsEnabled); }
+            if (typeof cloudState.smsTemplate === 'string') { setSmsTemplateState(cloudState.smsTemplate); saveToStorage('sms_template', cloudState.smsTemplate); }
+          }
+        } catch (extendedError) { console.warn('Extended Google Sheets data load failed:', extendedError); }
+        extendedCloudHydrated.current = true;
         const remoteStudents = Array.isArray(gasResult.students) ? gasResult.students : [];
         const localStudents = loadFromStorage<Student[]>('students', []);
         // An empty remote response is not permission to erase a non-empty local roster.
