@@ -25,7 +25,6 @@ import { BankAccountsScreen } from './components/screens/BankAccountsScreen';
 import { PWAUpdatePrompt } from './components/PWAUpdatePrompt';
 import { AppUpdatePrompt } from './components/AppUpdatePrompt';
 import { LogOut, X, AlertTriangle } from 'lucide-react';
-import { installPersianLiveInputNormalizer } from './utils/persianInput';
 
 export const App: React.FC = () => {
   const {
@@ -38,10 +37,7 @@ export const App: React.FC = () => {
     accentColor,
   } = useApp();
 
-  // Live Persian & Arabic numeral and character normalization across the entire application
-  useEffect(() => {
-    return installPersianLiveInputNormalizer();
-  }, []);
+  const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
 
   // Keep a fresh navigation callback without repeatedly tearing down native listeners.
   const goBackRef = useRef(goBack);
@@ -141,9 +137,9 @@ export const App: React.FC = () => {
       case 'report':
         return <ReportScreen />;
       case 'bank':
-        return <BankScreen />;
+        return isSenior ? <BankScreen /> : <DashboardScreen />;
       case 'bank_accounts':
-        return <BankAccountsScreen />;
+        return isSenior ? <BankAccountsScreen /> : <DashboardScreen />;
       case 'managers':
         return <ManagersScreen />;
       case 'schools':

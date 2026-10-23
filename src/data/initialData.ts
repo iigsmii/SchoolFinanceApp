@@ -204,16 +204,16 @@ export const INITIAL_USERS: User[] = [
 ];
 
 export const INITIAL_CATEGORIES: ExpenseCategory[] = [
-  { id: '1', name: 'خرید لوازم‌التحریر و کاربرگ آموزشی', active: true },
-  { id: '2', name: 'تعمیرات، تأسیسات و نگهداری ساختمان', active: true },
-  { id: '3', name: 'قبوض آب، برق، گاز و اینترنت', active: true },
-  { id: '4', name: 'حقوق و دستمزد کادر خدماتی و مربیان ساعتی', active: true },
-  { id: '5', name: 'پذیرایی، میان‌وعده و مناسبت‌های مذهبی', active: true },
-  { id: '6', name: 'هزینه اردو، مسابقات و جوایز قرآنی', active: true },
-  { id: '7', name: 'مواد بهداشتی، شوینده و نظافت', active: true },
-  { id: '8', name: 'هزینه‌های متفرقه اداری', active: true },
-  { id: '9', name: 'کارمزد بانک', active: true },
-  { id: '10', name: 'هزینه‌های تن‌خواه مدیر', active: true },
+  { id: '1', name: 'قبض آب', active: true },
+  { id: '2', name: 'قبض برق', active: true },
+  { id: '3', name: 'قبض گاز', active: true },
+  { id: '4', name: 'قبض تلفن', active: true },
+  { id: '5', name: 'اینترنت', active: true },
+  { id: '6', name: 'هزینه ی پذیرایی مدرسه', active: true },
+  { id: '7', name: 'هزینه ی عمرانی مدرسه', active: true },
+  { id: '8', name: 'هزینه ی تخفیف', active: true },
+  { id: '9', name: 'هزینه های متفرقه', active: true },
+  { id: '10', name: 'کارمزد بانک', active: true },
 ];
 
 export const INITIAL_STUDENTS: Student[] = [];

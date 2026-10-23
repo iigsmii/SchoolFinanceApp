@@ -108,11 +108,22 @@ export function daysInMonth(y: number, m: number): number {
 
 export function jalaliToIso(jalaliStr: string): string {
   if (!jalaliStr) throw new Error('تاریخ الزامی است.');
-  const s = latinDigits(jalaliStr).trim();
-  if (!/^\d{4}\/\d{1,2}\/\d{1,2}$/.test(s)) {
+  const s = latinDigits(String(jalaliStr)).trim().replace(/\s+\d{1,2}:\d{1,2}(:\d{1,2})?.*$/, '').trim();
+  // 8-digit compact Jalali format: 14030715
+  if (/^(13\d{2}|14\d{2})(\d{2})(\d{2})$/.test(s)) {
+    const jy = Number(s.substring(0, 4));
+    const jm = Number(s.substring(4, 6));
+    const jd = Number(s.substring(6, 8));
+    const [gy, gm, gd] = toGregorian(jy, jm, jd);
+    return `${gy}-${String(gm).padStart(2, '0')}-${String(gd).padStart(2, '0')}`;
+  }
+  const match = s.match(/^(\d{4})[\/\-. ](\d{1,2})[\/\-. ](\d{1,2})$/);
+  if (!match) {
     throw new Error('تاریخ را به صورت سال/ماه/روز وارد کنید.');
   }
-  const [jy, jm, jd] = s.split('/').map(Number);
+  const jy = Number(match[1]);
+  const jm = Number(match[2]);
+  const jd = Number(match[3]);
   const [gy, gm, gd] = toGregorian(jy, jm, jd);
   return `${gy}-${String(gm).padStart(2, '0')}-${String(gd).padStart(2, '0')}`;
 }
@@ -120,9 +131,30 @@ export function jalaliToIso(jalaliStr: string): string {
 export function jalaliFromGregorian(isoStr?: string): string {
   if (!isoStr) return '';
   try {
-    const clean = isoStr.substring(0, 10);
-    const [gy, gm, gd] = clean.split('-').map(Number);
+    const trimmed = latinDigits(String(isoStr)).trim();
+    // If it's already a Jalali date string like 1403/07/15 or 1403-07-15
+    const jalaliMatch = trimmed.match(/^(13\d{2}|14\d{2})[\/\-. ](\d{1,2})[\/\-. ](\d{1,2})/);
+    if (jalaliMatch) {
+      const jy = jalaliMatch[1];
+      const jm = jalaliMatch[2].padStart(2, '0');
+      const jd = jalaliMatch[3].padStart(2, '0');
+      return `${jy}/${jm}/${jd}`;
+    }
+
+    const clean = trimmed.substring(0, 10);
+    const parts = clean.split(/[\/\-]/).map(Number);
+    if (parts.length < 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) {
+      return isoStr;
+    }
+    const [gy, gm, gd] = parts;
+    // If year is within Jalali range (1300-1500)
+    if (gy >= 1300 && gy <= 1500) {
+      return `${gy}/${String(gm).padStart(2, '0')}/${String(gd).padStart(2, '0')}`;
+    }
     const [jy, jm, jd] = fromGregorian(gy, gm, gd);
+    if (isNaN(jy) || isNaN(jm) || isNaN(jd)) {
+      return isoStr;
+    }
     return `${jy}/${String(jm).padStart(2, '0')}/${String(jd).padStart(2, '0')}`;
   } catch {
     return isoStr;

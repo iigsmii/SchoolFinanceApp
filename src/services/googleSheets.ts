@@ -201,6 +201,7 @@ export const apiSaveTuition = async (
   tx: Partial<Transaction> & { amount: number; student_id?: number }
 ) => {
   const isDebt = tx.kind === 'شهریه_بدهی';
+  const isApproved = tx.review_status === 'approved';
   return postToAppsScript({
     action: 'tuition_add',
     id: tx.id,
@@ -212,15 +213,23 @@ export const apiSaveTuition = async (
     description: tx.description,
     payment_source: tx.payment_method || 'بانک',
     tracking_code: tx.tracking_code || '',
+    review_status: tx.review_status || (isDebt ? 'approved' : 'pending'),
+    approved: isApproved,
+    // Google Apps Script saveAttachmentIfAny_ specifically expects `base64`
+    base64: tx.attachment_url || '',
+    image_url: tx.attachment_url || '',
+    file_name: `tuition_${tx.id || Date.now()}.jpg`,
+    mime_type: 'image/jpeg',
   });
 };
 
 /**
- * Save Expense on Google Sheet via Apps Script
+ * Save Expense on Google Sheet via Apps Script with receipt attachment
  */
 export const apiSaveExpense = async (
   exp: Partial<Transaction> & { amount: number; category_name?: string }
 ) => {
+  const isApproved = exp.review_status === 'approved';
   return postToAppsScript({
     action: 'expense_add',
     id: exp.id,
@@ -228,9 +237,34 @@ export const apiSaveExpense = async (
     school_id: exp.school_id || 1,
     category: exp.expense_category_name || exp.category_name || 'هزینه‌های متفرقه',
     amount: exp.amount,
-    description: exp.description || '',
+    description: exp.description || exp.comment || '',
     payment_source: exp.payment_source || 'حساب مدرسه',
     tracking_code: exp.tracking_code || '',
+    review_status: exp.review_status || 'pending',
+    approved: isApproved,
+    // Google Apps Script saveAttachmentIfAny_ specifically expects `base64`
+    base64: exp.attachment_url || '',
+    image_url: exp.attachment_url || '',
+    file_name: `expense_${exp.id || Date.now()}.jpg`,
+    mime_type: 'image/jpeg',
+  });
+};
+
+/**
+ * Review / Approve or Reject transaction on Google Apps Script
+ */
+export const apiReviewTransaction = async (
+  id: number,
+  status: 'approved' | 'rejected',
+  rejectionReason?: string
+) => {
+  return postToAppsScript({
+    action: 'transaction_review',
+    id,
+    status,
+    review_status: status,
+    approved: status === 'approved',
+    rejection_reason: rejectionReason || '',
   });
 };
 
@@ -452,6 +486,17 @@ export const parseExcelWorkbook = (
       const studentObj = students.find((s) => s.id === studentId);
       const schoolId = Number(row[3]) || studentObj?.school_id || 1;
       const dateVal = dateFromExcelSerial(row[1]) || todayGregorian();
+      const rawApproved = row[12];
+      const isApproved = rawApproved === true || String(rawApproved).toLowerCase() === 'true';
+      const isRejected = String(rawApproved).toLowerCase() === 'rejected';
+      const reviewStatus: 'approved' | 'rejected' | 'pending' = isDebt
+        ? 'approved'
+        : isRejected
+        ? 'rejected'
+        : isApproved
+        ? 'approved'
+        : 'pending';
+      const imgUrl = String(row[8] || '').trim();
 
       transactions.push({
         id: Number(row[0]) || 200 + i,
@@ -467,10 +512,11 @@ export const parseExcelWorkbook = (
         debit: isDebt ? amount : 0,
         credit: !isDebt ? amount : 0,
         description: String(row[6] || (isDebt ? 'شهریه مصوب' : 'پرداخت شهریه')),
-        payment_method: String(row[13] || row[7] || 'کارت به کارت'),
-        tracking_code: String(row[7] || row[8] || ''),
-        reconciled: true,
-        review_status: 'approved',
+        payment_method: String(row[13] || 'کارت به کارت'),
+        tracking_code: String(row[7] || ''),
+        reconciled: String(row[11]).toLowerCase() === 'true',
+        review_status: reviewStatus,
+        attachment_url: imgUrl,
       });
     }
   }
@@ -484,6 +530,17 @@ export const parseExcelWorkbook = (
       const desc = String(row[5] || row[3] || 'هزینه مدرسه');
       const isFee = desc.includes('کارمزد') || desc.includes('پایا') || desc.includes('ساتنا');
       const dateVal = dateFromExcelSerial(row[1]) || todayGregorian();
+      const rawApproved = row[11];
+      const isApproved = rawApproved === true || String(rawApproved).toLowerCase() === 'true';
+      const isRejected = String(rawApproved).toLowerCase() === 'rejected';
+      const reviewStatus: 'approved' | 'rejected' | 'pending' = isFee
+        ? 'approved'
+        : isRejected
+        ? 'rejected'
+        : isApproved
+        ? 'approved'
+        : 'pending';
+      const imgUrl = String(row[7] || '').trim();
 
       transactions.push({
         id: 100000 + (Number(row[0]) || i),
@@ -497,11 +554,13 @@ export const parseExcelWorkbook = (
         credit: 0,
         expense_category_name: isFee ? 'کارمزد بانک' : String(row[3] || 'هزینه‌های متفرقه اداری'),
         is_bank_fee: isFee,
-        payment_source: String(row[12] || row[7] || 'petty_cash'),
+        payment_source: String(row[12] || 'حساب مدرسه'),
+        payment_method: String(row[12] || 'حساب مدرسه'),
         tracking_code: String(row[6] || ''),
         description: desc,
-        reconciled: true,
-        review_status: 'approved',
+        reconciled: String(row[10]).toLowerCase() === 'true',
+        review_status: reviewStatus,
+        attachment_url: imgUrl,
       });
     }
   }
@@ -709,6 +768,16 @@ export const loadDataFromAppsScript = async (
     const stId = Number(t.student_id);
     const stObj = students.find((s) => s.id === stId);
     const scId = Number(t.school_id) || stObj?.school_id || 1;
+    const isApproved = t.approved === true || String(t.approved).toLowerCase() === 'true';
+    const isRejected = String(t.review_status).toLowerCase() === 'rejected' || String(t.status).toLowerCase() === 'rejected';
+    const reviewStatus: 'approved' | 'rejected' | 'pending' = isDebt
+      ? 'approved'
+      : isRejected
+      ? 'rejected'
+      : isApproved
+      ? 'approved'
+      : 'pending';
+    const imgUrl = t.image_url || t.attachment_url || t.attachment || '';
 
     transactions.push({
       id: Number(t.id) || 200 + idx,
@@ -726,8 +795,9 @@ export const loadDataFromAppsScript = async (
       school_name: schoolMap.get(scId) || stObj?.school_name,
       tracking_code: t.tracking_code || '',
       payment_method: t.payment_source || 'کارت به کارت',
-      reconciled: true,
-      review_status: 'approved',
+      reconciled: t.reconciled === true || String(t.reconciled).toLowerCase() === 'true',
+      review_status: reviewStatus,
+      attachment_url: imgUrl,
     });
   });
 
@@ -737,6 +807,16 @@ export const loadDataFromAppsScript = async (
     const scId = Number(e.school_id) || 1;
     const desc = e.description || 'هزینه مدرسه';
     const isFee = desc.includes('کارمزد') || desc.includes('پایا') || desc.includes('ساتنا');
+    const isApproved = e.approved === true || String(e.approved).toLowerCase() === 'true';
+    const isRejected = String(e.review_status).toLowerCase() === 'rejected' || String(e.status).toLowerCase() === 'rejected';
+    const reviewStatus: 'approved' | 'rejected' | 'pending' = isFee
+      ? 'approved'
+      : isRejected
+      ? 'rejected'
+      : isApproved
+      ? 'approved'
+      : 'pending';
+    const imgUrl = e.image_url || e.attachment_url || e.attachment || '';
 
     transactions.push({
       id: 100000 + (Number(e.id) || idx),
@@ -753,8 +833,9 @@ export const loadDataFromAppsScript = async (
       school_name: schoolMap.get(scId),
       tracking_code: e.tracking_code || '',
       payment_method: e.payment_source || 'حساب مدرسه',
-      reconciled: true,
-      review_status: 'approved',
+      reconciled: e.reconciled === true || String(e.reconciled).toLowerCase() === 'true',
+      review_status: reviewStatus,
+      attachment_url: imgUrl,
     });
   });
 

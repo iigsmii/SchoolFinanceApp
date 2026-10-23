@@ -587,9 +587,10 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                 </label>
                 <input
                   type="text"
+                  inputMode="numeric"
                   value={amountStr}
                   onChange={(e) => {
-                    const raw = e.target.value.replace(/\D/g, '');
+                    const raw = latinDigits(e.target.value).replace(/\D/g, '');
                     setAmountStr(raw ? Number(raw).toLocaleString('en-US') : '');
                   }}
                   placeholder="مثال: ۷۵,۰۰۰,۰۰۰"

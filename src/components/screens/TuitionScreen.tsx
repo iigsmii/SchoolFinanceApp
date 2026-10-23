@@ -21,13 +21,18 @@ import {
   Tag,
   Layers,
   Award,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Eye,
+  Download,
+  AlertTriangle,
 } from 'lucide-react';
 import { ReceiptImageUploader } from '../ReceiptImageUploader';
 import { InvoicePrintModal } from '../InvoicePrintModal';
 import { matchesStudentSearch } from '../../utils/studentSearch';
 
 const PAYMENT_METHODS = ['پول نقد', 'کارت به کارت', 'کارت خوان', 'چک'];
-
 
 const amountInTomanWords = (rawAmount: string): string => {
   const amount = Number(latinDigits(rawAmount).replace(/[^0-9]/g, ''));
@@ -75,6 +80,8 @@ export const TuitionScreen: React.FC = () => {
     addTuitionPayment,
     addBulkDebt,
     deleteTransaction,
+    approveTransaction,
+    rejectTransaction,
   } = useApp();
 
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
@@ -86,6 +93,9 @@ export const TuitionScreen: React.FC = () => {
 
   // Modals state
   const [modalType, setModalType] = useState<'debt' | 'payment' | 'bulk_debt' | 'discount' | null>(null);
+  const [selectedAttachment, setSelectedAttachment] = useState<{ url: string; title: string } | null>(null);
+  const [rejectModalTx, setRejectModalTx] = useState<Transaction | null>(null);
+  const [rejectionReasonInput, setRejectionReasonInput] = useState('');
 
   // Debt Item Type & Installment state
   const [debtItemType, setDebtItemType] = useState<Transaction['debt_item_type']>('tuition');
@@ -568,13 +578,24 @@ export const TuitionScreen: React.FC = () => {
                 {studentTxs.map((tx) => {
                   const isDebt = tx.kind === 'شهریه_بدهی';
                   const isDiscount = tx.kind === 'تخفیف_شهریه' || tx.payment_method?.includes('تخفیف');
+                  const status = tx.review_status || 'approved';
+                  const isApproved = status === 'approved';
+                  const isRejected = status === 'rejected';
+                  const isPending = status === 'pending';
+
+                  const cardClass = isApproved
+                    ? 'border-emerald-200 bg-emerald-50/15'
+                    : isRejected
+                    ? 'border-rose-200 bg-rose-50/25'
+                    : 'border-amber-200 bg-amber-50/20';
+
                   return (
                     <div
                       key={tx.id}
-                      className="p-4 rounded-2xl border border-[#ede5ef] bg-[#fcfaff] flex items-center justify-between gap-3 text-xs"
+                      className={`p-4 rounded-2xl border ${cardClass} flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs`}
                     >
-                      <div>
-                        <div className="flex items-center gap-2">
+                      <div className="space-y-1.5 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span
                             className={`px-2 py-0.5 rounded-md font-bold text-[11px] ${
                               isDebt
@@ -589,28 +610,107 @@ export const TuitionScreen: React.FC = () => {
                           <span className="font-bold text-sm font-mono text-[#341648]">
                             {formatRial(tx.amount)} ریال
                           </span>
+
+                          {/* Approval Status Badge */}
+                          {isApproved && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-700" />
+                              تأیید شده
+                            </span>
+                          )}
+                          {isRejected && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                              <XCircle className="w-3 h-3 text-rose-700" />
+                              رد شده
+                            </span>
+                          )}
+                          {isPending && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                              <Clock className="w-3 h-3 text-amber-700" />
+                              در انتظار بررسی ارشد
+                            </span>
+                          )}
                         </div>
-                        <div className="text-gray-500 mt-1">
+
+                        <div className="text-gray-500">
                           تاریخ: {jalaliFromGregorian(tx.date)} | {tx.description || tx.comment || 'بدون شرح'}
                         </div>
                         {tx.payment_method && (
-                          <div className="text-[11px] text-gray-400 mt-0.5">
-                            روش پرداخت: {tx.payment_method} {tx.tracking_code ? `| کد پیگیری: ${tx.tracking_code}` : ''}
+                          <div className="text-[11px] text-gray-400">
+                            روش پرداخت: {tx.payment_method}{' '}
+                            {tx.tracking_code ? `| کد پیگیری: ${tx.tracking_code}` : ''}
+                          </div>
+                        )}
+
+                        {isRejected && tx.rejection_reason && (
+                          <div className="text-[11px] text-rose-700 bg-rose-50 p-1.5 rounded-lg border border-rose-200">
+                            علت رد: {tx.rejection_reason}
+                          </div>
+                        )}
+
+                        {tx.attachment_url && (
+                          <div className="pt-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSelectedAttachment({
+                                  url: tx.attachment_url!,
+                                  title: `رسید پرداخت شهریه ${selectedStudent.name}`,
+                                })
+                              }
+                              className="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[11px] font-bold flex items-center gap-1 border border-indigo-200"
+                            >
+                              <Eye className="w-3 h-3" />
+                              <span>مشاهده عکس رسید بانکی</span>
+                            </button>
                           </div>
                         )}
                       </div>
 
-                      <button
-                        onClick={() => {
-                          if (window.confirm('آیا از حذف این تراکنش اطمینان دارید؟')) {
-                            deleteTransaction(tx.id);
-                          }
-                        }}
-                        className="p-2 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-colors"
-                        title="حذف تراکنش"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
+                        {/* Senior Quick Review Actions */}
+                        {isSenior && !isDebt && (
+                          <div className="flex items-center gap-1">
+                            {!isApproved && (
+                              <button
+                                type="button"
+                                onClick={() => approveTransaction(tx.id)}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shadow-2xs"
+                                title="تأیید تراکنش شهریه"
+                              >
+                                <Check className="w-3 h-3" />
+                                <span>تأیید</span>
+                              </button>
+                            )}
+                            {!isRejected && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setRejectModalTx(tx);
+                                  setRejectionReasonInput(tx.rejection_reason || '');
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1 shadow-2xs"
+                                title="رد تراکنش شهریه"
+                              >
+                                <X className="w-3 h-3" />
+                                <span>رد</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        <button
+                          onClick={() => {
+                            if (window.confirm('آیا از حذف این تراکنش اطمینان دارید؟')) {
+                              deleteTransaction(tx.id);
+                            }
+                          }}
+                          className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-colors"
+                          title="حذف تراکنش"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -677,9 +777,10 @@ export const TuitionScreen: React.FC = () => {
                 </label>
                 <input
                   type="text"
+                  inputMode="numeric"
                   value={formAmount}
                   onChange={(e) => {
-                    const raw = e.target.value.replace(/\D/g, '');
+                    const raw = latinDigits(e.target.value).replace(/\D/g, '');
                     setFormAmount(raw ? Number(raw).toLocaleString('en-US') : '');
                   }}
                   placeholder="مثال: ۱۸۰,۰۰۰,۰۰۰"
@@ -824,9 +925,10 @@ export const TuitionScreen: React.FC = () => {
                 </label>
                 <input
                   type="text"
+                  inputMode="numeric"
                   value={formAmount}
                   onChange={(e) => {
-                    const raw = e.target.value.replace(/\D/g, '');
+                    const raw = latinDigits(e.target.value).replace(/\D/g, '');
                     setFormAmount(raw ? Number(raw).toLocaleString('en-US') : '');
                   }}
                   placeholder="مثال: ۵۰,۰۰۰,۰۰۰"
@@ -1101,9 +1203,10 @@ export const TuitionScreen: React.FC = () => {
                 </label>
                 <input
                   type="text"
+                  inputMode="numeric"
                   value={formAmount}
                   onChange={(e) => {
-                    const raw = e.target.value.replace(/\D/g, '');
+                    const raw = latinDigits(e.target.value).replace(/\D/g, '');
                     setFormAmount(raw ? Number(raw).toLocaleString('en-US') : '');
                   }}
                   placeholder="مثال: ۳۰,۰۰۰,۰۰۰"
@@ -1183,9 +1286,10 @@ export const TuitionScreen: React.FC = () => {
                   </label>
                   <input
                     type="text"
+                    inputMode="numeric"
                     value={bulkAmount}
                     onChange={(e) => {
-                      const raw = e.target.value.replace(/\D/g, '');
+                      const raw = latinDigits(e.target.value).replace(/\D/g, '');
                       setBulkAmount(raw ? Number(raw).toLocaleString('en-US') : '');
                     }}
                     placeholder="مثال: ۱۸۰,۰۰۰,۰۰۰"
@@ -1324,6 +1428,107 @@ export const TuitionScreen: React.FC = () => {
           balance={getStudentBalance(invoiceStudent.id).balance}
           onClose={() => setInvoiceStudent(null)}
         />
+      )}
+
+      {/* Reject Modal for Senior */}
+      {rejectModalTx && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-rose-200 space-y-4 animate-in fade-in">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2 text-rose-700 font-bold text-sm">
+                <XCircle className="w-5 h-5 text-rose-600" />
+                <span>رد تراکنش شهریه شناسه {rejectModalTx.id}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRejectModalTx(null)}
+                className="p-1 rounded-xl text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-600 leading-relaxed">
+              علت رد این پرداخت را بنویسید تا در پرونده مالی دانش‌آموز ثبت گردد:
+            </p>
+
+            <textarea
+              value={rejectionReasonInput}
+              onChange={(e) => setRejectionReasonInput(e.target.value)}
+              placeholder="مثال: فیش بانکی ناخواناست، مبلغ با پیگیری مطابقت ندارد و..."
+              rows={3}
+              className="w-full p-3 text-xs bg-[#fdfcfd] rounded-2xl border border-gray-300 focus:outline-hidden focus:border-rose-500"
+            />
+
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (rejectModalTx) {
+                    await rejectTransaction(rejectModalTx.id, rejectionReasonInput.trim() || 'عدم تأیید توسط مدیر ارشد');
+                    setRejectModalTx(null);
+                    setRejectionReasonInput('');
+                  }
+                }}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-md active:scale-95 transition-all"
+              >
+                تأیید رد تراکنش (قرمز)
+              </button>
+              <button
+                type="button"
+                onClick={() => setRejectModalTx(null)}
+                className="py-2.5 px-4 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs"
+              >
+                انصراف
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Attachment Fullscreen Modal */}
+      {selectedAttachment && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6"
+          onClick={() => setSelectedAttachment(null)}
+        >
+          <div
+            className="bg-white rounded-3xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between gap-3">
+              <h3 className="font-bold text-sm text-[#341648] truncate">{selectedAttachment.title}</h3>
+              <button
+                type="button"
+                onClick={() => setSelectedAttachment(null)}
+                className="p-2 rounded-xl hover:bg-gray-100 text-gray-600"
+                aria-label="بستن تصویر"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-3 sm:p-5 overflow-auto flex items-center justify-center bg-gray-950/5 min-h-56">
+              <img
+                src={selectedAttachment.url}
+                alt={selectedAttachment.title}
+                className="max-w-full max-h-[72vh] object-contain rounded-xl shadow-md border border-gray-200"
+              />
+            </div>
+            <div className="p-3 border-t border-gray-100 flex items-center justify-between bg-gray-50 text-xs">
+              <span className="text-gray-500">رسید بانکی پرداخت شهریه</span>
+              <a
+                href={selectedAttachment.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                download="receipt.jpg"
+                className="px-3.5 py-1.5 rounded-xl bg-indigo-600 text-white font-bold flex items-center gap-1.5 shadow-2xs hover:bg-indigo-700"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>دانلود و باز کردن فایل اصلی</span>
+              </a>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

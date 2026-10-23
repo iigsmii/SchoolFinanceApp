@@ -722,7 +722,7 @@ export const BankScreen: React.FC = () => {
     );
   };
 
-  // File Upload Handler
+  // File Upload Handler with specialized POS & Bank Account differentiation
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -730,13 +730,6 @@ export const BankScreen: React.FC = () => {
     const normalize = (value: unknown) => String(value ?? '')
       .replace(/[\u200c\u200f\u202a-\u202e\s_\-]/g, '')
       .replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').toLowerCase();
-
-    const pick = (row: Record<string, unknown>, aliases: string[]) => {
-      const keys = Object.keys(row);
-      const target = aliases.map(normalize);
-      const key = keys.find((k) => target.includes(normalize(k))) || keys.find((k) => target.some((a) => normalize(k).includes(a)));
-      return key ? row[key] : '';
-    };
 
     const toDigits = (value: unknown) => String(value ?? '')
       .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
@@ -749,28 +742,122 @@ export const BankScreen: React.FC = () => {
       return Number.isFinite(n) ? Math.abs(n) : 0;
     };
 
-    const toDate = (value: unknown) => {
-      if (typeof value === 'number' && value > 0 && value < 100000) {
-        const date = XLSX.SSF.parse_date_code(value);
-        if (date) return String(date.y) + '-' + String(date.m).padStart(2, '0') + '-' + String(date.d).padStart(2, '0');
+    // Safe, categorized column picker preventing cross-field contamination
+    const pickField = (
+      row: Record<string, unknown>,
+      preferredAliases: string[],
+      disallowedKeywords: string[] = []
+    ): unknown => {
+      const keys = Object.keys(row);
+      const normalizedKeys = keys.map((k) => ({ original: k, norm: normalize(k) }));
+      const targetAliases = preferredAliases.map(normalize);
+      const disallow = disallowedKeywords.map(normalize);
+
+      // 1. Exact match priority
+      for (const target of targetAliases) {
+        const found = normalizedKeys.find((k) => k.norm === target);
+        if (found && row[found.original] !== undefined && row[found.original] !== '') {
+          return row[found.original];
+        }
       }
-      const text = toDigits(value).trim();
-      const compact = text.match(/^(\d{4})(\d{2})(\d{2})$/);
-      const separated = text.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})$/);
-      const parts = compact ? [compact[1], compact[2], compact[3]] : separated ? [separated[1], separated[2], separated[3]] : null;
-      if (parts) {
-        const year = Number(parts[0]);
-        const month = Number(parts[1]);
-        const day = Number(parts[2]);
-        if (year >= 1300 && year <= 1500) {
+
+      // 2. Substring match only if no disallowed keyword is present
+      for (const target of targetAliases) {
+        const found = normalizedKeys.find((k) => {
+          if (!k.norm.includes(target)) return false;
+          if (disallow.some((bad) => k.norm.includes(bad))) return false;
+          return true;
+        });
+        if (found && row[found.original] !== undefined && row[found.original] !== '') {
+          return row[found.original];
+        }
+      }
+
+      return '';
+    };
+
+    // Universal Date Parser (handles Date objects, Excel serials, 8-digit Jalali, and Jalali with time)
+    const toDate = (value: unknown): string => {
+      if (value === undefined || value === null || value === '') return todayGregorian();
+
+      // 1. Date object from XLSX
+      if (value instanceof Date) {
+        if (!isNaN(value.getTime())) {
+          return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+        }
+      }
+
+      // 2. Numeric Excel serial date code or numeric compact date
+      if (typeof value === 'number') {
+        if (value >= 13000101 && value <= 15001230) {
           try {
-            return jalaliToIso(String(parts[0]) + '/' + String(month).padStart(2, '0') + '/' + String(day).padStart(2, '0'));
+            return jalaliToIso(String(value));
           } catch {
-            return text;
+            // fallback
           }
         }
-        return String(parts[0]) + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+        if (value >= 19900101 && value <= 20501230) {
+          const s = String(value);
+          return `${s.substring(0, 4)}-${s.substring(4, 6)}-${s.substring(6, 8)}`;
+        }
+        if (value > 20000 && value < 90000) {
+          const date = XLSX.SSF.parse_date_code(value);
+          if (date) {
+            return `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`;
+          }
+        }
       }
+
+      // 3. String date
+      let text = toDigits(value).trim();
+      // Remove trailing time part (e.g. 14:22:05 or 14:22)
+      text = text.replace(/\s+\d{1,2}:\d{1,2}(:\d{1,2})?.*$/, '').trim();
+
+      // Check for compact 8-digit Jalali (14030715)
+      if (/^(13\d{2}|14\d{2})(\d{2})(\d{2})$/.test(text)) {
+        try {
+          return jalaliToIso(text);
+        } catch {
+          // fallback
+        }
+      }
+
+      // Check for standard Jalali with delimiters (1403/07/15, 1403-07-15, 1403.07.15)
+      const jalaliMatch = text.match(/^(13\d{2}|14\d{2})[\/\-. ](\d{1,2})[\/\-. ](\d{1,2})$/);
+      if (jalaliMatch) {
+        try {
+          return jalaliToIso(`${jalaliMatch[1]}/${jalaliMatch[2]}/${jalaliMatch[3]}`);
+        } catch {
+          // fallback
+        }
+      }
+
+      // Check for reversed Jalali (15/07/1403)
+      const revJalali = text.match(/^(\d{1,2})[\/\-. ](\d{1,2})[\/\-. ](13\d{2}|14\d{2})$/);
+      if (revJalali) {
+        try {
+          return jalaliToIso(`${revJalali[3]}/${revJalali[2]}/${revJalali[1]}`);
+        } catch {
+          // fallback
+        }
+      }
+
+      // Check for Gregorian YYYY-MM-DD
+      const gregMatch = text.match(/^(\d{4})[\/\-. ](\d{1,2})[\/\-. ](\d{1,2})$/);
+      if (gregMatch) {
+        const y = Number(gregMatch[1]);
+        const m = Number(gregMatch[2]);
+        const d = Number(gregMatch[3]);
+        if (y >= 1300 && y <= 1500) {
+          try {
+            return jalaliToIso(`${y}/${m}/${d}`);
+          } catch {
+            // fallback
+          }
+        }
+        return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      }
+
       return text || todayGregorian();
     };
 
@@ -785,7 +872,9 @@ export const BankScreen: React.FC = () => {
 
         for (const sheetName of wb.SheetNames) {
           const matrix = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sheetName], { header: 1, defval: '' });
-          for (const row of matrix.slice(0, 12)) {
+
+          // Search first 20 rows for account number if any
+          for (const row of matrix.slice(0, 20)) {
             for (let i = 0; i < row.length; i++) {
               if (normalize(row[i]).includes('شمارهحساب')) {
                 const candidate = row.slice(i + 1).map((v) => toDigits(v).replace(/\D/g, '')).find((v) => v.length >= 10);
@@ -793,15 +882,32 @@ export const BankScreen: React.FC = () => {
               }
             }
           }
-          const headerRowIndex = matrix.slice(0, 12).findIndex((row) => {
+
+          // Search for header row in top 20 rows
+          const headerRowIndex = matrix.slice(0, 20).findIndex((row) => {
             const h = row.map(normalize);
-            return h.some((x) => ['تاریخ', 'تاریختراکنش', 'date', 'transactiondate'].includes(x)) &&
-              h.some((x) => ['مبلغ', 'amount', 'برداشت', 'واریز', 'بدهکار', 'بستانکار', 'مبلغتراکنش'].includes(x));
+            const hasDate = h.some((x) => ['تاریخ', 'تاریختراکنش', 'تاريخ', 'تاريخ تراكنش', 'date', 'transactiondate'].some((k) => x.includes(k)));
+            const hasAmount = h.some((x) => ['مبلغ', 'مبلغتراکنش', 'مبلغکل', 'amount', 'برداشت', 'واریز', 'بدهکار', 'بستانکار'].some((k) => x.includes(k)));
+            const hasPosMeta = h.some((x) => ['پایانه', 'ترمینال', 'terminal', 'پذیرنده', 'merchant', 'کدارجاع', 'شمارهارجاع', 'rrn'].some((k) => x.includes(k)));
+            return (hasDate && hasAmount) || (hasPosMeta && (hasDate || hasAmount));
           });
+
           if (headerRowIndex >= 0) {
             const headerValues = (matrix[headerRowIndex] || []).map(normalize);
-            isPosReport = headerValues.some((x) => x.includes('کدپایانه') || x.includes('terminalid')) &&
-              headerValues.some((x) => x.includes('تاریخواریز') || x.includes('settlementdate'));
+
+            // Accurate POS report detection based on terminal/RRN/merchant headers or absence of dual debit/credit ledger
+            const hasTerminal = headerValues.some((x) => x.includes('پایانه') || x.includes('ترمینال') || x.includes('terminal'));
+            const hasMerchant = headerValues.some((x) => x.includes('پذیرنده') || x.includes('merchant'));
+            const hasRrn = headerValues.some((x) => x.includes('کدارجاع') || x.includes('شمارهارجاع') || x.includes('rrn'));
+            const hasDualDebitCredit = headerValues.some((x) => x.includes('برداشت') || x.includes('بدهکار') || x.includes('debit')) &&
+                                       headerValues.some((x) => x.includes('واریز') || x.includes('بستانکار') || x.includes('credit'));
+            const fileNameNorm = normalize(file.name);
+            const sheetNameNorm = normalize(sheetName);
+
+            isPosReport = (!hasDualDebitCredit && (hasTerminal || hasMerchant || hasRrn)) ||
+                          fileNameNorm.includes('pos') || fileNameNorm.includes('پوز') || fileNameNorm.includes('کارتخوان') ||
+                          sheetNameNorm.includes('pos') || sheetNameNorm.includes('پوز');
+
             const rows = matrix.slice(headerRowIndex).map((r) => r as unknown[]);
             const headers = (rows.shift() || []).map((x) => String(x ?? '').trim());
             data = rows.map((r) => Object.fromEntries(headers.map((h, i) => [h, r[i] ?? ''])));
@@ -810,7 +916,7 @@ export const BankScreen: React.FC = () => {
           }
         }
 
-        if (!data.length) throw new Error('ستون‌های تاریخ و مبلغ/برداشت/واریز در ۱۲ ردیف ابتدایی هیچ برگه‌ای پیدا نشد.');
+        if (!data.length) throw new Error('ستون‌های تاریخ و مبلغ در ردیف‌های ابتدایی هیچ برگه‌ای پیدا نشد.');
 
         const bankAccountSuffix = !isPosReport && fileAccountNumber ? fileAccountNumber.replace(/\D/g, '').slice(-3) : '';
         if ((bankRules.excludedAccountSuffixes || ['009']).map((v) => String(v).replace(/\D/g, '')).includes(bankAccountSuffix)) {
@@ -820,37 +926,122 @@ export const BankScreen: React.FC = () => {
 
         let feeCount = 0;
         let skipped = 0;
-        const newItems = data.map((row) => {
-          const debit = isPosReport ? 0 : toAmount(pick(row, ['برداشت', 'مبلغ برداشت', 'بدهکار', 'debit', 'withdrawal', 'برداشت (ریال)']));
-          const credit = isPosReport ? 0 : toAmount(pick(row, ['واریز', 'مبلغ واریز', 'بستانکار', 'credit', 'deposit', 'واریز (ریال)']));
-          const rawAmount = pick(row, ['مبلغ', 'مبلغ تراکنش', 'amount', 'transaction amount']);
-          const amount = debit || credit || toAmount(rawAmount);
-          const track = String(pick(row, ['شماره پیگیری', 'کد پیگیری', 'tracking', 'tracking number']) || '').trim();
-          const referenceNumber = String(pick(row, ['شماره مرجع/قرارداد', 'شماره مرجع', 'شماره قرارداد', 'reference number', 'contract number']) || '').trim();
-          const posReferenceCode = String(pick(row, ['کد ارجاع', 'کد ارجاع تراکنش', 'pos reference code', 'reference code']) || '').trim();
-          const feeAmount = toAmount(pick(row, ['کارمزد', 'مبلغ کارمزد', 'fee', 'fee amount']));
-          const terminal = toDigits(pick(row, ['شماره پایانه', 'شماره ترمینال', 'کد پایانه', 'پایانه', 'terminal id', 'terminal number', 'pos terminal', 'terminal'])).replace(/\D/g, '');
-          const desc = String(pick(row, ['شرح', 'شرح تراکنش', 'توضیحات', 'بابت', 'description', 'details']) || '').trim();
-          const date = toDate(pick(row, ['تاریخ', 'تاریخ تراکنش', 'تاریخ عملیات', 'date', 'transaction date']));
-          const transactionTime = String(pick(row, ['ساعت', 'ساعت تراکنش', 'time', 'transaction time']) || '').trim();
-          const settlementDateRaw = pick(row, ['تاریخ واریز', 'تاریخ تسویه', 'settlement date', 'deposit date']);
-          const settlementDate = settlementDateRaw === '' ? '' : toDate(settlementDateRaw);
-          const sourceCardNumber = toDigits(pick(row, ['شماره کارت مبدا', 'کارت مبدا', 'شماره کارت برداشت', 'کارت برداشت', 'source card number', 'from card', 'source card'])).replace(/\D/g, '');
-          const destinationCardNumber = toDigits(pick(row, ['شماره کارت مقصد', 'کارت مقصد', 'شماره کارت واریز', 'کارت واریز', 'destination card number', 'to card', 'destination card'])).replace(/\D/g, '');
-          const genericCardNumber = toDigits(pick(row, ['شماره کارت', 'card number', 'card no'])).replace(/\D/g, '');
-          const cardNumber = genericCardNumber || sourceCardNumber || destinationCardNumber;
-          const account = String(pick(row, ['شماره حساب', 'حساب', 'bank account', 'account']) || (isPosReport ? '' : fileAccountNumber)).trim();
-          const balance = toAmount(pick(row, ['مانده', 'موجودی', 'مانده حساب', 'balance', 'running balance']));
+        let failedPosSkipped = 0;
 
-          if (!amount || (!desc && !track)) { skipped++; return null; }
+        const newItems = data.map((row) => {
+          // Status check: Skip failed POS swipes (e.g. invalid PIN, card decline)
+          const statusStr = String(pickField(row, ['وضعیت', 'وضعیت تراکنش', 'نتیجه', 'status', 'نتیجه تراکنش']) || '').trim();
+          if (isPosReport && /(ناموفق|خطا|fail|reject|انصراف|برگشت)/i.test(statusStr)) {
+            failedPosSkipped++;
+            return null;
+          }
+
+          let debit = 0;
+          let credit = 0;
+          let amount = 0;
+
+          if (isPosReport) {
+            // POS terminal transactions are strictly incoming card receipts!
+            // Crucial: Disallow 'تاریخ' / 'date' to ensure 'تاریخ واریز' is NEVER parsed as amount!
+            const posAmountRaw = pickField(row,
+              ['مبلغ تراکنش', 'مبلغ کل', 'مبلغ', 'مبلغ (ریال)', 'مبلغ خرید', 'مبلغ خالص', 'amount', 'transaction amount'],
+              ['تاریخ', 'date', 'زمان', 'ساعت', 'time', 'کارمزد', 'fee', 'کارت', 'حساب', 'وضعیت', 'شماره', 'کد']
+            );
+            amount = toAmount(posAmountRaw);
+            credit = amount;
+            debit = 0;
+          } else {
+            // Bank statement dual ledger
+            debit = toAmount(pickField(row,
+              ['برداشت', 'مبلغ برداشت', 'بدهکار', 'گردش بدهکار', 'debit', 'withdrawal', 'برداشت (ریال)'],
+              ['تاریخ', 'date', 'زمان', 'ساعت', 'time', 'کارت', 'حساب', 'وضعیت', 'کد', 'شماره']
+            ));
+            credit = toAmount(pickField(row,
+              ['واریز', 'مبلغ واریز', 'بستانکار', 'گردش بستانکار', 'credit', 'deposit', 'واریز (ریال)'],
+              ['تاریخ', 'date', 'زمان', 'ساعت', 'time', 'کارت', 'حساب', 'وضعیت', 'کد', 'شماره']
+            ));
+            const rawAmount = pickField(row,
+              ['مبلغ', 'مبلغ تراکنش', 'amount', 'transaction amount'],
+              ['تاریخ', 'date', 'زمان', 'ساعت', 'time', 'کارت', 'حساب', 'وضعیت', 'کد', 'شماره']
+            );
+            amount = debit || credit || toAmount(rawAmount);
+          }
+
+          const track = String(pickField(row,
+            ['شماره پیگیری', 'کد پیگیری', 'شماره پیگیری تراکنش', 'شماره سند', 'پیگیری', 'tracking', 'trace', 'tracking number', 'trace no']
+          ) || '').trim();
+
+          const referenceNumber = String(pickField(row,
+            ['شماره مرجع', 'کد ارجاع', 'شماره ارجاع', 'شماره مرجع/قرارداد', 'شماره قرارداد', 'rrn', 'reference number', 'contract number', 'ref no']
+          ) || '').trim();
+
+          const posReferenceCode = String(pickField(row,
+            ['کد ارجاع', 'کد ارجاع تراکنش', 'شماره ارجاع', 'pos reference code', 'reference code', 'rrn']
+          ) || '').trim();
+
+          const feeAmount = toAmount(pickField(row,
+            ['کارمزد', 'مبلغ کارمزد', 'کارمزد شاپرک', 'fee', 'fee amount']
+          ));
+
+          const terminal = toDigits(pickField(row,
+            ['شماره پایانه', 'کد پایانه', 'پایانه', 'شماره ترمینال', 'ترمینال', 'terminal id', 'terminal number', 'pos terminal', 'terminal']
+          )).replace(/\D/g, '');
+
+          const desc = String(pickField(row,
+            ['شرح', 'شرح تراکنش', 'توضیحات', 'بابت', 'description', 'details']
+          ) || '').trim();
+
+          // Date extraction: prioritize transaction date and avoid settlement/deposit date
+          const dateRaw = isPosReport
+            ? (pickField(row,
+                ['تاریخ تراکنش', 'تاریخ انجام تراکنش', 'تاریخ عملیات', 'تاريخ تراكنش', 'تاریخ', 'تاريخ', 'transaction date', 'date'],
+                ['واریز', 'تسویه', 'settlement', 'مبلغ', 'amount', 'کارمزد', 'ساعت', 'زمان', 'وضعیت']
+              ) || pickField(row, ['تاریخ', 'تاريخ', 'date'], ['مبلغ', 'amount']))
+            : pickField(row,
+                ['تاریخ تراکنش', 'تاریخ موثر', 'تاریخ عملیات', 'تاریخ سند', 'تاریخ', 'تاريخ', 'date', 'transaction date'],
+                ['مبلغ', 'amount', 'مانده', 'ساعت', 'زمان']
+              );
+
+          const date = toDate(dateRaw);
+
+          const transactionTime = String(pickField(row,
+            ['زمان تراکنش', 'زمان', 'ساعت تراکنش', 'ساعت', 'time', 'transaction time']
+          ) || '').trim();
+
+          const settlementDateRaw = pickField(row,
+            ['تاریخ واریز', 'تاریخ تسویه', 'تاریخ انتقال', 'settlement date', 'deposit date'],
+            ['مبلغ', 'amount']
+          );
+          const settlementDate = settlementDateRaw === '' ? '' : toDate(settlementDateRaw);
+
+          const sourceCardNumber = toDigits(pickField(row,
+            ['شماره کارت مبدا', 'کارت مبدا', 'شماره کارت برداشت', 'کارت برداشت', 'source card number', 'from card', 'source card']
+          )).replace(/\D/g, '');
+
+          const destinationCardNumber = toDigits(pickField(row,
+            ['شماره کارت مقصد', 'کارت مقصد', 'شماره کارت واریز', 'کارت واریز', 'destination card number', 'to card', 'destination card']
+          )).replace(/\D/g, '');
+
+          const genericCardNumber = toDigits(pickField(row,
+            ['شماره کارت', 'کارت', 'ماسک کارت', 'شماره کارت شتابی', 'card number', 'card no', 'pan']
+          )).replace(/\D/g, '');
+
+          const cardNumber = genericCardNumber || sourceCardNumber || destinationCardNumber;
+          const account = String(pickField(row, ['شماره حساب', 'حساب', 'bank account', 'account']) || (isPosReport ? '' : fileAccountNumber)).trim();
+          const balance = toAmount(pickField(row, ['مانده', 'موجودی', 'مانده حساب', 'balance', 'running balance']));
+
+          if (!amount || (!desc && !track && !referenceNumber && !terminal)) {
+            skipped++;
+            return null;
+          }
           if (/(کارمزد|پایا|ساتنا|fee)/i.test(desc)) feeCount++;
 
           return {
             date,
             school_id: currentUser?.school_id || 1,
             amount,
-            tracking_code: track,
-            bank_account: account || (isPosReport ? 'گزارش پوز' : 'حساب بانکی'),
+            tracking_code: track || referenceNumber,
+            bank_account: account || (isPosReport ? (terminal ? `پوز ${terminal}` : 'گزارش پوز شاپرک') : 'حساب بانکی'),
             card_number: cardNumber,
             source_card_number: sourceCardNumber || undefined,
             destination_card_number: destinationCardNumber || undefined,
@@ -863,7 +1054,7 @@ export const BankScreen: React.FC = () => {
             settlement_date: settlementDate,
             balance: balance || undefined,
             direction: isPosReport ? ('pos_sale' as const) : debit > 0 ? ('withdrawal' as const) : credit > 0 ? ('deposit' as const) : ('unknown' as const),
-            description: desc || (debit ? 'برداشت بانکی' : credit ? 'واریز بانکی' : 'تراکنش بانکی'),
+            description: desc || (isPosReport ? (terminal ? `تراکنش کارتخوان پوز ${terminal}` : 'واریز کارتخوان پوز شاپرک') : debit > 0 ? 'برداشت بانکی' : 'واریز بانکی'),
           };
         }).filter((x): x is NonNullable<typeof x> => x !== null);
 
@@ -882,13 +1073,27 @@ export const BankScreen: React.FC = () => {
               ? configured.find((sc) => toDigits(sc.pos_terminal_number).replace(/\D/g, '').replace(/^0+/, '') === terminalNo)
               : (configured.length === 1 ? configured[0] : undefined);
           const schoolId = customTerminal ? Number(customTerminal.schoolId) : terminalNo ? (terminalSchool?.id || 0) : (terminalSchool?.id || item.school_id);
-          const candidates = transactions.filter((t) =>
-            !usedTxIds.has(t.id) && !t.reconciled && Boolean(t.student_id) &&
-            Number(t.school_id) === Number(schoolId) &&
-            Number(t.amount) === Number(item.amount) &&
-            String(t.tracking_code || '').trim() !== '' &&
-            String(t.tracking_code || '').trim() === String(item.tracking_code || '').trim()
-          );
+
+          // Matching supports both tracking_code and reference_number / RRN
+          const itemTrack = String(item.tracking_code || '').trim();
+          const itemRef = String(item.reference_number || item.pos_reference_code || '').trim();
+
+          const candidates = transactions.filter((t) => {
+            if (usedTxIds.has(t.id) || t.reconciled) return false;
+            if (Number(t.amount) !== Number(item.amount)) return false;
+            if (schoolId && Number(t.school_id) !== Number(schoolId)) return false;
+
+            const tTrack = String(t.tracking_code || '').trim();
+            if (!tTrack) return false;
+
+            // Direct match on tracking code
+            if (itemTrack && tTrack === itemTrack) return true;
+            // Match on reference code / RRN
+            if (itemRef && (tTrack === itemRef || tTrack.endsWith(itemRef) || itemRef.endsWith(tTrack))) return true;
+
+            return false;
+          });
+
           const matched = candidates.length === 1 ? candidates[0] : undefined;
           if (matched) usedTxIds.add(matched.id);
 
@@ -914,9 +1119,13 @@ export const BankScreen: React.FC = () => {
           rows: assignedItems,
         }).catch((err) => console.warn('Cloud sync for bank upload failed:', err));
 
-        alert(`صورتحساب «${sourceName}» با موفقیت خوانده شد: ${count} تراکنش بارگذاری شد (${matchedCount} مورد تطبیق خودکار و ${unmatchedCount} مورد در صف بررسی).`);
+        let reportMsg = `فایل «${sourceName}» (${isPosReport ? 'گزارش پایانه پوز شاپرک' : 'صورتحساب بانکی'}) با موفقیت خوانده شد: ${count} تراکنش بارگذاری گردید (${matchedCount} مورد تطبیق خودکار و ${unmatchedCount} مورد در صف بررسی).`;
+        if (failedPosSkipped > 0) {
+          reportMsg += `\n(تعداد ${failedPosSkipped} تراکنش ناموفق/خطای پوز نادیده گرفته شد)`;
+        }
+        alert(reportMsg);
       } catch (err) {
-        alert('خطا در خواندن فایل بانک: ' + (err instanceof Error ? err.message : String(err)));
+        alert('خطا در خواندن فایل اکسل: ' + (err instanceof Error ? err.message : String(err)));
       }
     };
     reader.onerror = () => alert('خواندن فایل ناموفق بود.');
@@ -1242,6 +1451,29 @@ export const BankScreen: React.FC = () => {
     });
     manualReviewTransaction(transactionId, true, 'تطبیق با برداشت بانکی');
   };
+
+  if (!isSenior) {
+    return (
+      <div className="min-h-screen bg-[#f8f5f9] flex flex-col">
+        <Header title="تطبیق و مغایرت‌گیری بانکی" />
+        <div className="max-w-md mx-auto my-auto p-6 bg-white rounded-3xl border border-[#e5dde8] shadow-sm text-center space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+            <Landmark className="w-8 h-8" />
+          </div>
+          <h2 className="text-lg font-black text-[#341648]">دسترسی محدود به مدیریت ارشد</h2>
+          <p className="text-xs text-gray-600 leading-relaxed">
+            بخش امور بانکی، تطبیق صورتحساب‌ها و گزارش‌های پوز منحصراً در اختیار مدیریت ارشد مجموعه (جناب آقای گلزاری) می‌باشد.
+          </p>
+          <button
+            onClick={() => setCurrentScreen('dashboard')}
+            className="w-full py-2.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs transition-all shadow-sm active:scale-95"
+          >
+            بازگشت به داشبورد
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#f8f5f9] pb-20 w-full max-w-full overflow-x-hidden">

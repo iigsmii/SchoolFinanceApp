@@ -71,6 +71,8 @@ export interface Transaction {
   expense_category_name?: string;
   reconciled?: boolean;
   review_status?: 'pending' | 'approved' | 'rejected';
+  rejection_reason?: string;
+  registered_by?: number | string;
   attachment_url?: string;
   source_id?: number;
   bank_transaction_id?: number;

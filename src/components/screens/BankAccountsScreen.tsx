@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { BankAccount, Transaction, BankTransaction } from '../../types';
-import { formatRial, jalaliFromGregorian, todayJalali } from '../../utils/jalali';
+import { formatRial, jalaliFromGregorian, todayJalali, latinDigits } from '../../utils/jalali';
 import {
   Landmark,
   PlusCircle,
@@ -394,6 +394,29 @@ export const BankAccountsScreen: React.FC = () => {
   const handlePrint = () => {
     window.print();
   };
+
+  if (!isSenior) {
+    return (
+      <div className="min-h-screen bg-[#f8f5f9] flex flex-col">
+        <Header title="مدیریت بانک‌ها و دفاتر بانکی" />
+        <div className="max-w-md mx-auto my-auto p-6 bg-white rounded-3xl border border-[#e5dde8] shadow-sm text-center space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+            <Landmark className="w-8 h-8" />
+          </div>
+          <h2 className="text-lg font-black text-[#341648]">دسترسی محدود به مدیریت ارشد</h2>
+          <p className="text-xs text-gray-600 leading-relaxed">
+            بخش حساب‌های بانکی و کارتخوان‌ها منحصراً در اختیار مدیریت ارشد مجموعه (جناب آقای گلزاری) می‌باشد.
+          </p>
+          <button
+            onClick={() => setCurrentScreen('dashboard')}
+            className="w-full py-2.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs transition-all shadow-sm active:scale-95"
+          >
+            بازگشت به داشبورد
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#f8f5f9] pb-16 print:bg-white print:p-0">
@@ -1004,13 +1027,14 @@ export const BankAccountsScreen: React.FC = () => {
                   <label className="block text-xs font-bold text-[#341648] mb-1.5">مانده آغازین حساب (ریال)</label>
                   <input
                     type="text"
+                    inputMode="numeric"
                     value={formInitialBalance}
                     onChange={(e) => {
-                      const raw = e.target.value.replace(/\D/g, '');
+                      const raw = latinDigits(e.target.value).replace(/\D/g, '');
                       setFormInitialBalance(raw ? Number(raw).toLocaleString('en-US') : '');
                     }}
                     placeholder="مثال: ۱۲۰,۰۰۰,۰۰۰"
-                    className="w-full px-3 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left"
+                    className="w-full px-3 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left focus:outline-hidden"
                     dir="ltr"
                   />
                 </div>

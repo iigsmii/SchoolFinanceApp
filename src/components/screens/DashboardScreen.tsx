@@ -94,6 +94,11 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
   const [debtorSortBy, setDebtorSortBy] = useState<'debt_desc' | 'debt_asc' | 'name' | 'grade' | 'school'>('debt_desc');
   const [showAllDebtors, setShowAllDebtors] = useState(false);
 
+  // Pending items for Senior Manager review
+  const pendingReviewCount = useMemo(() => {
+    return transactions.filter((t) => t.review_status === 'pending' && t.kind !== 'شهریه_بدهی').length;
+  }, [transactions]);
+
   const handleOfflineExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -230,7 +235,6 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
     { id: 'expenses', label: 'هزینه‌ها', icon: Receipt, color: 'text-purple-600', bg: 'bg-purple-50' },
     { id: 'transactions', label: 'تراکنش‌ها', icon: ArrowLeftRight, color: 'text-indigo-600', bg: 'bg-indigo-50' },
     { id: 'statement', label: 'گردش حساب', icon: BookOpen, color: 'text-teal-600', bg: 'bg-teal-50' },
-    { id: 'bank_accounts', label: 'بانک‌ها', icon: Landmark, color: 'text-emerald-700', bg: 'bg-emerald-50' },
     { id: 'claim', label: 'طلب تن‌خواه', icon: Wallet, color: 'text-rose-600', bg: 'bg-rose-50' },
     { id: 'activity', label: 'فعالیت‌ها', icon: ClipboardList, color: 'text-slate-600', bg: 'bg-slate-50' },
     { id: 'settings', label: 'تنظیمات', icon: Settings, color: 'text-gray-600', bg: 'bg-gray-100' },
@@ -385,6 +389,35 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
           </div>
           <button onClick={() => setOfflineSuccessNotice(null)} className="text-emerald-700 p-1">
             <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Senior Review Pending Notification Banner */}
+      {isSenior && pendingReviewCount > 0 && (
+        <div className="p-3 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border-2 border-amber-400 rounded-2xl text-amber-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-xs sm:text-sm font-black flex items-center gap-1.5 text-amber-950">
+                <span>{pendingReviewCount.toLocaleString('fa-IR')} تراکنش و هزینه جدید در انتظار تأیید شماست</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-600 text-white animate-pulse">
+                  نیاز به اقدام
+                </span>
+              </div>
+              <p className="text-[11px] text-amber-800 mt-0.5">
+                توسط مدیران مدارس ثبت شده و برای اعمال قطعی و نمایش با رنگ سبز نیاز به تأیید مدیریت ارشد دارد.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setCurrentScreen('transactions')}
+            className="w-full sm:w-auto px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-black shadow-sm active:scale-95 transition-all flex items-center justify-center gap-1.5 shrink-0"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            <span>مشاهده و بررسی ({pendingReviewCount.toLocaleString('fa-IR')})</span>
           </button>
         </div>
       )}

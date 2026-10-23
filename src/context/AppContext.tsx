@@ -49,6 +49,7 @@ import {
   apiSaveTuition,
   apiSaveExpense,
   apiSaveCheque,
+  apiReviewTransaction,
   apiSaveManager,
   apiSaveSchool,
   apiSaveStaffMember,
@@ -150,6 +151,8 @@ interface AppContextType {
   addBulkDebt: (data: { student_ids: number[]; amount: number; date: string; description: string; school_id: number }) => number;
   deleteTransaction: (id: number) => void;
   updateTransaction: (id: number, data: Partial<Transaction>) => void;
+  approveTransaction: (id: number) => Promise<boolean>;
+  rejectTransaction: (id: number, reason?: string) => Promise<boolean>;
 
   // Expense ops
   addExpense: (data: {
@@ -290,9 +293,9 @@ function mergeCloudAndLocal<T extends { id: string | number }>(remote: T[], loca
   for (const item of remote || []) {
     const key = String(item.id);
     const previous = byId.get(key);
-    if (previous && ('name' in item || 'phone' in item || 'father_phone' in item || 'mother_phone' in item)) {
-      const current = item as T & { name?: string; phone?: string; father_phone?: string; mother_phone?: string };
-      const prior = previous as T & { name?: string; phone?: string; father_phone?: string; mother_phone?: string };
+    if (previous) {
+      const current = item as any;
+      const prior = previous as any;
       byId.set(key, {
         ...prior,
         ...current,
@@ -300,6 +303,9 @@ function mergeCloudAndLocal<T extends { id: string | number }>(remote: T[], loca
         phone: current.phone?.trim() ? current.phone : prior.phone,
         father_phone: current.father_phone?.trim() ? current.father_phone : prior.father_phone,
         mother_phone: current.mother_phone?.trim() ? current.mother_phone : prior.mother_phone,
+        attachment_url: current.attachment_url?.trim() ? current.attachment_url : prior.attachment_url,
+        review_status: current.review_status || prior.review_status,
+        rejection_reason: current.rejection_reason || prior.rejection_reason,
       } as T);
     } else {
       byId.set(key, item);
@@ -392,9 +398,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [categories, setCategories] = useState<ExpenseCategory[]>(() => {
     const loaded = loadFromStorage('categories', INITIAL_CATEGORIES);
+    // If the local categories don't match the Google Sheet categories (e.g. old demo list), refresh to INITIAL_CATEGORIES
+    if (loaded.some((c: ExpenseCategory) => c.name.includes('لوازم‌التحریر') || c.name.includes('تعمیرات، تأسیسات'))) {
+      saveToStorage('categories', INITIAL_CATEGORIES);
+      return INITIAL_CATEGORIES;
+    }
     const hasBankFee = loaded.some((c: ExpenseCategory) => c.name === 'کارمزد بانک');
     if (!hasBankFee) {
-      return [...loaded, { id: '9', name: 'کارمزد بانک', active: true }, { id: '10', name: 'هزینه‌های تن‌خواه مدیر', active: true }];
+      return [...loaded, { id: '10', name: 'کارمزد بانک', active: true }];
     }
     return loaded;
   });
@@ -499,6 +510,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     window.addEventListener('online', onOnline);
     return () => window.removeEventListener('online', onOnline);
+  }, [currentUser, spreadsheetId]);
+
+  // High-Speed Multi-Device Auto-Sync:
+  // 1. Instant sync when app or screen becomes visible / focused (user unlocks phone or switches back)
+  // 2. High-speed periodic background sync every 20 seconds while user is logged in
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const handleVisibilityOrFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        void syncWithGoogleSheets(spreadsheetId);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
+    const intervalId = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        void syncWithGoogleSheets(spreadsheetId);
+      }
+    }, 20000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      clearInterval(intervalId);
+    };
   }, [currentUser, spreadsheetId]);
 
   // Cloud synchronization starts only after an authenticated login.
@@ -1023,6 +1062,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
+    const isSeniorUser = currentUser?.role === 'senior' || currentUser?.role === 'admin';
+    const initReviewStatus: 'approved' | 'pending' = isSeniorUser ? 'approved' : 'pending';
+
     const newTxId = transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101;
     const newTx: Transaction = {
       id: newTxId,
@@ -1041,15 +1083,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       tracking_code: data.tracking_code,
       description: data.description || `پرداخت شهریه (${data.payment_method})`,
       reconciled: data.payment_method === 'پول نقد',
-      review_status: 'approved',
+      review_status: initReviewStatus,
+      registered_by: currentUser?.id,
       attachment_url: data.attachment_url,
     };
 
     setTransactions((prev) => [newTx, ...prev]);
     playTransactionSound();
-    logActivity('ثبت دریافت شهریه', `دریافت ${data.amount.toLocaleString('fa-IR')} ریال از ${student?.name}`, 'transaction', newTxId);
+    logActivity(
+      'ثبت دریافت شهریه',
+      `دریافت ${data.amount.toLocaleString('fa-IR')} ریال از ${student?.name} (${isSeniorUser ? 'تأییدشده' : 'در انتظار تأیید ارشد'})`,
+      'transaction',
+      newTxId
+    );
 
-    apiSaveTuition(newTx).catch((e) => console.warn('Cloud sync tuition payment notice:', e));
+    apiSaveTuition(newTx).then(() => {
+      void syncWithGoogleSheets(spreadsheetId).catch(() => {});
+    }).catch((e) => console.warn('Cloud sync tuition payment notice:', e));
   };
 
   const addBulkDebt = (data: { student_ids: number[]; amount: number; date: string; description: string; school_id: number }): number => {
@@ -1094,6 +1144,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logActivity('ویرایش تراکنش', `ویرایش تراکنش شناسه ${id}`, 'transaction', id);
   };
 
+  const approveTransaction = async (id: number): Promise<boolean> => {
+    setTransactions((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, review_status: 'approved', rejection_reason: undefined } : t))
+    );
+    playSuccessSound();
+    logActivity('تأیید تراکنش مالی', `تأیید تراکنش شناسه ${id} توسط مدیر ارشد`, 'transaction', id);
+    try {
+      await apiReviewTransaction(id, 'approved');
+    } catch (err) {
+      console.warn('Cloud review approval sync notice:', err);
+    }
+    void syncWithGoogleSheets(spreadsheetId).catch(() => {});
+    return true;
+  };
+
+  const rejectTransaction = async (id: number, reason?: string): Promise<boolean> => {
+    setTransactions((prev) =>
+      prev.map((t) =>
+        t.id === id ? { ...t, review_status: 'rejected', rejection_reason: reason || 'عدم تأیید توسط مدیریت ارشد' } : t
+      )
+    );
+    playAlertSound();
+    logActivity('رد تراکنش مالی', `رد تراکنش شناسه ${id} توسط مدیر ارشد: ${reason || 'عدم تأیید'}`, 'transaction', id);
+    try {
+      await apiReviewTransaction(id, 'rejected', reason);
+    } catch (err) {
+      console.warn('Cloud review rejection sync notice:', err);
+    }
+    void syncWithGoogleSheets(spreadsheetId).catch(() => {});
+    return true;
+  };
+
   const addExpense = (data: {
     category_id: string;
     amount: number;
@@ -1107,6 +1189,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     linked_account_name?: string;
     bank_transaction_id?: number;
   }): Transaction => {
+    const isSeniorUser = currentUser?.role === 'senior' || currentUser?.role === 'admin';
+    const initReviewStatus: 'approved' | 'pending' = isSeniorUser ? 'approved' : 'pending';
+
     const newId = 100000 + (transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101);
     const cat = categories.find((c) => c.id === data.category_id);
     const schoolId = data.school_id || currentUser?.school_id || 1;
@@ -1129,15 +1214,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       comment: data.comment,
       description: data.comment || `هزینه ${cat?.name || 'مدرسه'}`,
       reconciled: true,
-      review_status: 'approved',
+      review_status: initReviewStatus,
+      registered_by: currentUser?.id,
       attachment_url: data.attachment_url,
     };
 
     setTransactions((prev) => [newTx, ...prev]);
     playTransactionSound();
-    logActivity('ثبت هزینه', `ثبت هزینه ${cat?.name} به مبلغ ${data.amount.toLocaleString('fa-IR')} ریال`, 'transaction', newId);
+    logActivity(
+      'ثبت هزینه',
+      `ثبت هزینه ${cat?.name} به مبلغ ${data.amount.toLocaleString('fa-IR')} ریال (${isSeniorUser ? 'تأییدشده' : 'در انتظار تأیید ارشد'})`,
+      'transaction',
+      newId
+    );
 
-    apiSaveExpense(newTx).catch((e) => console.warn('Cloud sync expense notice:', e));
+    apiSaveExpense(newTx).then(() => {
+      void syncWithGoogleSheets(spreadsheetId).catch(() => {});
+    }).catch((e) => console.warn('Cloud sync expense notice:', e));
 
     return newTx;
   };
@@ -1832,6 +1925,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addBulkDebt,
         deleteTransaction,
         updateTransaction,
+        approveTransaction,
+        rejectTransaction,
         addExpense,
         addPettyCashIncome,
         deleteExpense,
