@@ -1,7 +1,7 @@
 {
-  "version": "2.16.226",
+  "version": "2.16.230",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Add durable AppData storage for complete cloud sync",
-  "build": 226,
-  "published_at": "2026-10-23T23:06:22Z"
+  "notes": "Fix duplicate TypeScript response field",
+  "build": 230,
+  "published_at": "2026-10-23T23:11:08Z"
 }
