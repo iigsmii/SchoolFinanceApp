@@ -776,7 +776,7 @@ export const TuitionScreen: React.FC = () => {
                   مبلغ کل بدهی (به ریال) <span className="text-rose-500">*</span>
                 </label>
                 <input
-                  type="text"
+                  type="tel"
                   inputMode="numeric"
                   value={formAmount}
                   onChange={(e) => {
@@ -924,7 +924,7 @@ export const TuitionScreen: React.FC = () => {
                   مبلغ پرداختی (به ریال) <span className="text-rose-500">*</span>
                 </label>
                 <input
-                  type="text"
+                  type="tel"
                   inputMode="numeric"
                   value={formAmount}
                   onChange={(e) => {
@@ -1202,7 +1202,7 @@ export const TuitionScreen: React.FC = () => {
                   مبلغ تخفیف (به ریال) <span className="text-rose-500">*</span>
                 </label>
                 <input
-                  type="text"
+                  type="tel"
                   inputMode="numeric"
                   value={formAmount}
                   onChange={(e) => {
@@ -1285,7 +1285,7 @@ export const TuitionScreen: React.FC = () => {
                     مبلغ برای هر دانش‌آموز (ریال) <span className="text-rose-500">*</span>
                   </label>
                   <input
-                    type="text"
+                    type="tel"
                     inputMode="numeric"
                     value={bulkAmount}
                     onChange={(e) => {
