@@ -575,7 +575,7 @@ export const ExpensesScreen: React.FC = () => {
                   مبلغ هزینه (ریال) <span className="text-rose-500">*</span>
                 </label>
                 <input
-                  type="text"
+                  type="tel"
                   inputMode="numeric"
                   value={formAmount}
                   onChange={(e) => {
