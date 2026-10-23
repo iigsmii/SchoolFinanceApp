@@ -119,6 +119,13 @@ export const postToAppsScript = async (
   }
 };
 
+
+/** Generic collection snapshots for data that is not represented by a dedicated sheet. */
+export const apiGetAppData = async (key?: string) =>
+  postToAppsScript({ action: 'app_data_get', ...(key ? { key } : {}) });
+export const apiSaveAppData = async (key: string, value: unknown) =>
+  postToAppsScript({ action: 'app_data_save', key, value });
+
 /** Authenticate against the Apps Script Managers table. Password hashes never leave the server. */
 export const apiLogin = async (username: string, password: string): Promise<{ success: boolean; token?: string; user?: User; error?: string }> => {
   try {
