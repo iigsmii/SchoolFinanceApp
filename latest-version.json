@@ -1,7 +1,7 @@
 {
-  "version": "2.16.230",
+  "version": "2.16.236",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Fix duplicate TypeScript response field",
-  "build": 230,
-  "published_at": "2026-10-23T23:11:08Z"
+  "notes": "Fix transaction kind TypeScript comparisons",
+  "build": 236,
+  "published_at": "2026-10-23T23:53:18Z"
 }
