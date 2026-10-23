@@ -1065,7 +1065,7 @@ function tuitionAdd_(b) {
   const recordDate=date_(b.date);
   const amount=amount_(b.amount);
   if(amount<=0) throw new Error('مبلغ نامعتبر است.');
-  const paymentMethod=String(b.payment_method||'').trim();
+  const paymentMethod=String(b.payment_method||b.payment_source||'').trim();
   if(type==='payment' && !paymentMethod) throw new Error('نوع پرداخت را انتخاب کنید.');
 
   // Cheques are kept in a separate workflow and do NOT reduce student debt until senior approval.
