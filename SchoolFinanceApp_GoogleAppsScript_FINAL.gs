@@ -18,12 +18,13 @@ const CFG = {
   SESSION_HOURS: 6,
   SHEETS: [
     'Managers','Schools','Students','Tuition','Expenses','Transactions',
-    'Bank','BankDetails','ExpenseCategories','Messages','Attachments','ParsianAccounts','Settings','ActivityLogs','Cheques','Requests','Staff'
+    'Bank','BankDetails','ExpenseCategories','Messages','Attachments','ParsianAccounts','Settings','ActivityLogs','Cheques','Requests','Staff','AppData'
   ]
 };
 
 const HEADERS = {
   Requests: ['id','user_id','action','payload_hash','status','result','created_at'],
+  AppData: ['key','value_json','updated_at','updated_by'],
   Managers: ['id','name','username','password','school_id','role','active','created_at','petty_cash_card','petty_cash_bank','petty_cash_shaba','petty_cash_limit','petty_cash_balance','gender'],
   Schools: ['id','name','code','active','created_at','petty_cash_card','type','moeen_code'],
   Staff: ['id','school_id','school_name','name','national_id','phone','role_title','contract_type','hourly_rate','base_salary','insurance_employer_share','insurance_employee_share','bank_card_or_sheba','kol_code','moeen_code','tafsili_code','active','created_at'],
@@ -165,6 +166,51 @@ function setup() {
   return {success:true,message:'Setup completed safely',school_added:'مهد برهان',manager_synced:'آرزو طالب پور'};
 }
 
+
+/**
+ * Generic durable storage for app fields that do not belong to a dedicated
+ * accounting table yet (payroll detail, work logs, bank account setup, SMS
+ * preferences/logs, UI preferences, and future fields). One JSON record per
+ * collection key; never deletes or overwrites other collections.
+ */
+function appDataGet_(b) {
+  auth_(b);
+  ensureStructure_();
+  const wanted=String(b.key||'').trim();
+  const all=rows_('AppData').map(x=>x.obj);
+  if(wanted) {
+    const item=all.find(x=>String(x.key)===wanted);
+    return {success:true,key:wanted,value:item?parseJsonSafe_(item.value_json, null):null,updated_at:item?item.updated_at||'': ''};
+  }
+  const data={};
+  all.forEach(x=>{data[String(x.key)]=parseJsonSafe_(x.value_json,null);});
+  return {success:true,data};
+}
+function appDataSave_(b) {
+  const user=auth_(b);
+  const key=String(b.key||'').trim();
+  if(!key || key.length>120) throw new Error('کلید اطلاعات نامعتبر است.');
+  ensureStructure_();
+  const sh=sheet_('AppData');
+  const found=rows_('AppData').find(x=>String(x.obj.key)===key);
+  const value=JSON.stringify(b.value===undefined?null:b.value);
+  const row=[key,value,now_(),String(user.username||user.name||user.id||'')];
+  if(found) updateRow_('AppData',found.row,row); else sh.appendRow(row);
+  SpreadsheetApp.flush();
+  return {success:true,key,updated_at:row[2]};
+}
+function appDataDelete_(b) {
+  const user=auth_(b);
+  if(user.role!=='senior'&&user.role!=='admin') throw new Error('فقط مدیر ارشد اجازه حذف این داده را دارد.');
+  const key=String(b.key||'').trim();
+  const found=rows_('AppData').find(x=>String(x.obj.key)===key);
+  if(found) sheet_('AppData').deleteRow(found.row);
+  return {success:true,key};
+}
+function parseJsonSafe_(value,fallback) {
+  try { return JSON.parse(String(value||'')); } catch (_) { return fallback; }
+}
+
 function findManagerByUsername_(username) {
   const rows=rows_('Managers');
   for(let i=0;i<rows.length;i++) if(String(rows[i].obj.username||'').trim()===String(username).trim()) return rows[i];
@@ -213,6 +259,7 @@ function doGet(e) {
     if(action==='my_claim') return json_(myClaim_(b));
     if(action==='app_version') return json_(appVersion_(b));
     if(action==='activity_logs')return json_(activityLogs_(b));
+    if(action==='app_data_get') return json_(appDataGet_(b));
     return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.15.0',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
@@ -269,7 +316,7 @@ function doPost(e) {
     }
 
     // POST carries tokens in its body, but read-only actions do not need a write lock.
-    const reads={schools:schools_,staff:staff_,students:students_,tuition:tuition_,expenses:expenses_,transactions:transactions_,bank:bank_,bank_review:bankReview_,bank_rules_get:bankRulesGet_,categories:categories_,messages:messages_,managers:managers_,cheques:cheques_,cheque_list:chequeList_,cheque_alerts:chequeAlerts_,summary:summary_,my_claim:myClaim_,app_version:appVersion_,activity_logs:activityLogs_,parsian_export:parsianExport_,parsian_school_map:parsianSchoolMap_,parsian_student_accounts:parsianStudentAccounts_,attachment_read:attachmentRead_};
+    const reads={schools:schools_,staff:staff_,students:students_,tuition:tuition_,expenses:expenses_,transactions:transactions_,bank:bank_,bank_review:bankReview_,bank_rules_get:bankRulesGet_,categories:categories_,messages:messages_,managers:managers_,cheques:cheques_,cheque_list:chequeList_,cheque_alerts:chequeAlerts_,summary:summary_,my_claim:myClaim_,app_version:appVersion_,activity_logs:activityLogs_,parsian_export:parsianExport_,parsian_school_map:parsianSchoolMap_,parsian_student_accounts:parsianStudentAccounts_,attachment_read:attachmentRead_,app_data_get:appDataGet_};
     if(reads[action])return json_(reads[action](body));
     lock.waitLock(30000);locked=true;writeLockHeld_=true;
     ensureStructure_();
@@ -296,6 +343,8 @@ function doPost(e) {
     }
     let result;
     switch(action) {
+      case 'app_data_save': result=appDataSave_(body); break;
+      case 'app_data_delete': result=appDataDelete_(body); break;
       case 'login': result=login_(body); break;
       case 'logout': result=logout_(body); break;
       case 'schools': result=schools_(body); break;
