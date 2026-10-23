@@ -1427,7 +1427,21 @@ function bankMatch_(b) {
   ]);
   return {success:true,matched:true};
 }
-function transactionReview_(b){ const u=auth_(b,['senior','admin']); const hit=findRow_('Transactions',b.id); if(!hit) throw new Error('تراکنش یافت نشد.'); const r=hit.obj; const approved=String(b.status||'')==='approved'; updateRow_('Transactions',hit.row,[r.id,r.date,r.school_id,r.kind,r.amount,r.description,r.tracking_code,r.image_url,r.created_by,r.created_at,r.reconciled,approved,r.source_id,r.payment_source||'']); return {success:true,approved:approved}; }
+function transactionReview_(b){
+  auth_(b,['senior','admin']);
+  const hit=findRow_('Transactions',b.id);
+  if(!hit) throw new Error('تراکنش یافت نشد.');
+  const r=hit.obj, approved=String(b.status||'')==='approved';
+  if(String(r.kind)==='expense'){
+    const src=findRow_('Expenses',r.source_id);
+    if(src){const e=src.obj;updateRow_('Expenses',src.row,[e.id,e.date,e.school_id,e.category,e.amount,e.description,e.tracking_code,e.image_url,e.created_by,e.created_at,e.reconciled,approved,e.payment_source||'bank']);}
+  } else if(String(r.kind)==='payment'||String(r.kind)==='debt'){
+    const src=findRow_('Tuition',r.source_id);
+    if(src){const q=src.obj;updateRow_('Tuition',src.row,[q.id,q.date,q.student_id,q.school_id,q.type,q.amount,q.description,q.tracking_code,q.image_url,q.created_by,q.created_at,q.reconciled,approved,q.payment_source||'']);}
+  }
+  updateRow_('Transactions',hit.row,[r.id,r.date,r.school_id,r.kind,r.amount,r.description,r.tracking_code,r.image_url,r.created_by,r.created_at,r.reconciled,approved,r.source_id,r.payment_source||'']);
+  return {success:true,approved:approved};
+}
 function bankReconcile_(b){
   auth_(b,['senior','admin']);
   const bankRows=rows_('Bank');
