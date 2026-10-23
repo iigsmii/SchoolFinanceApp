@@ -372,6 +372,7 @@ function doPost(e) {
       case 'transactions': result=transactions_(body); break;
       case 'finance_transaction': result=financeTransactionAdd_(body); break;
       case 'transaction_delete': result=transactionDelete_(body); break;
+      case 'transaction_delete_match': result=transactionDeleteMatch_(body); break;
       case 'transaction_update': result=transactionUpdate_(body); break;
       case 'bank': result=bank_(body); break;
       case 'bank_review': result=bankReview_(body); break;
@@ -1286,6 +1287,27 @@ function transactionUpdate_(b) {
   } else throw new Error('ویرایش این نوع تراکنش پشتیبانی نمی‌شود.');
   updateRow_('Transactions',hit.row,[hit.obj.id,date,hit.obj.school_id,kind,amount,description,b.tracking_code!==undefined?String(b.tracking_code):hit.obj.tracking_code,hit.obj.image_url,hit.obj.created_by,hit.obj.created_at,hit.obj.reconciled,hit.obj.approved,sourceId,hit.obj.payment_source||'bank']);
   return {success:true};
+}
+
+function transactionDeleteMatch_(b) {
+  const u=auth_(b);
+  const kind=String(b.kind||'');
+  if(['expense','payment','debt'].indexOf(kind)<0) throw new Error('نوع تراکنش برای حذف معتبر نیست.');
+  const candidates=rows_('Transactions').filter(x=>{
+    const t=x.obj;
+    if(String(t.kind)!==kind || String(t.school_id)!==String(b.school_id) || Number(t.amount)!==Number(b.amount)) return false;
+    if(String(t.date)!==String(b.date) || String(t.description||'')!==String(b.description||'')) return false;
+    if(String(t.tracking_code||'')!==String(b.tracking_code||'')) return false;
+    if((kind==='payment'||kind==='debt') && String(b.student_id||'') && String((findRow_('Tuition',t.source_id)||{obj:{}}).obj.student_id||'')!==String(b.student_id)) return false;
+    if(u.role!=='senior' && String(t.created_by)!==String(u.id)) return false;
+    return true;
+  });
+  if(candidates.length!==1) throw new Error(candidates.length===0?'تراکنش متناظر در گوگل‌شیت پیدا نشد؛ برای جلوگیری از حذف اشتباه، تغییری اعمال نشد.':'چند تراکنش مشابه پیدا شد؛ حذف خودکار انجام نشد تا سند اشتباهی پاک نشود.');
+  const hit=candidates[0], sourceId=hit.obj.source_id;
+  if(kind==='expense') softDeleteBySource_('Expenses',sourceId);
+  if(kind==='payment'||kind==='debt') softDeleteBySource_('Tuition',sourceId);
+  voidRecord_('Transactions',hit.row);
+  return {success:true,deleted_id:hit.obj.id};
 }
 
 function transactionDelete_(b) {
