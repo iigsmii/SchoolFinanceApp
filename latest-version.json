@@ -1,7 +1,7 @@
 {
-  "version": "2.16.224",
+  "version": "2.16.225",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Use Android numeric keypad for quick invoice amount",
-  "build": 224,
-  "published_at": "2026-10-23T22:53:51Z"
+  "notes": "Remove duplicate tuition payment dashboard shortcut",
+  "build": 225,
+  "published_at": "2026-10-23T22:56:28Z"
 }
