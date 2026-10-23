@@ -246,7 +246,7 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
             </div>
 
             <input
-              type="text"
+              type="tel"
               inputMode="numeric"
               value={tuitionAmount}
               onChange={(e) => {
