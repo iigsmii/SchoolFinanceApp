@@ -247,6 +247,7 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
 
             <input
               type="text"
+              inputMode="numeric"
               value={tuitionAmount}
               onChange={(e) => {
                 const raw = e.target.value.replace(/\D/g, '');
