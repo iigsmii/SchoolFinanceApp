@@ -1116,6 +1116,7 @@ export const StaffScreen: React.FC = () => {
                     </label>
                     <input
                       type="text"
+                    inputMode="numeric"
                       disabled={!isSenior}
                       value={staffHourlyRate}
                       onChange={(e) => {
@@ -1134,6 +1135,7 @@ export const StaffScreen: React.FC = () => {
                     </label>
                     <input
                       type="text"
+                    inputMode="numeric"
                       disabled={!isSenior}
                       value={staffBaseSalary}
                       onChange={(e) => {
@@ -1154,6 +1156,7 @@ export const StaffScreen: React.FC = () => {
                     </label>
                     <input
                       type="text"
+                    inputMode="numeric"
                       disabled={!isSenior}
                       value={staffEmployerIns}
                       onChange={(e) => {
@@ -1172,6 +1175,7 @@ export const StaffScreen: React.FC = () => {
                     </label>
                     <input
                       type="text"
+                    inputMode="numeric"
                       disabled={!isSenior}
                       value={staffEmployeeIns}
                       onChange={(e) => {
@@ -1466,6 +1470,7 @@ export const StaffScreen: React.FC = () => {
                   <label className="block text-xs font-bold text-gray-700 mb-1">مبلغ ناخالص (ریال)</label>
                   <input
                     type="text"
+                    inputMode="numeric"
                     value={payGrossAmount}
                     onChange={(e) => {
                       const raw = e.target.value.replace(/\D/g, '');
@@ -1480,6 +1485,7 @@ export const StaffScreen: React.FC = () => {
                   <label className="block text-xs font-bold text-gray-700 mb-1">کسر بیمه (ریال)</label>
                   <input
                     type="text"
+                    inputMode="numeric"
                     value={payInsuranceDeduction}
                     onChange={(e) => {
                       const raw = e.target.value.replace(/\D/g, '');
@@ -1494,6 +1500,7 @@ export const StaffScreen: React.FC = () => {
                   <label className="block text-xs font-bold text-emerald-800 mb-1">خالص پرداختی (ریال) *</label>
                   <input
                     type="text"
+                    inputMode="numeric"
                     value={payNetAmount}
                     onChange={(e) => {
                       const raw = e.target.value.replace(/\D/g, '');
