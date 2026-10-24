@@ -70,7 +70,7 @@ const cleanHeader = (h: any) =>
 export const postToAppsScript = async (
   payload: Record<string, any>,
   webAppUrl: string = DEFAULT_WEBAPP_URL
-): Promise<{ success: boolean; error?: string; data?: any; id?: number; count?: number; skipped?: number; message?: string; matched?: number; unmatched?: number; rules?: any; configured?: boolean; value?: any; key?: string; updated_at?: string }> => {
+): Promise<{ success: boolean; error?: string; data?: any; id?: number; count?: number; skipped?: number; message?: string; matched?: number; unmatched?: number; rules?: any; configured?: boolean; value?: any; key?: string; updated_at?: string; transaction_id?: number | string }> => {
   try {
     const url = webAppUrl.trim();
     if (!url) return { success: false, error: 'آدرس وب‌اپ تعریف نشده است.' };
