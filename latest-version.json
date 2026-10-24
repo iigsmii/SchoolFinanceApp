@@ -1,7 +1,7 @@
 {
-  "version": "2.16.224",
+  "version": "2.16.243",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Use Android numeric keypad for quick invoice amount",
-  "build": 224,
-  "published_at": "2026-10-23T22:53:51Z"
+  "notes": "chore: update latest Android build manifest [skip ci]",
+  "build": 243,
+  "published_at": "2026-10-24T01:14:21Z"
 }
