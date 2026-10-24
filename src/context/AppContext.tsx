@@ -1146,7 +1146,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     apiSaveTuition(newTx).then(() => {
       void syncWithGoogleSheets(spreadsheetId).catch(() => {});
-    }).catch((e) => console.warn('Cloud sync tuition payment notice:', e));
+    }).catch((e) => {
+      console.warn('Cloud sync tuition payment failed:', e);
+      setSyncError(e?.message || 'ثبت شهریه در Google Sheets انجام نشد؛ اطلاعات محلی باقی مانده است.');
+      setSyncStatus('error');
+    });
   };
 
   const addBulkDebt = (data: { student_ids: number[]; amount: number; date: string; description: string; school_id: number }): number => {
@@ -1218,6 +1222,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const approveTransaction = async (id: number): Promise<boolean> => {
+    const previousStatus = transactions.find((t) => t.id === id)?.review_status || 'pending';
     setTransactions((prev) =>
       prev.map((t) => (t.id === id ? { ...t, review_status: 'approved', rejection_reason: undefined } : t))
     );
@@ -1225,14 +1230,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logActivity('تأیید تراکنش مالی', `تأیید تراکنش شناسه ${id} توسط مدیر ارشد`, 'transaction', id);
     try {
       await apiReviewTransaction(id, 'approved');
-    } catch (err) {
-      console.warn('Cloud review approval sync notice:', err);
+    } catch (err: any) {
+      console.warn('Cloud review approval failed:', err);
+      setTransactions((prev) => prev.map((t) => t.id === id ? { ...t, review_status: previousStatus } : t));
+      setSyncError(err?.message || 'تأیید در Google Sheets انجام نشد.');
+      setSyncStatus('error');
+      return false;
     }
     void syncWithGoogleSheets(spreadsheetId).catch(() => {});
     return true;
   };
 
   const rejectTransaction = async (id: number, reason?: string): Promise<boolean> => {
+    const previousStatus = transactions.find((t) => t.id === id)?.review_status || 'pending';
     setTransactions((prev) =>
       prev.map((t) =>
         t.id === id ? { ...t, review_status: 'rejected', rejection_reason: reason || 'عدم تأیید توسط مدیریت ارشد' } : t
@@ -1242,8 +1252,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logActivity('رد تراکنش مالی', `رد تراکنش شناسه ${id} توسط مدیر ارشد: ${reason || 'عدم تأیید'}`, 'transaction', id);
     try {
       await apiReviewTransaction(id, 'rejected', reason);
-    } catch (err) {
-      console.warn('Cloud review rejection sync notice:', err);
+    } catch (err: any) {
+      console.warn('Cloud review rejection failed:', err);
+      setTransactions((prev) => prev.map((t) => t.id === id ? { ...t, review_status: previousStatus } : t));
+      setSyncError(err?.message || 'رد تراکنش در Google Sheets انجام نشد.');
+      setSyncStatus('error');
+      return false;
     }
     void syncWithGoogleSheets(spreadsheetId).catch(() => {});
     return true;
@@ -1303,7 +1317,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     apiSaveExpense(newTx).then(() => {
       void syncWithGoogleSheets(spreadsheetId).catch(() => {});
-    }).catch((e) => console.warn('Cloud sync expense notice:', e));
+    }).catch((e) => {
+      console.warn('Cloud sync expense failed:', e);
+      setSyncError(e?.message || 'ثبت هزینه در Google Sheets انجام نشد؛ اطلاعات محلی باقی مانده است.');
+      setSyncStatus('error');
+    });
 
     return newTx;
   };
