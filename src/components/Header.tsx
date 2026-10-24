@@ -20,6 +20,10 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack = true }) => {
     syncWithGoogleSheets,
     connectWithGoogle,
     goBack,
+    pendingSyncCount,
+    failedSyncItems,
+    retryFailedSync,
+    dismissFailedSync,
   } = useApp();
 
   const handleSyncClick = async () => {
@@ -120,6 +124,27 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack = true }) => {
           </button>
         </div>
       </div>
+      {(pendingSyncCount > 0 || failedSyncItems.length > 0) && (
+        <div className="max-w-4xl mx-auto mt-2 text-xs" dir="rtl">
+          {pendingSyncCount > 0 && failedSyncItems.length === 0 && (
+            <div className="rounded-xl bg-amber-50 border border-amber-200 text-amber-800 px-3 py-1.5">
+              {pendingSyncCount.toLocaleString('fa-IR')} تغییر روی این دستگاه ذخیره شده و پس از اتصال به اینترنت به گوگل‌شیت ارسال می‌شود.
+            </div>
+          )}
+          {failedSyncItems.length > 0 && (
+            <div className="rounded-xl bg-red-50 border border-red-200 text-red-800 px-3 py-2 space-y-1.5">
+              <div className="font-bold">{failedSyncItems.length.toLocaleString('fa-IR')} مورد در گوگل‌شیت ثبت نشد:</div>
+              {failedSyncItems.slice(0, 5).map((item) => (
+                <div key={item.key} className="flex items-center justify-between gap-2">
+                  <span>{item.label}{item.error ? ` — ${item.error}` : ''}</span>
+                  <button type="button" onClick={() => dismissFailedSync(item.key)} className="px-2 py-0.5 rounded-lg bg-white border border-red-200 font-bold">حذف</button>
+                </div>
+              ))}
+              <button type="button" onClick={retryFailedSync} className="px-3 py-1 rounded-lg bg-red-600 text-white font-bold">تلاش مجدد برای همه</button>
+            </div>
+          )}
+        </div>
+      )}
     </header>
   );
 };

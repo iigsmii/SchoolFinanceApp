@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   User,
   School,
@@ -45,16 +45,33 @@ import {
   loadDataFromPublicGoogleSheet,
   extractSpreadsheetId,
   apiLogin,
-  apiSaveStudent,
-  apiSaveTuition,
-  apiSaveExpense,
-  apiSaveCheque,
-  apiReviewTransaction,
-  apiSaveManager,
-  apiSaveSchool,
-  apiSaveStaffMember,
-  postToAppsScript,
+  buildStudentPayload,
+  buildTuitionPayload,
+  buildExpensePayload,
+  buildChequePayload,
+  buildPettyIncomePayload,
+  buildReviewPayload,
+  buildManagerPayload,
+  buildSchoolPayload,
+  buildStaffPayload,
+  buildBankAccountPayload,
+  buildWorkLogPayload,
+  buildPayrollPayload,
 } from '../services/googleSheets';
+import {
+  enqueue,
+  loadOutbox,
+  outboxSnapshot,
+  subscribeOutbox,
+  rewriteOutbox,
+  dismissEntry,
+  retryFailedEntries,
+  drainOutbox,
+  type OutboxEntry,
+  type OutboxEntity,
+  type DrainResult,
+} from '../services/outbox';
+import { primeAttachmentCache, stripInlineImages } from '../services/attachments';
 import {
   playSuccessSound,
   playTransactionSound,
@@ -116,6 +133,10 @@ interface AppContextType {
   connectWithGoogle: () => Promise<boolean>;
   disconnectGoogle: () => Promise<void>;
   syncWithGoogleSheets: (targetSheetId?: string) => Promise<boolean>;
+  pendingSyncCount: number;
+  failedSyncItems: Array<{ key: string; action: string; label: string; error: string }>;
+  retryFailedSync: () => void;
+  dismissFailedSync: (key: string) => void;
   syncStats: { studentsCount: number; transactionsCount: number; chequesCount: number; expensesCount: number } | null;
 
   // Student ops
@@ -314,6 +335,54 @@ function mergeCloudAndLocal<T extends { id: string | number }>(remote: T[], loca
   return Array.from(byId.values());
 }
 
+
+// ───────── Temporary ids for records that exist only on this device until the server confirms them ─────────
+const TEMP_BASE = 900000000;
+const nextTempId = (): number => {
+  try {
+    const n = (Number(localStorage.getItem('school_finance_temp_seq')) || 0) + 1;
+    localStorage.setItem('school_finance_temp_seq', String(n));
+    return TEMP_BASE + n;
+  } catch {
+    return TEMP_BASE + Math.floor(Math.random() * 90000000);
+  }
+};
+const tempStringId = (): string => `tmp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+const isTempId = (id: any): boolean => (typeof id === 'string' ? id.startsWith('tmp_') : Number(id) >= TEMP_BASE);
+/** Transaction ids in the app are shifted per sheet: expenses +100000, ledger-only documents +200000000. */
+const txServerId = (id: number): number => (id >= 200000000 && id < TEMP_BASE ? id - 200000000 : id >= 100000 && id < 200000000 ? id - 100000 : id);
+
+const ACTION_LABELS: Record<string, string> = {
+  student_add: 'ثبت دانش‌آموز', student_update: 'ویرایش دانش‌آموز', student_delete: 'حذف دانش‌آموز',
+  tuition_add: 'ثبت شهریه/بدهی/تخفیف', tuition_bulk_debt: 'ثبت گروهی بدهی', tuition_update: 'ویرایش شهریه', tuition_delete: 'حذف شهریه',
+  expense_add: 'ثبت هزینه', expense_update: 'ویرایش هزینه', expense_delete: 'حذف هزینه', transaction_update: 'ویرایش سند', transaction_delete: 'حذف سند',
+  transaction_review: 'تأیید/رد تراکنش', finance_transaction: 'ثبت واریزی', cheque_add: 'ثبت چک', cheque_update: 'ویرایش چک', cheque_delete: 'حذف چک', cheque_review: 'بررسی چک',
+  staff_add: 'ثبت پرسنل', staff_update: 'ویرایش پرسنل', staff_delete: 'حذف پرسنل', staff_worklog_add: 'ثبت کارکرد', staff_worklog_delete: 'حذف کارکرد',
+  payroll_add: 'ثبت پرداخت حقوق', payroll_delete: 'حذف پرداخت حقوق', bank_account_add: 'تعریف حساب بانکی', bank_account_update: 'ویرایش حساب بانکی', bank_account_delete: 'حذف حساب بانکی',
+  bank_upload: 'ورود صورتحساب بانک', bank_reconcile: 'تطبیق بانکی', bank_annotation: 'تخصیص تراکنش بانکی', bank_match: 'تطبیق دستی بانک',
+  manager_add: 'ثبت مدیر', manager_update: 'ویرایش مدیر', manager_delete: 'حذف مدیر', school_add: 'ثبت مدرسه', school_update: 'ویرایش مدرسه', school_delete: 'حذف مدرسه',
+  category_add: 'ثبت سرفصل هزینه', category_update: 'ویرایش سرفصل هزینه', message_add: 'ارسال پیام', message_delete: 'حذف پیام',
+};
+
+/**
+ * Merges a server list into the local copy:
+ *  - the server wins for ids it returns,
+ *  - an item this device saw on the server earlier but that is gone now was deleted elsewhere → removed,
+ *  - items never seen on the server (still waiting in the outbox) are kept.
+ */
+function reconcileEntity<T extends { id: string | number }>(name: string, remote: T[], local: T[]): T[] {
+  const key = `synced_ids_${name}`;
+  const seen = new Set<string>(loadFromStorage<string[]>(key, []));
+  const remoteIds = new Set(remote.map((r) => String(r.id)));
+  const keptLocal = (local || []).filter((l) => {
+    const id = String(l.id);
+    return remoteIds.has(id) || !seen.has(id) || isTempId(l.id);
+  });
+  const merged = mergeCloudAndLocal(remote, keptLocal);
+  saveToStorage(key, Array.from(remoteIds));
+  return merged;
+}
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [themeIndex, setThemeIndexState] = useState<number>(() => loadFromStorage('theme_index', 0));
   const [fontScale, setFontScaleState] = useState<number>(() => loadFromStorage('font_scale', 1));
@@ -468,8 +537,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => saveToStorage('users', users), [users]);
   useEffect(() => saveToStorage('categories', categories), [categories]);
   useEffect(() => saveToStorage('students', students), [students]);
-  useEffect(() => saveToStorage('transactions', transactions), [transactions]);
-  useEffect(() => saveToStorage('cheques', cheques), [cheques]);
+  useEffect(() => saveToStorage('transactions', stripInlineImages(transactions)), [transactions]);
+  useEffect(() => saveToStorage('cheques', stripInlineImages(cheques)), [cheques]);
   useEffect(() => saveToStorage('bank_txs', bankTransactions), [bankTransactions]);
   useEffect(() => saveToStorage('senior_msgs', seniorMessages), [seniorMessages]);
   useEffect(() => saveToStorage('activity_logs', activityLogs), [activityLogs]);
@@ -479,7 +548,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => saveToStorage('sms_config', smsConfig), [smsConfig]);
   useEffect(() => saveToStorage('staff_members', staffMembers), [staffMembers]);
   useEffect(() => saveToStorage('staff_work_logs', staffWorkLogs), [staffWorkLogs]);
-  useEffect(() => saveToStorage('payroll_payments', payrollPayments), [payrollPayments]);
+  useEffect(() => saveToStorage('payroll_payments', stripInlineImages(payrollPayments)), [payrollPayments]);
 
   const setThemeIndex = (idx: number) => setThemeIndexState(Math.max(0, Math.min(idx, THEME_ACCENTS.length - 1)));
   const setFontScale = (scale: number) => setFontScaleState(Math.max(0.85, Math.min(scale, 1.3)));
@@ -604,147 +673,297 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     saveToStorage('last_sync_time', null);
   };
 
-  const syncWithGoogleSheets = async (targetSheetId?: string): Promise<boolean> => {
+  // ───────────────────────── Persistent send queue (outbox) ─────────────────────────
+  // Every change is applied locally at once, written to a durable queue, then sent to Google
+  // Sheets in order. Locally created records carry a temporary id that is replaced by the
+  // server id once the write is confirmed.
+  const [outboxInfo, setOutboxInfo] = useState<{ pending: number; failed: Array<{ key: string; action: string; label: string; error: string }> }>({ pending: 0, failed: [] });
+
+  const refreshOutboxInfo = () => {
+    const list = outboxSnapshot();
+    setOutboxInfo({
+      pending: list.filter((e) => !e.failed).length,
+      failed: list.filter((e) => e.failed).map((e) => ({ key: e.key, action: e.action, label: ACTION_LABELS[e.action] || e.action, error: e.error || '' })),
+    });
+  };
+
+  useEffect(() => {
+    void loadOutbox().then(refreshOutboxInfo);
+    return subscribeOutbox(refreshOutboxInfo);
+  }, []);
+
+  // One-time migration of the old retry list, then flush anything left from a previous session.
+  useEffect(() => {
+    void (async () => {
+      const legacy = loadFromStorage<Student[]>('pending_student_uploads', []);
+      if (legacy.length) {
+        saveToStorage('pending_student_uploads', []);
+        for (const st of legacy) {
+          await enqueue({ action: 'student_add', payload: { ...buildStudentPayload(st, 'add'), id: undefined }, entity: { type: 'student', id: st.id } });
+        }
+      }
+      if (currentUser) void syncWithGoogleSheets(spreadsheetId).catch(() => {});
+    })();
+  }, []);
+
+  const replaceId = (setter: (fn: (prev: any[]) => any[]) => void, tmp: any, real: any, patch: Record<string, any> = {}) => {
+    setter((prev) => {
+      if (String(tmp) === String(real)) return prev.map((x) => (String(x.id) === String(tmp) ? { ...x, ...patch } : x));
+      const hasReal = prev.some((x) => String(x.id) === String(real));
+      if (hasReal) return prev.filter((x) => String(x.id) !== String(tmp));
+      return prev.map((x) => (String(x.id) === String(tmp) ? { ...x, ...patch, id: real } : x));
+    });
+  };
+
+  const rewriteRefs = (field: string, tmp: any, real: any) =>
+    rewriteOutbox((e) => {
+      const p = e.payload;
+      if (String(p[field]) === String(tmp)) p[field] = real;
+      if (field === 'student_id' && Array.isArray(p.student_ids)) p.student_ids = p.student_ids.map((x: any) => (String(x) === String(tmp) ? real : x));
+    });
+
+  const remapQueuedEdits = (kind: string, tmp: any, real: any) =>
+    rewriteOutbox((e) => {
+      const en = e.entity;
+      if (!en || String(en.id) !== String(tmp) || !en.type.startsWith(kind + ':')) return;
+      en.id = real;
+      if (kind === 'tx') {
+        if (en.type === 'tx:review') Object.assign(e.payload, buildReviewPayload(Number(real), e.payload.status, e.payload.rejection_reason));
+        else e.payload.id = txServerId(Number(real));
+      } else e.payload.id = real;
+    });
+
+  const remapTx = (tmp: number, real: number, patch: Record<string, any> = {}) => {
+    replaceId(setTransactions as any, tmp, real, patch);
+    remapQueuedEdits('tx', tmp, real);
+    rewriteOutbox((e) => {
+      if (e.entity?.type === 'bank:match' && String(e.entity.id) === String(tmp)) {
+        e.entity.id = real;
+        e.payload.source_id = txServerId(real);
+      }
+    });
+  };
+
+  const dropTempEntity = (ent: OutboxEntity) => {
+    const id = ent.id;
+    switch (ent.type) {
+      case 'student': setStudents((p) => p.filter((x) => x.id !== id)); break;
+      case 'tuition': case 'expense': case 'petty_income': setTransactions((p) => p.filter((x) => x.id !== id)); break;
+      case 'bulk_debt': setTransactions((p) => p.filter((x) => !(ent.extra?.temp_ids || []).includes(x.id))); break;
+      case 'cheque': setCheques((p) => p.filter((x) => x.id !== id)); if (ent.extra?.tx_temp_id) setTransactions((p) => p.filter((x) => x.id !== ent.extra?.tx_temp_id)); break;
+      case 'worklog': setStaffWorkLogs((p) => p.filter((x) => x.id !== id)); break;
+      case 'payroll': setPayrollPayments((p) => p.filter((x) => x.id !== id)); break;
+      case 'bank_account': setBankAccounts((p) => p.filter((x) => x.id !== id)); break;
+      case 'staff': setStaffMembers((p) => p.filter((x) => x.id !== id)); break;
+      case 'school': setSchools((p) => p.filter((x) => x.id !== id)); break;
+      case 'manager': setUsers((p) => p.filter((x) => x.id !== id)); break;
+      case 'category': setCategories((p) => p.filter((x) => x.id !== id)); break;
+      case 'message': setSeniorMessages((p) => p.filter((x) => x.id !== id)); break;
+      case 'bank_upload': setBankTransactions((p) => p.filter((x) => !(ent.extra?.temp_ids || []).includes(x.id))); break;
+      default: break;
+    }
+  };
+
+  const onOutboxSuccess = async (entry: OutboxEntry, res: any) => {
+    if (res?.image_url && entry.payload?.base64) {
+      await primeAttachmentCache(res.image_url, `data:${entry.payload.mime_type || 'image/jpeg'};base64,${entry.payload.base64}`);
+    }
+    const ent = entry.entity;
+    if (!ent) return;
+    const tmp = ent.id as any;
+    const image: Record<string, any> = res?.image_url ? { attachment_url: res.image_url } : {};
+    const review: Record<string, any> = res?.review_status ? { review_status: res.review_status } : {};
+    switch (ent.type) {
+      case 'student': {
+        const real = Number(res.id);
+        replaceId(setStudents as any, tmp, real);
+        setTransactions((p) => p.map((t) => (t.student_id === tmp ? { ...t, student_id: real } : t)));
+        setCheques((p) => p.map((c) => (c.student_id === tmp ? { ...c, student_id: real } : c)));
+        setBankTransactions((p) => p.map((b) => (b.assigned_student_id === tmp ? { ...b, assigned_student_id: real } : b)));
+        await rewriteRefs('student_id', tmp, real);
+        await remapQueuedEdits('student', tmp, real);
+        break;
+      }
+      case 'tuition': remapTx(tmp, Number(res.id), { ...image, ...review }); break;
+      case 'expense': remapTx(tmp, 100000 + Number(res.id), { ...image, ...review }); break;
+      case 'petty_income': remapTx(tmp, 200000000 + Number(res.id), review); break;
+      case 'bulk_debt': {
+        const pairs: Array<{ student_id: any; tmp: number }> = ent.extra?.pairs || [];
+        (Array.isArray(res.ids) ? res.ids : []).forEach((r: any) => {
+          const pair = pairs.find((p) => String(p.student_id) === String(r.student_id));
+          if (pair) remapTx(pair.tmp, Number(r.id), { review_status: 'approved' });
+        });
+        break;
+      }
+      case 'cheque': {
+        replaceId(setCheques as any, tmp, Number(res.id), { ...image, ...(res.status ? { status: res.status } : {}) });
+        await remapQueuedEdits('cheque', tmp, Number(res.id));
+        if (ent.extra?.tx_temp_id && res.tuition_id) remapTx(ent.extra.tx_temp_id, Number(res.tuition_id), { review_status: 'approved', ...image });
+        break;
+      }
+      case 'cheque:review': {
+        if (ent.extra?.tx_temp_id) setTransactions((p) => p.filter((x) => x.id !== ent.extra?.tx_temp_id));
+        if (res.status) setCheques((p) => p.map((c) => (c.id === ent.id ? { ...c, status: res.status, received_confirmed: res.received_confirmed ?? c.received_confirmed, in_favor_confirmed: res.in_favor_confirmed ?? c.in_favor_confirmed } : c)));
+        break;
+      }
+      case 'worklog': replaceId(setStaffWorkLogs as any, tmp, Number(res.id)); break;
+      case 'payroll': replaceId(setPayrollPayments as any, tmp, Number(res.id), image); break;
+      case 'bank_account': replaceId(setBankAccounts as any, tmp, Number(res.id)); await remapQueuedEdits('bank_account', tmp, Number(res.id)); break;
+      case 'staff': {
+        replaceId(setStaffMembers as any, tmp, Number(res.id));
+        await rewriteRefs('staff_id', tmp, Number(res.id));
+        await remapQueuedEdits('staff', tmp, Number(res.id));
+        break;
+      }
+      case 'school': {
+        replaceId(setSchools as any, tmp, Number(res.id));
+        await rewriteRefs('school_id', tmp, Number(res.id));
+        await remapQueuedEdits('school', tmp, Number(res.id));
+        break;
+      }
+      case 'manager': replaceId(setUsers as any, tmp, Number(res.id)); await remapQueuedEdits('manager', tmp, Number(res.id)); break;
+      case 'category': replaceId(setCategories as any, tmp, String(res.id)); await remapQueuedEdits('category', tmp, String(res.id)); break;
+      case 'message': replaceId(setSeniorMessages as any, tmp, String(res.id)); break;
+      case 'bank_upload': setBankTransactions((p) => p.filter((b) => !(ent.extra?.temp_ids || []).includes(b.id))); break;
+      default: break;
+    }
+  };
+
+  /** Queue a write and start sending it right away (the sync pass drains the queue first). */
+  const queue = (action: string, payload: Record<string, any>, entity?: OutboxEntity) => {
+    void enqueue({ action, payload, entity }).then(() => { void syncWithGoogleSheets(spreadsheetId).catch(() => {}); });
+  };
+
+  /** If the record has not been sent yet, fold the change into the queued add instead of queueing an edit. */
+  const patchQueuedAdd = async (type: string, tmpId: any, changes: Record<string, any>): Promise<boolean> => {
+    const list = await loadOutbox();
+    const hit = list.find((e) => e.entity?.type === type && String(e.entity.id) === String(tmpId));
+    if (!hit) return false;
+    await rewriteOutbox((e) => { if (e === hit) Object.assign(e.payload, changes); });
+    return true;
+  };
+
+  /** Deleting something that was never sent just cancels it (and anything queued about it). */
+  const cancelQueued = async (tmpId: any, baseTypes: string[], editPrefix: string): Promise<boolean> => {
+    const list = await loadOutbox();
+    const mine = list.filter((e) => e.entity && String(e.entity.id) === String(tmpId) && (baseTypes.includes(e.entity.type) || e.entity.type.startsWith(editPrefix + ':')));
+    if (!mine.some((e) => baseTypes.includes(e.entity!.type))) return false;
+    for (const e of mine) await dismissEntry(e.key);
+    return true;
+  };
+
+  const retryFailedSync = () => {
+    void retryFailedEntries().then(() => syncWithGoogleSheets(spreadsheetId)).catch(() => {});
+  };
+
+  const dismissFailedSync = (key: string) => {
+    void (async () => {
+      const entry = outboxSnapshot().find((e) => e.key === key);
+      await dismissEntry(key);
+      if (entry?.entity && isTempId(entry.entity.id)) dropTempEntity(entry.entity);
+      void syncWithGoogleSheets(spreadsheetId).catch(() => {});
+    })();
+  };
+
+  /** Applies a server snapshot: server wins on the same id; items deleted elsewhere disappear; unsent local items stay. */
+  const applyRemoteData = (res: any) => {
+    const put = <T extends { id: string | number }>(name: string, remote: T[] | undefined, setter: (v: T[]) => void, opts: { allowEmpty?: boolean } = {}) => {
+      if (!Array.isArray(remote)) return;
+      if (remote.length === 0 && !opts.allowEmpty) {
+        // An empty answer never erases data this device still holds.
+        return;
+      }
+      const merged = reconcileEntity(name, remote, loadFromStorage<T[]>(name, []));
+      setter(merged);
+    };
+    const remoteStudents = Array.isArray(res.students) ? res.students : [];
+    const localStudents = loadFromStorage<Student[]>('students', []);
+    if (remoteStudents.length === 0 && localStudents.length > 0) {
+      console.warn('Cloud roster is empty; preserving local students rather than deleting them.');
+    }
+    put('students', remoteStudents, setStudents);
+    put('schools', res.schools, setSchools);
+    put('transactions', res.transactions, setTransactions);
+    put('bank_txs', res.bankTransactions, setBankTransactions);
+    put('cheques', res.cheques, setCheques);
+    put('categories', res.categories, setCategories);
+    put('users', res.managers, setUsers);
+    put('staff_members', res.staff, setStaffMembers);
+    put('senior_msgs', res.messages, setSeniorMessages);
+    put('staff_work_logs', res.staffWorkLogs, setStaffWorkLogs);
+    put('payroll_payments', res.payroll, setPayrollPayments);
+    put('bank_accounts', res.bankAccounts, setBankAccounts);
+    if (res.stats) {
+      setSyncStats(res.stats);
+      saveToStorage('sync_stats', res.stats);
+    }
+    const timeStr =
+      jalaliFromGregorian(new Date().toISOString()) +
+      ' ' +
+      new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+    setLastSyncTime(timeStr);
+    saveToStorage('last_sync_time', timeStr);
+    setSyncStatus('synced');
+  };
+
+  const syncLock = useRef<Promise<boolean> | null>(null);
+  const syncAgain = useRef(false);
+
+  /** One sync at a time; a request made while syncing triggers one more pass afterwards. */
+  const syncWithGoogleSheets = (targetSheetId?: string): Promise<boolean> => {
+    if (syncLock.current) {
+      syncAgain.current = true;
+      return syncLock.current;
+    }
+    const p = (async () => {
+      try {
+        let ok = await runSync(targetSheetId);
+        let guard = 0;
+        while (syncAgain.current && guard++ < 3) {
+          syncAgain.current = false;
+          ok = await runSync(targetSheetId);
+        }
+        return ok;
+      } finally {
+        syncLock.current = null;
+      }
+    })();
+    syncLock.current = p;
+    return p;
+  };
+
+  const runSync = async (targetSheetId?: string): Promise<boolean> => {
     const sId = extractSpreadsheetId(targetSheetId || spreadsheetId || DEFAULT_SPREADSHEET_ID);
     setSyncStatus('syncing');
     setSyncError(null);
 
-    // Strategy 1: Google Apps Script Web App (Live authoritative backend for s.mehdi.golzari@gmail.com)
+    // 1) Send everything the user recorded while offline (in order) BEFORE reading, so a
+    //    pull can never overwrite or duplicate a change that is still waiting to be sent.
+    let drain: DrainResult | null = null;
+    try {
+      drain = await drainOutbox(onOutboxSuccess);
+    } catch (e) {
+      console.warn('Outbox drain notice:', e);
+    }
+
+    // 2) Google Apps Script Web App (authoritative backend)
     try {
       const gasResult = await loadDataFromAppsScript(DEFAULT_WEBAPP_URL);
       if (gasResult && gasResult.success) {
-        const remoteStudents = Array.isArray(gasResult.students) ? gasResult.students : [];
-        const localStudents = loadFromStorage<Student[]>('students', []);
-        // An empty remote response is not permission to erase a non-empty local roster.
-        const studentsToKeep = mergeCloudAndLocal(remoteStudents, localStudents);
-        setStudents(studentsToKeep);
-        saveToStorage('students', studentsToKeep);
-        if (remoteStudents.length === 0 && localStudents.length > 0) {
-          console.warn('Cloud roster is empty; preserving local students rather than deleting them.');
-        }
-        // Retry only records explicitly marked as locally-created pending uploads; never upload demo/seed data.
-        const pendingStudents = loadFromStorage<Student[]>('pending_student_uploads', []);
-        for (const pendingStudent of pendingStudents) {
-          const saveResult = await apiSaveStudent(pendingStudent, 'add');
-          if (saveResult?.success) {
-            saveToStorage('pending_student_uploads', loadFromStorage<Student[]>('pending_student_uploads', []).filter((item) => String(item.id) !== String(pendingStudent.id)));
-          }
-        }
-
-        if (gasResult.schools && gasResult.schools.length > 0) {
-          const mergedSchools = mergeCloudAndLocal(gasResult.schools, loadFromStorage<School[]>('schools', []));
-          setSchools(mergedSchools); saveToStorage('schools', mergedSchools);
-        }
-
-        const remoteTransactions = Array.isArray(gasResult.transactions) ? gasResult.transactions : [];
-        const localTransactions = loadFromStorage<Transaction[]>('transactions', []);
-        const transactionsToKeep = mergeCloudAndLocal(remoteTransactions, localTransactions);
-        setTransactions(transactionsToKeep);
-        saveToStorage('transactions', transactionsToKeep);
-
-        const remoteBank = Array.isArray(gasResult.bankTransactions) ? gasResult.bankTransactions : [];
-        const localBank = loadFromStorage<BankTransaction[]>('bank_txs', []);
-        const bankToKeep = mergeCloudAndLocal(remoteBank, localBank);
-        setBankTransactions(bankToKeep);
-        saveToStorage('bank_txs', bankToKeep);
-
-        const remoteCheques = Array.isArray(gasResult.cheques) ? gasResult.cheques : [];
-        const localCheques = loadFromStorage<Cheque[]>('cheques', []);
-        const chequesToKeep = mergeCloudAndLocal(remoteCheques, localCheques);
-        setCheques(chequesToKeep);
-        saveToStorage('cheques', chequesToKeep);
-
-        if (gasResult.categories && gasResult.categories.length > 0) {
-          const mergedCategories = mergeCloudAndLocal(gasResult.categories, loadFromStorage<ExpenseCategory[]>('categories', []));
-          setCategories(mergedCategories); saveToStorage('categories', mergedCategories);
-        }
-
-        if (gasResult.managers && gasResult.managers.length > 0) {
-          const mergedManagers = mergeCloudAndLocal(gasResult.managers, loadFromStorage<User[]>('users', []));
-          setUsers(mergedManagers); saveToStorage('users', mergedManagers);
-        }
-
-        if (Array.isArray(gasResult.staff) && gasResult.staff.length > 0) {
-          const mergedStaff = mergeCloudAndLocal(gasResult.staff, loadFromStorage<StaffMember[]>('staff_members', []));
-          setStaffMembers(mergedStaff);
-          saveToStorage('staff_members', mergedStaff);
-        }
-
-        setSyncStats(gasResult.stats);
-        saveToStorage('sync_stats', gasResult.stats);
-
-        const timeStr =
-          jalaliFromGregorian(new Date().toISOString()) +
-          ' ' +
-          new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
-        setLastSyncTime(timeStr);
-        saveToStorage('last_sync_time', timeStr);
-        setSyncStatus('synced');
+        applyRemoteData(gasResult);
         logActivity('همگام‌سازی ابری گوگل شیت', `دریافت ${gasResult.students.length} دانش‌آموز و ${gasResult.transactions.length} تراکنش`);
+        if (drain && drain.sent > 0) refreshOutboxInfo();
         return true;
       }
     } catch (e: any) {
       console.warn('Apps Script sync attempt notice:', e);
     }
 
-    // Strategy 2: Direct Google Sheet export / fallback
+    // 3) Direct Google Sheet export / fallback (read-only snapshot)
     try {
       const result = await loadDataFromPublicGoogleSheet(sId);
       if (result.success) {
-        const remoteStudents = Array.isArray(result.students) ? result.students : [];
-        const localStudents = loadFromStorage<Student[]>('students', []);
-        const studentsToKeep = mergeCloudAndLocal(remoteStudents, localStudents);
-        setStudents(studentsToKeep);
-        saveToStorage('students', studentsToKeep);
-
-        if (result.schools && result.schools.length > 0) {
-          const mergedSchools = mergeCloudAndLocal(result.schools, loadFromStorage<School[]>('schools', []));
-          setSchools(mergedSchools); saveToStorage('schools', mergedSchools);
-        }
-
-        const remoteTransactions = Array.isArray(result.transactions) ? result.transactions : [];
-        const localTransactions = loadFromStorage<Transaction[]>('transactions', []);
-        const transactionsToKeep = mergeCloudAndLocal(remoteTransactions, localTransactions);
-        setTransactions(transactionsToKeep);
-        saveToStorage('transactions', transactionsToKeep);
-
-        const remoteBank = Array.isArray(result.bankTransactions) ? result.bankTransactions : [];
-        const localBank = loadFromStorage<BankTransaction[]>('bank_txs', []);
-        const bankToKeep = mergeCloudAndLocal(remoteBank, localBank);
-        setBankTransactions(bankToKeep);
-        saveToStorage('bank_txs', bankToKeep);
-
-        const remoteCheques = Array.isArray(result.cheques) ? result.cheques : [];
-        const localCheques = loadFromStorage<Cheque[]>('cheques', []);
-        const chequesToKeep = mergeCloudAndLocal(remoteCheques, localCheques);
-        setCheques(chequesToKeep);
-        saveToStorage('cheques', chequesToKeep);
-
-        if (result.categories && result.categories.length > 0) {
-          const mergedCategories = mergeCloudAndLocal(result.categories, loadFromStorage<ExpenseCategory[]>('categories', []));
-          setCategories(mergedCategories); saveToStorage('categories', mergedCategories);
-        }
-
-        if (result.managers && result.managers.length > 0) {
-          const mergedManagers = mergeCloudAndLocal(result.managers, loadFromStorage<User[]>('users', []));
-          setUsers(mergedManagers); saveToStorage('users', mergedManagers);
-        }
-
-        if (result.staff && result.staff.length > 0) {
-          setStaffMembers(result.staff);
-          saveToStorage('staff_members', result.staff);
-        }
-
-        setSyncStats(result.stats);
-        saveToStorage('sync_stats', result.stats);
-
-        const timeStr =
-          jalaliFromGregorian(new Date().toISOString()) +
-          ' ' +
-          new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
-        setLastSyncTime(timeStr);
-        saveToStorage('last_sync_time', timeStr);
-        setSyncStatus('synced');
+        applyRemoteData(result);
         logActivity('همگام‌سازی اکسل گوگل شیت', `دریافت ${result.students.length} دانش‌آموز`);
         return true;
       }
@@ -753,7 +972,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     setSyncStatus('error');
-    setSyncError('عدم امکان همگام‌سازی برخط با سرور ابری. لطفاً اتصال اینترنت خود را بررسی فرمایید.');
+    setSyncError(drain?.authExpired
+      ? 'نشست شما منقضی شده است؛ دوباره وارد شوید تا تغییرات ذخیره‌شده ارسال شود.'
+      : 'عدم امکان همگام‌سازی برخط با سرور ابری. لطفاً اتصال اینترنت خود را بررسی فرمایید.');
     return false;
   };
 
@@ -762,7 +983,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addStudent = (data: Omit<Student, 'id' | 'parsian_code'>): Student => {
-    const newId = students.length > 0 ? Math.max(...students.map((s) => s.id)) + 1 : 1;
+    const newId = nextTempId();
     const schoolObj = schools.find((s) => s.id === data.school_id);
     const parsian = buildParsianCode(data.national_id, data.school_id);
     const cleanFullName = String(data.name ?? '').normalize('NFC').trim();
@@ -779,41 +1000,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setStudents((prev) => [newStudent, ...prev]);
     logActivity('افزودن دانش‌آموز', `ثبت دانش‌آموز ${newStudent.name} در ${newStudent.school_name}`, 'student', newId);
-
-    // Persist a retry queue before network I/O so failed writes can be retried safely.
-    const pending = loadFromStorage<Student[]>('pending_student_uploads', []);
-    saveToStorage('pending_student_uploads', [...pending.filter((item) => String(item.id) !== String(newStudent.id)), newStudent]);
-    apiSaveStudent(newStudent, 'add').then((result) => {
-      if (result?.success) {
-        saveToStorage('pending_student_uploads', loadFromStorage<Student[]>('pending_student_uploads', []).filter((item) => String(item.id) !== String(newStudent.id)));
-      } else {
-        console.error('ذخیره دانش‌آموز در گوگل‌شیت انجام نشد:', result?.error || 'خطای نامشخص');
-      }
-    }).catch((err) => console.warn('Cloud sync student notice:', err));
-
+    queue('student_add', { ...buildStudentPayload(newStudent, 'add'), id: undefined }, { type: 'student', id: newId });
     return newStudent;
   };
 
   const updateStudent = (id: number, data: Partial<Student>) => {
-    setStudents((prev) =>
-      prev.map((s) => {
-        if (s.id !== id) return s;
-        const updated = {
-          ...s,
-          ...data,
-          name: data.name !== undefined ? String(data.name).normalize('NFC').trim() : s.name,
-        };
-        if (data.national_id || data.school_id) {
-          const sid = data.school_id ?? s.school_id;
-          const nid = data.national_id ?? s.national_id;
-          updated.parsian_code = buildParsianCode(nid, sid).fullCode;
-          const sc = schools.find((x) => x.id === sid);
-          if (sc) updated.school_name = sc.name;
-        }
-        apiSaveStudent(updated, 'update').catch((err) => console.warn('Cloud update student notice:', err));
-        return updated;
-      })
-    );
+    const s = students.find((x) => x.id === id);
+    if (!s) return;
+    const updated: Student = {
+      ...s,
+      ...data,
+      name: data.name !== undefined ? String(data.name).normalize('NFC').trim() : s.name,
+    };
+    if (data.national_id || data.school_id) {
+      const sid = data.school_id ?? s.school_id;
+      const nid = data.national_id ?? s.national_id;
+      updated.parsian_code = buildParsianCode(nid, sid).fullCode;
+      const sc = schools.find((x) => x.id === sid);
+      if (sc) updated.school_name = sc.name;
+    }
+    setStudents((prev) => prev.map((x) => (x.id === id ? updated : x)));
+    const payload = buildStudentPayload(updated, 'update');
+    void (async () => {
+      // A student that was never sent: fold the edit into the queued add.
+      if (isTempId(id) && await patchQueuedAdd('student', id, { ...payload, action: 'student_add', id: undefined })) return;
+      queue('student_update', payload, { type: 'student:edit', id });
+    })();
     logActivity('ویرایش دانش‌آموز', `ویرایش اطلاعات دانش‌آموز شناسه ${id}`, 'student', id);
   };
 
@@ -826,7 +1038,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
     setStudents((prev) => prev.filter((s) => s.id !== id));
-    apiSaveStudent({ id }, 'delete').then((r) => { if (!r?.success) console.warn('حذف دانش‌آموز در سرور ثبت نشد:', r?.error); }).catch((err) => console.warn('Cloud delete student notice:', err));
+    void (async () => {
+      if (isTempId(id) && await cancelQueued(id, ['student'], 'student')) return;
+      queue('student_delete', buildStudentPayload({ id }, 'delete'), { type: 'student:edit', id });
+    })();
     logActivity('حذف دانش‌آموز', `حذف دانش‌آموز ${student.name}`, 'student', id);
   };
 
@@ -834,35 +1049,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const student = students.find((s) => s.id === id);
     if (!student) return;
     const updated = { ...student, active: false };
-    setStudents((prev) => prev.map((s) => s.id === id ? updated : s));
-    apiSaveStudent(updated, 'update').then((r) => { if (!r?.success) console.warn('انصراف دانش‌آموز در سرور ثبت نشد:', r?.error); }).catch((err) => console.warn('Cloud withdrawal notice:', err));
+    setStudents((prev) => prev.map((s) => (s.id === id ? updated : s)));
+    void (async () => {
+      if (isTempId(id) && await patchQueuedAdd('student', id, { active: false })) return;
+      queue('student_update', buildStudentPayload(updated, 'update'), { type: 'student:edit', id });
+    })();
     logActivity('انصراف از مدرسه', `دانش‌آموز ${student.name} غیرفعال شد`, 'student', id);
   };
 
   const importStudents = (newStudents: Array<Omit<Student, 'id' | 'parsian_code'>>) => {
-    let maxId = students.length > 0 ? Math.max(...students.map((s) => s.id)) : 0;
     let added = 0;
     let skipped = 0;
     let invalid = 0;
     const addedList: Student[] = [];
+    const seenNational = new Set<string>();
 
     newStudents.forEach((st) => {
       if (!st.name) {
         invalid++;
         return;
       }
-      const isDuplicate = students.some((x) => x.national_id === st.national_id && st.national_id !== '');
+      const nid = String(st.national_id || '');
+      const isDuplicate = nid !== '' && (students.some((x) => x.national_id === nid) || seenNational.has(nid));
       if (isDuplicate) {
         skipped++;
         return;
       }
-      maxId++;
+      if (nid) seenNational.add(nid);
+      const newId = nextTempId();
       const schoolObj = schools.find((s) => s.id === st.school_id);
       const parsian = buildParsianCode(st.national_id, st.school_id);
       const newSt: Student = {
         ...st,
         name: String(st.name).trim(),
-        id: maxId,
+        id: newId,
         school_name: schoolObj?.name || 'مدرسه',
         parsian_code: parsian.fullCode,
         active: true,
@@ -870,17 +1090,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       addedList.push(newSt);
       added++;
-      const pending = loadFromStorage<Student[]>('pending_student_uploads', []);
-      saveToStorage('pending_student_uploads', [...pending.filter((item) => String(item.id) !== String(newSt.id)), newSt]);
-      apiSaveStudent(newSt, 'add').then((result) => {
-        if (result?.success) saveToStorage('pending_student_uploads', loadFromStorage<Student[]>('pending_student_uploads', []).filter((item) => String(item.id) !== String(newSt.id)));
-        else console.error('ذخیره دانش‌آموز واردشده از اکسل ناموفق بود:', result?.error || 'خطای نامشخص');
-      }).catch((err) => console.warn('Cloud import student notice:', err));
+      queue('student_add', { ...buildStudentPayload(newSt, 'add'), id: undefined }, { type: 'student', id: newId });
     });
 
     setStudents((prev) => [...addedList, ...prev]);
     logActivity('ورود گروهی دانش‌آموزان', `افزودن ${added} دانش‌آموز، ${skipped} تکراری، ${invalid} نامعتبر`);
     return { added, skipped, invalid };
+  };
+
+  /** Shared by debt / discount / payment: builds the local transaction and queues the server write. */
+  const commitTuitionTx = (newTx: Transaction) => {
+    setTransactions((prev) => [newTx, ...prev]);
+    queue('tuition_add', buildTuitionPayload(newTx), { type: 'tuition', id: newTx.id });
   };
 
   const addTuitionDebt = (data: {
@@ -893,7 +1114,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     installment_index?: number;
     total_installments?: number;
   }): Transaction => {
-    const newId = transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101;
+    const newId = nextTempId();
     const student = students.find((s) => s.id === data.student_id);
     const schoolId = data.school_id || student?.school_id || currentUser?.school_id || 1;
     const schoolObj = schools.find((s) => s.id === schoolId);
@@ -919,11 +1140,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       review_status: 'approved',
     };
 
-    setTransactions((prev) => [newTx, ...prev]);
+    commitTuitionTx(newTx);
     playTransactionSound();
     logActivity('ثبت بدهی شهریه', `ثبت ${data.amount.toLocaleString('fa-IR')} ریال برای ${student?.name}`, 'transaction', newId);
-
-    apiSaveTuition(newTx).catch((e) => console.warn('Cloud sync tuition debt notice:', e));
     return newTx;
   };
 
@@ -935,7 +1154,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     discount_reason: string;
     school_id?: number;
   }): Transaction => {
-    const newId = transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101;
+    const newId = nextTempId();
     const student = students.find((s) => s.id === data.student_id);
     const schoolId = data.school_id || student?.school_id || currentUser?.school_id || 1;
     const schoolObj = schools.find((s) => s.id === schoolId);
@@ -960,11 +1179,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       review_status: 'approved',
     };
 
-    setTransactions((prev) => [newTx, ...prev]);
+    commitTuitionTx(newTx);
     playTransactionSound();
     logActivity('ثبت تخفیف شهریه', `تخفیف ${data.amount.toLocaleString('fa-IR')} ریال برای ${student?.name} (${data.discount_reason})`, 'transaction', newId);
-
-    apiSaveTuition(newTx).catch((e) => console.warn('Cloud sync tuition discount notice:', e));
     return newTx;
   };
 
@@ -990,9 +1207,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const student = students.find((s) => s.id === data.student_id);
     const schoolId = data.school_id || student?.school_id || currentUser?.school_id || 1;
     const schoolObj = schools.find((s) => s.id === schoolId);
+    const isSeniorUser = currentUser?.role === 'senior' || currentUser?.role === 'admin';
 
     if (data.payment_method === 'چک' && data.cheque_data) {
-      const newChequeId = cheques.length > 0 ? Math.max(...cheques.map((c) => c.id)) + 1 : 1;
+      const newChequeId = nextTempId();
       const cType = data.cheque_data.cheque_type || 'sayad';
       const typeLabel =
         cType === 'guarantee'
@@ -1003,6 +1221,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ? 'چک غیر صیادی'
           : 'چک صیادی';
 
+      // Same policy as the server: only a senior user can register a cheque that is already
+      // confirmed; a school manager's cheque waits for senior confirmation.
+      const confirmedNow = isSeniorUser && data.cheque_data.in_favor_school;
       const newCheque: Cheque = {
         id: newChequeId,
         sayad_id: data.cheque_data.sayad_id,
@@ -1018,9 +1239,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         amount: data.amount,
         due_date: data.cheque_data.due_date,
         issue_date: data.date,
-        received_confirmed: true,
-        in_favor_confirmed: data.cheque_data.in_favor_school,
-        status: data.cheque_data.in_favor_school ? 'approved' : 'pending',
+        received_confirmed: isSeniorUser,
+        in_favor_confirmed: confirmedNow,
+        status: confirmedNow ? 'approved' : 'pending',
         note: data.description,
         attachment_url: data.attachment_url,
       };
@@ -1033,12 +1254,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         newChequeId
       );
 
-      apiSaveCheque(newCheque).catch((e: any) => console.warn('Cloud sheet sync cheque failed:', e));
-
+      let txTempId: number | undefined;
       if (newCheque.status === 'approved') {
-        const newTxId = transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101;
+        txTempId = nextTempId();
         const newTx: Transaction = {
-          id: newTxId,
+          id: txTempId,
           date: data.date,
           jalali_date: jalaliFromGregorian(data.date),
           school_id: schoolId,
@@ -1050,22 +1270,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           amount: data.amount,
           debit: 0,
           credit: data.amount,
-          payment_method: 'چک صیادی',
+          payment_method: 'چک',
           tracking_code: data.cheque_data.sayad_id,
-          description: data.description || 'پرداخت با چک صیادی',
+          description: data.description || 'پرداخت با چک',
           reconciled: true,
           review_status: 'approved',
           attachment_url: data.attachment_url,
         };
         setTransactions((prev) => [newTx, ...prev]);
       }
+      queue(
+        'cheque_add',
+        { ...buildChequePayload(newCheque), in_favor_school: data.cheque_data.in_favor_school },
+        { type: 'cheque', id: newChequeId, extra: txTempId ? { tx_temp_id: txTempId } : undefined }
+      );
       return;
     }
 
-    const isSeniorUser = currentUser?.role === 'senior' || currentUser?.role === 'admin';
     const initReviewStatus: 'approved' | 'pending' = isSeniorUser ? 'approved' : 'pending';
-
-    const newTxId = transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101;
+    const newTxId = nextTempId();
     const newTx: Transaction = {
       id: newTxId,
       date: data.date,
@@ -1088,7 +1311,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       attachment_url: data.attachment_url,
     };
 
-    setTransactions((prev) => [newTx, ...prev]);
+    commitTuitionTx(newTx);
     playTransactionSound();
     logActivity(
       'ثبت دریافت شهریه',
@@ -1096,22 +1319,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       'transaction',
       newTxId
     );
-
-    apiSaveTuition(newTx).then(() => {
-      void syncWithGoogleSheets(spreadsheetId).catch(() => {});
-    }).catch((e) => console.warn('Cloud sync tuition payment notice:', e));
   };
 
   const addBulkDebt = (data: { student_ids: number[]; amount: number; date: string; description: string; school_id: number }): number => {
-    let currentId = transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) : 100;
     const schoolObj = schools.find((s) => s.id === data.school_id);
     const newTxs: Transaction[] = [];
+    const pairs: Array<{ student_id: number; tmp: number }> = [];
 
     data.student_ids.forEach((stId) => {
-      currentId++;
+      const tmp = nextTempId();
       const student = students.find((s) => s.id === stId);
+      pairs.push({ student_id: stId, tmp });
       newTxs.push({
-        id: currentId,
+        id: tmp,
         date: data.date,
         jalali_date: jalaliFromGregorian(data.date),
         school_id: data.school_id,
@@ -1130,18 +1350,75 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     setTransactions((prev) => [...newTxs, ...prev]);
+    queue(
+      'tuition_bulk_debt',
+      { student_ids: data.student_ids, amount: data.amount, date: data.date, description: data.description || 'شهریه تحصیلی مصوب دوره', school_id: data.school_id },
+      { type: 'bulk_debt', id: pairs[0]?.tmp, extra: { pairs, temp_ids: pairs.map((p) => p.tmp) } }
+    );
     logActivity('ثبت گروهی بدهی شهریه', `ثبت ${data.amount.toLocaleString('fa-IR')} ریال برای ${data.student_ids.length} دانش‌آموز`);
     return newTxs.length;
   };
 
+  /** Decides which sheet row a transaction id belongs to. */
+  const txRoute = (id: number, kind?: string): { base: 'tuition' | 'expense' | 'ledger'; pending: boolean } => {
+    const pending = isTempId(id);
+    if (pending) return { base: kind === 'هزینه' ? 'expense' : kind === 'دریافت متفرقه' ? 'ledger' : 'tuition', pending };
+    if (id >= 200000000) return { base: 'ledger', pending };
+    if (id >= 100000) return { base: 'expense', pending };
+    return { base: 'tuition', pending };
+  };
+
   const deleteTransaction = (id: number) => {
+    const tx = transactions.find((t) => t.id === id);
     setTransactions((prev) => prev.filter((t) => t.id !== id));
     logActivity('حذف تراکنش', `حذف تراکنش مالی شناسه ${id}`, 'transaction', id);
+    if (!tx) return;
+    const route = txRoute(id, tx.kind);
+    void (async () => {
+      if (route.pending) {
+        const baseType = route.base === 'expense' ? 'expense' : route.base === 'ledger' ? 'petty_income' : 'tuition';
+        if (await cancelQueued(id, [baseType], 'tx')) return;
+        return; // already being sent: the pending id is replaced and a later delete is not possible yet
+      }
+      const action = route.base === 'tuition' ? 'tuition_delete' : route.base === 'expense' ? 'expense_delete' : 'transaction_delete';
+      queue(action, { id: txServerId(id) }, { type: 'tx:edit', id });
+    })();
   };
 
   const updateTransaction = (id: number, data: Partial<Transaction>) => {
+    const tx = transactions.find((t) => t.id === id);
     setTransactions((prev) => prev.map((t) => (t.id === id ? { ...t, ...data } : t)));
     logActivity('ویرایش تراکنش', `ویرایش تراکنش شناسه ${id}`, 'transaction', id);
+    if (!tx) return;
+    const route = txRoute(id, tx.kind);
+    const changes: Record<string, any> = {};
+    if (data.amount !== undefined) changes.amount = data.amount;
+    if (data.date !== undefined) changes.date = data.date;
+    const desc = data.description !== undefined ? data.description : data.comment;
+    if (desc !== undefined) changes.description = desc;
+    if (data.tracking_code !== undefined) changes.tracking_code = data.tracking_code;
+    if (route.base === 'tuition' && data.payment_method !== undefined) changes.payment_method = data.payment_method;
+    if (route.base === 'expense') {
+      if (data.payment_method !== undefined) changes.payment_source = data.payment_method;
+      if (data.expense_category_name !== undefined) changes.category = data.expense_category_name;
+      if (data.expense_category_id !== undefined) changes.category_id = String(data.expense_category_id);
+    }
+    if (Object.keys(changes).length === 0) return; // only local flags (reconciled, review...) changed
+    void (async () => {
+      if (route.pending) {
+        const baseType = route.base === 'expense' ? 'expense' : route.base === 'ledger' ? 'petty_income' : 'tuition';
+        const addChanges = route.base === 'ledger' ? { ...changes, ...(changes.description !== undefined ? { description: changes.description } : {}) } : changes;
+        await patchQueuedAdd(baseType, id, addChanges);
+        return;
+      }
+      const action = route.base === 'tuition' ? 'tuition_update' : route.base === 'expense' ? 'expense_update' : 'transaction_update';
+      queue(action, { id: txServerId(id), ...changes }, { type: 'tx:edit', id });
+    })();
+  };
+
+  const reviewTx = (id: number, status: 'approved' | 'rejected', reason?: string) => {
+    if (!(currentUser?.role === 'senior' || currentUser?.role === 'admin')) return;
+    queue('transaction_review', buildReviewPayload(id, status, reason), { type: 'tx:review', id });
   };
 
   const approveTransaction = async (id: number): Promise<boolean> => {
@@ -1150,12 +1427,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
     playSuccessSound();
     logActivity('تأیید تراکنش مالی', `تأیید تراکنش شناسه ${id} توسط مدیر ارشد`, 'transaction', id);
-    try {
-      await apiReviewTransaction(id, 'approved');
-    } catch (err) {
-      console.warn('Cloud review approval sync notice:', err);
-    }
-    void syncWithGoogleSheets(spreadsheetId).catch(() => {});
+    reviewTx(id, 'approved');
     return true;
   };
 
@@ -1167,12 +1439,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
     playAlertSound();
     logActivity('رد تراکنش مالی', `رد تراکنش شناسه ${id} توسط مدیر ارشد: ${reason || 'عدم تأیید'}`, 'transaction', id);
-    try {
-      await apiReviewTransaction(id, 'rejected', reason);
-    } catch (err) {
-      console.warn('Cloud review rejection sync notice:', err);
-    }
-    void syncWithGoogleSheets(spreadsheetId).catch(() => {});
+    reviewTx(id, 'rejected', reason || 'عدم تأیید توسط مدیریت ارشد');
     return true;
   };
 
@@ -1192,7 +1459,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const isSeniorUser = currentUser?.role === 'senior' || currentUser?.role === 'admin';
     const initReviewStatus: 'approved' | 'pending' = isSeniorUser ? 'approved' : 'pending';
 
-    const newId = 100000 + (transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101);
+    const newId = nextTempId();
     const cat = categories.find((c) => c.id === data.category_id);
     const schoolId = data.school_id || currentUser?.school_id || 1;
     const schoolObj = schools.find((s) => s.id === schoolId);
@@ -1211,6 +1478,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       expense_category_name: cat?.name || 'هزینه‌های متفرقه',
       tracking_code: data.tracking_code,
       payment_method: data.payment_source,
+      payment_source: data.payment_source,
+      petty_cash_card: data.petty_cash_card,
+      linked_account_name: data.linked_account_name,
+      bank_transaction_id: data.bank_transaction_id,
       comment: data.comment,
       description: data.comment || `هزینه ${cat?.name || 'مدرسه'}`,
       reconciled: true,
@@ -1227,16 +1498,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       'transaction',
       newId
     );
-
-    apiSaveExpense(newTx).then(() => {
-      void syncWithGoogleSheets(spreadsheetId).catch(() => {});
-    }).catch((e) => console.warn('Cloud sync expense notice:', e));
-
+    queue('expense_add', buildExpensePayload(newTx), { type: 'expense', id: newId });
     return newTx;
   };
 
   const addPettyCashIncome = (data: { amount: number; date: string; tracking_code: string; comment: string; school_id: number; card: string; linked_account_name: string; bank_transaction_id: number }): Transaction => {
-    const newId = 100000 + (transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101);
+    const newId = nextTempId();
     const schoolObj = schools.find((s) => s.id === data.school_id);
     const newTx: Transaction = {
       id: newId, date: data.date, jalali_date: jalaliFromGregorian(data.date),
@@ -1250,7 +1517,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setTransactions((prev) => [newTx, ...prev]);
     logActivity('ثبت واریزی کارت تن‌خواه', `ثبت واریزی ${data.amount.toLocaleString('fa-IR')} ریال برای ${schoolObj?.name || 'مدرسه'}`, 'transaction', newId);
-    postToAppsScript({ action: 'finance_transaction', kind: 'cash_receipt', amount: data.amount, date: data.date, school_id: data.school_id, person: currentUser?.name || 'مدیر تن‌خواه', description: data.comment + ' | کارت: ' + data.card + ' | حساب: ' + data.linked_account_name + ' | شناسه ردیف بانک: ' + data.bank_transaction_id, tracking_code: data.tracking_code }).catch((e) => console.warn('Cloud sync petty cash receipt notice:', e));
+    queue('finance_transaction', buildPettyIncomePayload(newTx, currentUser?.name || 'مدیر تن‌خواه'), { type: 'petty_income', id: newId });
     return newTx;
   };
 
@@ -1263,14 +1530,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addCategory = (name: string) => {
-    const newId = String(categories.length + 1);
+    const newId = tempStringId();
     const newCat: ExpenseCategory = { id: newId, name, active: true };
     setCategories((prev) => [...prev, newCat]);
     logActivity('افزودن سرفصل هزینه', `ثبت سرفصل ${name}`);
+    queue('category_add', { name }, { type: 'category', id: newId });
   };
 
   const toggleCategory = (id: string, active: boolean) => {
     setCategories((prev) => prev.map((c) => (c.id === id ? { ...c, active } : c)));
+    void (async () => {
+      if (isTempId(id) && await patchQueuedAdd('category', id, { active })) return;
+      queue('category_update', { id, active }, { type: 'category:edit', id });
+    })();
   };
 
   const reviewCheque = (id: number, action: 'receive' | 'favor' | 'reject') => {
@@ -1297,11 +1569,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((c) => (c.id === id ? { ...c, received_confirmed: rec, in_favor_confirmed: fav, status: updatedStatus } : c))
     );
 
+    let txTempId: number | undefined;
     if (updatedStatus === 'approved' && cheque.status !== 'approved') {
-      const newTxId = transactions.length > 0 ? Math.max(...transactions.map((t) => t.id)) + 1 : 101;
+      txTempId = nextTempId();
       const student = students.find((s) => s.id === cheque.student_id);
       const newTx: Transaction = {
-        id: newTxId,
+        id: txTempId,
         date: cheque.issue_date || todayGregorian(),
         jalali_date: jalaliFromGregorian(cheque.issue_date || todayGregorian()),
         school_id: cheque.school_id,
@@ -1313,16 +1586,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         amount: cheque.amount,
         debit: 0,
         credit: cheque.amount,
-        payment_method: 'چک صیادی',
+        payment_method: 'چک',
         tracking_code: cheque.sayad_id,
-        description: `وصول چک صیادی شناسه ${cheque.sayad_id} (سررسید: ${jalaliFromGregorian(cheque.due_date)})`,
+        description: `پرداخت با چک ${cheque.sayad_id || cheque.cheque_number || ''} (سررسید: ${jalaliFromGregorian(cheque.due_date)})`,
         reconciled: true,
         review_status: 'approved',
       };
       setTransactions((prev) => [newTx, ...prev]);
     }
 
-    logActivity('بررسی چک صیادی', `تغییر وضعیت چک ${cheque.sayad_id} به ${updatedStatus}`, 'cheque', id);
+    queue('cheque_review', { id, review_action: action }, { type: 'cheque:review', id, extra: txTempId ? { tx_temp_id: txTempId } : undefined });
+    logActivity('بررسی چک', `تغییر وضعیت چک ${cheque.sayad_id || cheque.cheque_number || id} به ${updatedStatus}`, 'cheque', id);
 
     return {
       success: true,
@@ -1337,7 +1611,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addDirectCheque = (chequeData: Omit<Cheque, 'id'>): Cheque => {
-    const newChequeId = cheques.length > 0 ? Math.max(...cheques.map((c) => c.id)) + 1 : 1;
+    const newChequeId = nextTempId();
     const newCheque: Cheque = {
       ...chequeData,
       id: newChequeId,
@@ -1352,17 +1626,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         ? 'چک غیر صیادی'
         : 'چک صیادی';
     logActivity('ثبت چک', `ثبت ${typeLabel} به مبلغ ${newCheque.amount.toLocaleString('fa-IR')} ریال`, 'cheque', newChequeId);
+    queue('cheque_add', buildChequePayload(newCheque), { type: 'cheque', id: newChequeId });
     return newCheque;
   };
 
   const deleteCheque = (id: number) => {
     setCheques((prev) => prev.filter((c) => c.id !== id));
     logActivity('حذف چک', `حذف چک شناسه ${id}`, 'cheque', id);
+    void (async () => {
+      if (isTempId(id) && await cancelQueued(id, ['cheque'], 'cheque')) return;
+      queue('cheque_delete', { id }, { type: 'cheque:edit', id });
+    })();
   };
 
   const updateCheque = (id: number, data: Partial<Cheque>) => {
     setCheques((prev) => prev.map((c) => (c.id === id ? { ...c, ...data } : c)));
     logActivity('ویرایش مشخصات چک', `ویرایش چک شناسه ${id}`, 'cheque', id);
+    const changes: Record<string, any> = {};
+    (['bank_name', 'cheque_number', 'issuer_name', 'cheque_purpose', 'cheque_type', 'due_date', 'issue_date', 'amount', 'sayad_id'] as const).forEach((k) => {
+      if (data[k] !== undefined) changes[k] = data[k];
+    });
+    if (data.note !== undefined) changes.description = data.note;
+    if (Object.keys(changes).length === 0) return;
+    void (async () => {
+      if (isTempId(id) && await patchQueuedAdd('cheque', id, { ...changes, ...(changes.issue_date ? { date: changes.issue_date } : {}) })) return;
+      queue('cheque_update', { id, ...changes }, { type: 'cheque:edit', id });
+    })();
   };
 
   const reconcileBank = () => {
@@ -1405,6 +1694,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setBankTransactions(updatedBank);
     setTransactions(updatedTxs);
     const unmatchedCount = updatedBank.filter((b) => !b.reconciled).length;
+    // The server applies the saved reconciliation rules to every row and its result is what
+    // every device sees after the next sync.
+    if (currentUser?.role === 'senior' || currentUser?.role === 'admin') queue('bank_reconcile', {});
     logActivity('تطبیق هوشمند تراکنش‌های بانک', `${matchedCount} مورد تطبیق موفق، ${unmatchedCount} مورد نیازمند بررسی`);
     return { matched: matchedCount, unmatched: unmatchedCount };
   };
@@ -1414,8 +1706,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((t) => (t.id === id ? { ...t, reconciled: approve, review_status: approve ? 'approved' : 'rejected', comment: note ? `${t.comment || ''} [${note}]` : t.comment } : t))
     );
     logActivity('بررسی دستی تطبیق تراکنش', `${approve ? 'تأیید' : 'رد'} تراکنش شناسه ${id}`, 'transaction', id);
+    reviewTx(id, approve ? 'approved' : 'rejected', approve ? undefined : (note || 'رد توسط مدیر ارشد'));
   };
 
+  // Local-only on purpose: removes the imported statement rows from THIS device. The rows stay in
+  // the shared sheet, so nothing is lost for other devices or for accounting.
   const clearImportedBankTransactions = () => {
     setBankTransactions([]);
     saveToStorage('bank_txs', []);
@@ -1423,31 +1718,69 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const importBankTransactions = (txs: Array<Omit<BankTransaction, 'id' | 'reconciled'> & { reconciled?: boolean }>) => {
-    let maxId = bankTransactions.length > 0 ? Math.max(...bankTransactions.map((b) => b.id)) : 0;
-    const newItems: BankTransaction[] = txs.map((t) => {
-      maxId++;
-      return {
-        ...t,
-        id: maxId,
-        reconciled: Boolean(t.reconciled),
-      };
-    });
+    const newItems: BankTransaction[] = txs.map((t) => ({
+      ...t,
+      id: nextTempId(),
+      reconciled: Boolean(t.reconciled),
+    }));
     setBankTransactions((prev) => [...newItems, ...prev]);
     const matchedIds = new Set(newItems.filter((item) => item.reconciled && item.matched_transaction_id !== undefined).map((item) => Number(item.matched_transaction_id)));
     if (matchedIds.size) {
       setTransactions((prev) => prev.map((tx) => matchedIds.has(Number(tx.id)) ? { ...tx, reconciled: true } : tx));
+    }
+    if (newItems.length && (currentUser?.role === 'senior' || currentUser?.role === 'admin')) {
+      queue(
+        'bank_upload',
+        {
+          file_name: 'bank_statement',
+          school_id: currentUser?.school_id || 1,
+          rows: txs.map((t) => ({ ...t, date: t.date })),
+        },
+        { type: 'bank_upload', id: newItems[0].id, extra: { temp_ids: newItems.map((i) => i.id) } }
+      );
     }
     logActivity('ورود فایل صورتحساب بانک', `افزودن ${newItems.length} تراکنش بانکی جدید`);
     return newItems.length;
   };
 
   const updateBankTransaction = (id: number, data: Partial<BankTransaction>) => {
+    const existing = bankTransactions.find((item) => item.id === id);
     setBankTransactions((prev) => prev.map((item) => item.id === id ? { ...item, ...data } : item));
     logActivity('تخصیص تراکنش بانکی', `به‌روزرسانی توضیحات/تخصیص تراکنش بانکی شناسه ${id}`, 'bank_transaction', id);
+    if (!existing) return;
+    const merged = { ...existing, ...data };
+    const touchesAssignment = ['assigned_student_id', 'assigned_student_name', 'assigned_purpose'].some((k) => k in data);
+    if (touchesAssignment) {
+      queue('bank_annotation', {
+        school_id: merged.school_id,
+        date: merged.date,
+        amount: merged.amount,
+        tracking_code: merged.tracking_code,
+        bank_account: merged.bank_account,
+        student_id: merged.assigned_student_id || '',
+        student_name: merged.assigned_student_name || '',
+        purpose: merged.assigned_purpose || '',
+        direction: merged.direction || 'unknown',
+        balance: merged.balance,
+        card_number: merged.card_number || merged.source_card_number || merged.bank_account || '',
+      }, { type: 'bank:edit', id });
+    }
+    if (data.matched_transaction_id !== undefined && data.reconciled && (currentUser?.role === 'senior' || currentUser?.role === 'admin')) {
+      const matchedTx = transactions.find((t) => t.id === data.matched_transaction_id);
+      const route = matchedTx ? txRoute(matchedTx.id, matchedTx.kind) : undefined;
+      if (matchedTx && route && route.base !== 'ledger') {
+        queue('bank_match', {
+          ...(isTempId(id) ? {} : { id }),
+          school_id: merged.school_id, date: merged.date, amount: merged.amount, tracking_code: merged.tracking_code,
+          source_type: route.base === 'expense' ? 'expense' : 'tuition',
+          source_id: txServerId(matchedTx.id),
+        }, { type: 'bank:match', id: matchedTx.id });
+      }
+    }
   };
 
   const addManager = (m: Omit<User, 'id'>) => {
-    const newId = users.length > 0 ? Math.max(...users.map((u) => u.id)) + 1 : 1;
+    const newId = nextTempId();
     const { password, ...safeManager } = m;
     const sc = schools.find((s) => s.id === safeManager.school_id);
     const newUser: User = {
@@ -1456,7 +1789,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       school_name: sc?.name,
     };
     setUsers((prev) => [...prev, newUser]);
-    apiSaveManager({ ...newUser, ...(password ? { password } : {}) }, 'add').then((r) => { if (!r?.success) console.warn('ثبت مدیر در شیت ناموفق بود:', r?.error); }).catch((e) => console.warn('Manager cloud add failed:', e));
+    queue('manager_add', { ...buildManagerPayload({ ...newUser, ...(password ? { password } : {}) }, 'add'), id: undefined }, { type: 'manager', id: newId });
     logActivity('افزودن مدیر جدید', `ثبت مدیر ${m.name} برای ${sc?.name || 'مدرسه'}`, 'manager', newId);
   };
 
@@ -1476,60 +1809,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
     const existingManager = users.find((u) => u.id === id);
     if (existingManager) {
-      apiSaveManager({ ...existingManager, ...safeChanges, ...(password ? { password } : {}), id }, 'update')
-        .then((r) => { if (!r?.success) console.warn('ویرایش مدیر در شیت ناموفق بود:', r?.error); })
-        .catch((e) => console.warn('Manager cloud update failed:', e));
+      const payload = buildManagerPayload({ ...existingManager, ...safeChanges, ...(password ? { password } : {}), id }, 'update');
+      void (async () => {
+        if (isTempId(id) && await patchQueuedAdd('manager', id, { ...payload, action: 'manager_add', id: undefined })) return;
+        queue('manager_update', payload, { type: 'manager:edit', id });
+      })();
     }
     logActivity('ویرایش مدیر', `ویرایش مشخصات مدیر شناسه ${id}`, 'manager', id);
   };
 
   const deleteManager = (id: number) => {
-    apiSaveManager({ id }, 'delete').then((r) => { if (!r?.success) console.warn('غیرفعال‌سازی مدیر در شیت ناموفق بود:', r?.error); }).catch((e) => console.warn('Manager cloud delete failed:', e));
     setUsers((prev) => prev.map((u) => u.id === id ? { ...u, active: false } : u));
+    void (async () => {
+      if (isTempId(id) && await cancelQueued(id, ['manager'], 'manager')) return;
+      queue('manager_delete', buildManagerPayload({ id }, 'delete'), { type: 'manager:edit', id });
+    })();
     logActivity('حذف مدیر', `حذف مدیر شناسه ${id}`, 'manager', id);
   };
 
   const addSchool = (s: Omit<School, 'id'>) => {
-    const newId = schools.length > 0 ? Math.max(...schools.map((sc) => sc.id)) + 1 : 1;
+    const newId = nextTempId();
     const newSchool: School = { ...s, id: newId };
     setSchools((prev) => [...prev, newSchool]);
-    saveToStorage('schools', [...schools, newSchool]);
-    apiSaveSchool(newSchool, 'add').then((result) => {
-      if (result?.success && result.id && Number(result.id) !== newId) {
-        setSchools((prev) => prev.map((sc) => sc.id === newId ? { ...sc, id: Number(result.id) } : sc));
-      } else if (!result?.success) {
-        console.warn('ثبت مدرسه در Google Sheets ناموفق بود:', result?.error);
-      }
-    }).catch((error) => console.warn('School cloud add failed:', error));
+    queue('school_add', { ...buildSchoolPayload(newSchool, 'add'), id: undefined }, { type: 'school', id: newId });
     logActivity('افزودن مدرسه جدید', `ثبت مرکز/مدرسه ${s.name}`, 'school', newId);
   };
 
   const updateSchool = (id: number, s: Partial<School>) => {
-    setSchools((prev) => {
-      const updated = prev.map((sc) => (sc.id === id ? { ...sc, ...s } : sc));
-      saveToStorage('schools', updated);
-      return updated;
-    });
-    apiSaveSchool({ ...schools.find((sc) => sc.id === id), ...s, id }, 'update')
-      .then((result) => { if (!result?.success) console.warn('ویرایش مدرسه در Google Sheets ناموفق بود:', result?.error); })
-      .catch((error) => console.warn('School cloud update failed:', error));
+    setSchools((prev) => prev.map((sc) => (sc.id === id ? { ...sc, ...s } : sc)));
+    const payload = buildSchoolPayload({ ...schools.find((sc) => sc.id === id), ...s, id }, 'update');
+    void (async () => {
+      if (isTempId(id) && await patchQueuedAdd('school', id, { ...payload, action: 'school_add', id: undefined })) return;
+      queue('school_update', payload, { type: 'school:edit', id });
+    })();
     logActivity('ویرایش اطلاعات مدرسه', `ویرایش مرکز شناسه ${id}`, 'school', id);
   };
 
   const deleteSchool = (id: number) => {
-    apiSaveSchool({ id }, 'delete').then((result) => {
-      if (!result?.success) console.warn('حذف مدرسه از Google Sheets ناموفق بود:', result?.error);
-    }).catch((error) => console.warn('School cloud delete failed:', error));
-    setSchools((prev) => {
-      const updated = prev.filter((sc) => sc.id !== id);
-      saveToStorage('schools', updated);
-      return updated;
-    });
+    setSchools((prev) => prev.filter((sc) => sc.id !== id));
+    void (async () => {
+      if (isTempId(id) && await cancelQueued(id, ['school'], 'school')) return;
+      queue('school_delete', buildSchoolPayload({ id }, 'delete'), { type: 'school:edit', id });
+    })();
     logActivity('حذف مدرسه', `حذف مدرسه شناسه ${id}`, 'school', id);
   };
 
   const addBankAccount = (acc: Omit<BankAccount, 'id'>): BankAccount => {
-    const newId = bankAccounts.length > 0 ? Math.max(...bankAccounts.map((b) => b.id)) + 1 : 1;
+    const newId = nextTempId();
     const schoolObj = schools.find((s) => s.id === acc.school_id);
     const newAcc: BankAccount = {
       ...acc,
@@ -1537,49 +1863,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       school_name: schoolObj?.name || acc.school_name || 'مدرسه',
       created_at: new Date().toISOString(),
     };
-    const updated = [newAcc, ...bankAccounts];
-    setBankAccounts(updated);
-    saveToStorage('bank_accounts', updated);
+    setBankAccounts((prev) => [newAcc, ...prev]);
+    queue('bank_account_add', { ...buildBankAccountPayload(newAcc, 'add'), id: undefined }, { type: 'bank_account', id: newId });
     logActivity('تعریف حساب بانکی', `ثبت حساب ${newAcc.name} (${newAcc.bank_name})`, 'bank_account', newId);
     return newAcc;
   };
 
   const updateBankAccount = (id: number, data: Partial<BankAccount>) => {
-    const updated = bankAccounts.map((acc) => {
+    const current = bankAccounts.find((acc) => acc.id === id);
+    setBankAccounts((prev) => prev.map((acc) => {
       if (acc.id !== id) return acc;
       const schoolObj = data.school_id ? schools.find((s) => s.id === data.school_id) : undefined;
-      return {
-        ...acc,
-        ...data,
-        school_name: schoolObj?.name || data.school_name || acc.school_name,
-      };
-    });
-    setBankAccounts(updated);
-    saveToStorage('bank_accounts', updated);
+      return { ...acc, ...data, school_name: schoolObj?.name || data.school_name || acc.school_name };
+    }));
+    if (current) {
+      const payload = buildBankAccountPayload({ ...current, ...data, id }, 'update');
+      void (async () => {
+        if (isTempId(id) && await patchQueuedAdd('bank_account', id, { ...payload, action: 'bank_account_add', id: undefined })) return;
+        queue('bank_account_update', payload, { type: 'bank_account:edit', id });
+      })();
+    }
     logActivity('ویرایش حساب بانکی', `ویرایش مشخصات حساب شناسه ${id}`, 'bank_account', id);
   };
 
   const deleteBankAccount = (id: number) => {
     const target = bankAccounts.find((b) => b.id === id);
-    const updated = bankAccounts.filter((acc) => acc.id !== id);
-    setBankAccounts(updated);
-    saveToStorage('bank_accounts', updated);
+    setBankAccounts((prev) => prev.filter((acc) => acc.id !== id));
+    void (async () => {
+      if (isTempId(id) && await cancelQueued(id, ['bank_account'], 'bank_account')) return;
+      queue('bank_account_delete', { id }, { type: 'bank_account:edit', id });
+    })();
     logActivity('حذف حساب بانکی', `حذف حساب ${target?.name || id}`, 'bank_account', id);
   };
 
   const addSeniorMessage = (message: string) => {
     const newMsg: SeniorMessage = {
-      id: 'm_' + Date.now(),
+      id: tempStringId(),
       message,
       created_at: new Date().toISOString(),
       author_name: currentUser?.name || 'مدیر ارشد',
     };
     setSeniorMessages((prev) => [newMsg, ...prev]);
+    queue('message_add', { message }, { type: 'message', id: newMsg.id });
     logActivity('ارسال پیام عمومی به مدیران', message);
   };
 
   const deleteSeniorMessage = (id: string) => {
     setSeniorMessages((prev) => prev.filter((m) => m.id !== id));
+    void (async () => {
+      if (isTempId(id) && await cancelQueued(id, ['message'], 'message')) return;
+      queue('message_delete', { id }, { type: 'message:edit', id });
+    })();
   };
 
   const getStudentBalance = (studentId: number) => {
@@ -1665,33 +1999,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Staff & Teachers operations
   const addStaffMember = (staffData: Omit<StaffMember, 'id'>): StaffMember => {
-    const newId = staffMembers.length > 0 ? Math.max(...staffMembers.map((s) => s.id)) + 1 : 1;
+    const newId = nextTempId();
     const school = schools.find((sc) => sc.id === staffData.school_id);
     const newStaff: StaffMember = { ...staffData, id: newId, school_name: school?.name || staffData.school_name || 'مدرسه' };
-    setStaffMembers((prev) => {
-      const updated = [newStaff, ...prev];
-      saveToStorage('staff_members', updated);
-      return updated;
-    });
-    apiSaveStaffMember(newStaff, 'add').then((result) => {
-      if (result?.success && result.id && Number(result.id) !== newId) {
-        setStaffMembers((prev) => {
-          const updated = prev.map((item) => item.id === newId ? { ...item, id: Number(result.id) } : item);
-          saveToStorage('staff_members', updated);
-          return updated;
-        });
-      } else if (!result?.success) {
-        console.warn('ثبت معلم/پرسنل در Google Sheets ناموفق بود:', result?.error);
-      }
-    }).catch((error) => console.warn('Staff cloud add failed:', error));
+    setStaffMembers((prev) => [newStaff, ...prev]);
+    queue('staff_add', { ...buildStaffPayload(newStaff, 'add'), id: undefined }, { type: 'staff', id: newId });
     logActivity('ثبت پرسنل/معلم جدید', `ثبت ${newStaff.name} (${newStaff.role_title}) در ${newStaff.school_name}`);
     return newStaff;
   };
 
   const updateStaffMember = (id: number, data: Partial<StaffMember>) => {
     const existing = staffMembers.find((item) => item.id === id);
-    setStaffMembers((prev) => {
-      const updated = prev.map((s) => {
+    setStaffMembers((prev) =>
+      prev.map((s) => {
         if (s.id !== id) return s;
         const item = { ...s, ...data };
         if (data.school_id) {
@@ -1699,31 +2019,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (sc) item.school_name = sc.name;
         }
         return item;
-      });
-      saveToStorage('staff_members', updated);
-      return updated;
-    });
-    if (existing) apiSaveStaffMember({ ...existing, ...data, id }, 'update').then((result) => {
-      if (!result?.success) console.warn('ویرایش معلم/پرسنل در Google Sheets ناموفق بود:', result?.error);
-    }).catch((error) => console.warn('Staff cloud update failed:', error));
+      })
+    );
+    if (existing) {
+      const payload = buildStaffPayload({ ...existing, ...data, id }, 'update');
+      void (async () => {
+        if (isTempId(id) && await patchQueuedAdd('staff', id, { ...payload, action: 'staff_add', id: undefined })) return;
+        queue('staff_update', payload, { type: 'staff:edit', id });
+      })();
+    }
     logActivity('ویرایش اطلاعات پرسنل', `به‌روزرسانی پرسنل شناسه ${id}`);
   };
 
   const deleteStaffMember = (id: number) => {
     const found = staffMembers.find((s) => s.id === id);
-    apiSaveStaffMember({ id }, 'delete').then((result) => {
-      if (!result?.success) console.warn('حذف معلم/پرسنل از Google Sheets ناموفق بود:', result?.error);
-    }).catch((error) => console.warn('Staff cloud delete failed:', error));
-    setStaffMembers((prev) => {
-      const updated = prev.filter((s) => s.id !== id);
-      saveToStorage('staff_members', updated);
-      return updated;
-    });
+    setStaffMembers((prev) => prev.filter((s) => s.id !== id));
+    void (async () => {
+      if (isTempId(id) && await cancelQueued(id, ['staff'], 'staff')) return;
+      queue('staff_delete', buildStaffPayload({ id }, 'delete'), { type: 'staff:edit', id });
+    })();
     logActivity('حذف پرسنل', `حذف پرسنل ${found?.name || id}`);
   };
 
   const addStaffWorkLog = (logData: Omit<StaffWorkLog, 'id'>): StaffWorkLog => {
-    const newId = staffWorkLogs.length > 0 ? Math.max(...staffWorkLogs.map((l) => l.id)) + 1 : 1;
+    const newId = nextTempId();
     const staff = staffMembers.find((s) => s.id === logData.staff_id);
     const school = schools.find((sc) => sc.id === logData.school_id);
     const newLog: StaffWorkLog = {
@@ -1733,12 +2052,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       school_name: school?.name || logData.school_name,
     };
     setStaffWorkLogs((prev) => [newLog, ...prev]);
+    queue('staff_worklog_add', buildWorkLogPayload(newLog), { type: 'worklog', id: newId });
     logActivity('ثبت کارکرد پرسنل', `ثبت کارکرد ماه ${newLog.month_name} برای ${newLog.staff_name} (${newLog.work_hours} ساعت)`);
     return newLog;
   };
 
   const deleteStaffWorkLog = (id: number) => {
     setStaffWorkLogs((prev) => prev.filter((l) => l.id !== id));
+    void (async () => {
+      if (isTempId(id) && await cancelQueued(id, ['worklog'], 'worklog')) return;
+      queue('staff_worklog_delete', { id }, { type: 'worklog:edit', id });
+    })();
   };
 
   const calculateStaffPayroll = (staffId: number, monthName: string) => {
@@ -1793,7 +2117,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addPayrollPayment = (paymentData: Omit<PayrollPayment, 'id' | 'created_at'>): PayrollPayment => {
-    const newId = payrollPayments.length > 0 ? Math.max(...payrollPayments.map((p) => p.id)) + 1 : 1;
+    const newId = nextTempId();
     const staff = staffMembers.find((s) => s.id === paymentData.staff_id);
     const school = schools.find((sc) => sc.id === paymentData.school_id);
     const newPayment: PayrollPayment = {
@@ -1804,6 +2128,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       created_at: new Date().toISOString(),
     };
     setPayrollPayments((prev) => [newPayment, ...prev]);
+    queue('payroll_add', buildPayrollPayload(newPayment), { type: 'payroll', id: newId });
 
     // Also record automatically as an Expense in school accounting
     const expenseTitle = paymentData.payment_type === 'salary'
@@ -1816,7 +2141,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       category_id: '4',
       amount: newPayment.net_paid_amount,
       date: newPayment.payment_date,
-      tracking_code: newPayment.tracking_code || `PAY-${newId}`,
+      tracking_code: newPayment.tracking_code || `PAY-${Date.now()}`,
       payment_source: newPayment.source,
       comment: `${expenseTitle} (پیگیری: ${newPayment.tracking_code})`,
       school_id: newPayment.school_id,
@@ -1833,6 +2158,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deletePayrollPayment = (id: number) => {
     setPayrollPayments((prev) => prev.filter((p) => p.id !== id));
+    void (async () => {
+      if (isTempId(id) && await cancelQueued(id, ['payroll'], 'payroll')) return;
+      queue('payroll_delete', { id }, { type: 'payroll:edit', id });
+    })();
   };
 
   const login = async (username: string, pass?: string): Promise<boolean> => {
@@ -1913,6 +2242,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         connectWithGoogle,
         disconnectGoogle,
         syncWithGoogleSheets,
+        pendingSyncCount: outboxInfo.pending,
+        failedSyncItems: outboxInfo.failed,
+        retryFailedSync,
+        dismissFailedSync,
         syncStats,
         addStudent,
         updateStudent,
