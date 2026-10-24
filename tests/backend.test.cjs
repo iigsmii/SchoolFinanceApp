@@ -242,5 +242,20 @@ test('messages store the author and are returned by sync; categories round-trip'
   assert.equal(post({action:'sync',token:manager}).categories.some(x=>x.name==='دسته جدید'),true);
   assert.equal(post({action:'category_update',token:senior,id:c.id,active:false}).success,true);
 });
+test('cheque_update / cheque_delete: pending editable & deletable, approved locked',()=>{
+  const m=post({action:'cheque_add',token:manager,student_id:1,school_id:1,amount:4000,date:'2026-10-15',due_date:'2026-12-01',cheque_type:'non_sayad',bank_name:'ملت'});
+  assert.equal(post({action:'cheque_update',token:manager,id:m.id,bank_name:'ملی',amount:4500,cheque_number:'77'}).success,true);
+  assert.equal(run(`findRow_('Cheques',${m.id}).obj.bank_name`),'ملی');assert.equal(Number(run(`findRow_('Cheques',${m.id}).obj.amount`)),4500);
+  assert.equal(post({action:'cheque_delete',token:manager,id:m.id}).success,true);
+  assert.ok(!post({action:'sync',token:senior}).cheques.some(c=>String(c.id)===String(m.id)));
+  const s=post({action:'cheque_add',token:senior,student_id:1,school_id:1,amount:100,date:'2026-10-15',due_date:'2026-12-01',cheque_type:'sayad',sayad_id:'6221061234567899',in_favor_school:true});
+  assert.equal(post({action:'cheque_delete',token:senior,id:s.id}).success,false);
+});
+test('tuition_update changes the payment method and bank_match accepts a source reference',()=>{
+  const a=post({action:'tuition_add',token:manager,student_id:1,school_id:1,type:'payment',payment_method:'کارت به کارت',tracking_code:'MM1',amount:777,date:'2026-10-15'});
+  assert.equal(a.success,true);
+  assert.equal(post({action:'tuition_update',token:senior,id:a.id,payment_method:'کارت خوان',amount:800}).success,true);
+  assert.equal(run(`findRow_('Tuition',${a.id}).obj.payment_source`),'کارت خوان');assert.equal(Number(run(`findRow_('Tuition',${a.id}).obj.amount`)),800);
+});
 
 console.log(`\n${passed} backend regression tests passed (mocked, not live Apps Script).`);

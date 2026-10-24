@@ -7,6 +7,10 @@ import {
   User,
   BankTransaction,
   StaffMember,
+  StaffWorkLog,
+  PayrollPayment,
+  BankAccount,
+  SeniorMessage,
 } from '../types';
 import { buildParsianCode } from '../utils/parsian';
 import { jalaliFromGregorian, todayGregorian } from '../utils/jalali';
@@ -26,6 +30,10 @@ export interface SheetLoadResult {
   categories: ExpenseCategory[];
   managers: User[];
   bankTransactions: BankTransaction[];
+  messages?: SeniorMessage[];
+  staffWorkLogs?: StaffWorkLog[];
+  payroll?: PayrollPayment[];
+  bankAccounts?: BankAccount[];
   stats: {
     studentsCount: number;
     transactionsCount: number;
@@ -70,7 +78,7 @@ const cleanHeader = (h: any) =>
 export const postToAppsScript = async (
   payload: Record<string, any>,
   webAppUrl: string = DEFAULT_WEBAPP_URL
-): Promise<{ success: boolean; error?: string; data?: any; id?: number; count?: number; skipped?: number; message?: string; matched?: number; unmatched?: number; rules?: any; configured?: boolean }> => {
+): Promise<{ success: boolean; network?: boolean; needs_review?: boolean; review_status?: string; error?: string; data?: any; id?: number; ids?: any[]; attachment_url?: string; url?: string; count?: number; skipped?: number; message?: string; matched?: number; unmatched?: number; rules?: any; configured?: boolean }> => {
   try {
     const url = webAppUrl.trim();
     if (!url) return { success: false, error: 'آدرس وب‌اپ تعریف نشده است.' };
@@ -104,7 +112,7 @@ export const postToAppsScript = async (
           body: bodyData,
           mode: 'cors',
         });
-        if (!res.ok) return { success: false, error: `خطای سرور (${res.status})` };
+        if (!res.ok) return { success: false, network: true, error: `خطای سرور (${res.status})` };
         return await res.json();
       } catch (err: any) {
         lastError = err;
@@ -112,10 +120,10 @@ export const postToAppsScript = async (
       }
     }
     console.warn('Apps Script mutation failed after retry:', lastError);
-    return { success: false, error: lastError?.message || 'ارتباط با سرور برقرار نشد.' };
+    return { success: false, network: true, error: lastError?.message || 'ارتباط با سرور برقرار نشد.' };
   } catch (err: any) {
     console.warn('Apps Script mutation failed:', err);
-    return { success: false, error: err?.message || 'ارتباط با سرور برقرار نشد.' };
+    return { success: false, network: true, error: err?.message || 'ارتباط با سرور برقرار نشد.' };
   }
 };
 
@@ -139,49 +147,159 @@ export const apiLogin = async (username: string, password: string): Promise<{ su
   }
 };
 
-/**
- * Save / Add / Update / Delete Student on Google Sheet via Apps Script
- */
+export const isDataUrl = (u?: string | null): boolean => !!u && u.startsWith('data:');
+
+/** Fields the Apps Script `saveAttachmentIfAny_` expects, or {} when there is nothing new to upload. */
+export function attachmentUploadFields(url: string | undefined | null, baseName: string): Record<string, string> {
+  if (!url || !isDataUrl(url)) return {};
+  const m = /^data:([^;,]+)(?:;[^,]*)?;base64,(.*)$/s.exec(url);
+  if (!m) return {};
+  const mime = m[1].toLowerCase();
+  const ext = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : mime === 'application/pdf' ? 'pdf' : 'jpg';
+  return { base64: m[2], mime_type: mime, file_name: `${baseName}.${ext}` };
+}
+
+
+export const buildStudentPayload = (student: Partial<Student> & { id: number }, action: 'add' | 'update' | 'delete' = 'add') => ({
+  action: action === 'delete' ? 'student_delete' : action === 'update' ? 'student_update' : 'student_add',
+  id: student.id,
+  name: student.name,
+  grade: student.grade,
+  phone: student.phone,
+  father_phone: student.father_phone,
+  mother_phone: student.mother_phone,
+  national_id: student.national_id,
+  school_id: student.school_id,
+  active: action === 'delete' ? false : student.active !== false,
+});
+
+export const buildTuitionPayload = (tx: Partial<Transaction> & { amount: number; student_id?: number }) => {
+  const isDebt = tx.kind === 'شهریه_بدهی';
+  const isDiscount = tx.kind === 'تخفیف_شهریه';
+  const isApproved = tx.review_status === 'approved';
+  return {
+    action: 'tuition_add',
+    date: tx.date || todayGregorian(),
+    student_id: tx.student_id,
+    school_id: tx.school_id,
+    type: isDebt ? 'debt' : 'payment',
+    kind: tx.kind,
+    amount: tx.amount,
+    description: tx.description,
+    payment_method: isDebt ? '' : (isDiscount ? 'تخفیف / بورسیه' : tx.payment_method || 'کارت به کارت'),
+    tracking_code: tx.tracking_code || '',
+    discount_reason: tx.discount_reason || '',
+    debt_item_type: tx.debt_item_type || '',
+    installment_index: tx.installment_index,
+    total_installments: tx.total_installments,
+    pos_terminal_number: tx.pos_terminal_number || '',
+    review_status: tx.review_status || (isDebt ? 'approved' : 'pending'),
+    approved: isApproved,
+    ...attachmentUploadFields(tx.attachment_url, `tuition_${tx.id || Date.now()}`),
+  };
+};
+
+export const buildExpensePayload = (exp: Partial<Transaction> & { amount: number; category_name?: string }) => ({
+  action: 'expense_add',
+  date: exp.date || todayGregorian(),
+  school_id: exp.school_id || 1,
+  category: exp.expense_category_name || exp.category_name || 'هزینه‌های متفرقه',
+  category_id: exp.expense_category_id !== undefined ? String(exp.expense_category_id) : '',
+  amount: exp.amount,
+  description: exp.description || exp.comment || '',
+  payment_source: exp.payment_method || exp.payment_source || 'حساب مدرسه',
+  petty_cash_card: exp.petty_cash_card || '',
+  linked_account_name: exp.linked_account_name || '',
+  bank_transaction_id: exp.bank_transaction_id,
+  tracking_code: exp.tracking_code || '',
+  review_status: exp.review_status || 'pending',
+  approved: exp.review_status === 'approved',
+  ...attachmentUploadFields(exp.attachment_url, `expense_${exp.id || Date.now()}`),
+});
+
+export const buildChequePayload = (c: Partial<Cheque> & { amount: number }) => ({
+  action: 'cheque_add',
+  student_id: c.student_id,
+  school_id: c.school_id,
+  amount: c.amount,
+  sayad_id: c.sayad_id || '',
+  cheque_number: c.cheque_number || '',
+  cheque_type: c.cheque_type || 'sayad',
+  cheque_purpose: c.cheque_purpose || '',
+  bank_name: c.bank_name || '',
+  issuer_name: c.issuer_name || '',
+  issue_date: c.issue_date,
+  date: c.issue_date,
+  due_date: c.due_date,
+  description: c.note || '',
+  in_favor_school: !!c.in_favor_confirmed,
+  ...attachmentUploadFields(c.attachment_url, `cheque_${c.id || Date.now()}`),
+});
+
+export const buildPettyIncomePayload = (tx: Partial<Transaction> & { amount: number }, person: string) => ({
+  action: 'finance_transaction',
+  kind: 'cash_receipt',
+  amount: tx.amount,
+  date: tx.date,
+  school_id: tx.school_id,
+  person,
+  description: tx.description || tx.comment || 'واریزی به کارت تن‌خواه',
+  tracking_code: tx.tracking_code || '',
+  petty_cash_card: tx.petty_cash_card || '',
+  linked_account_name: tx.linked_account_name || '',
+  bank_transaction_id: tx.bank_transaction_id,
+});
+
+export const buildBankAccountPayload = (a: Partial<BankAccount> & { id?: number }, action: 'add' | 'update' | 'delete') => ({
+  action: action === 'add' ? 'bank_account_add' : action === 'delete' ? 'bank_account_delete' : 'bank_account_update',
+  id: a.id, name: a.name, bank_name: a.bank_name, branch_name: a.branch_name, account_number: a.account_number,
+  card_number: a.card_number, sheba_number: a.sheba_number, school_id: a.school_id, pos_terminal_number: a.pos_terminal_number,
+  kol_code: a.kol_code, moeen_code: a.moeen_code, tafsili_code: a.tafsili_code, initial_balance: a.initial_balance,
+  is_active: a.is_active, notes: a.notes,
+});
+
+export const buildWorkLogPayload = (w: StaffWorkLog) => ({
+  action: 'staff_worklog_add', staff_id: w.staff_id, month_name: w.month_name, work_hours: w.work_hours,
+  overtime_hours: w.overtime_hours, sessions_count: w.sessions_count || 0, absent_hours: w.absent_hours || 0,
+  recorded_by: w.recorded_by, date: w.date, notes: w.notes || '',
+});
+
+export const buildPayrollPayload = (p: PayrollPayment) => ({
+  action: 'payroll_add', staff_id: p.staff_id, month_name: p.month_name, payment_type: p.payment_type,
+  gross_amount: p.gross_amount, insurance_deduction: p.insurance_deduction, net_paid_amount: p.net_paid_amount,
+  payment_date: p.payment_date, tracking_code: p.tracking_code, source: p.source, notes: p.notes || '',
+  ...attachmentUploadFields(p.attachment_url, `payroll_${p.id}`),
+});
+
 export const apiSaveStudent = async (
   student: Partial<Student> & { id: number },
   action: 'add' | 'update' | 'delete' = 'add'
-) => {
-  return postToAppsScript({
-    action: action === 'delete' ? 'student_delete' : action === 'update' ? 'student_update' : 'student_add',
-    id: student.id,
-    name: student.name,
-    grade: student.grade,
-    phone: student.phone,
-    father_phone: student.father_phone,
-    mother_phone: student.mother_phone,
-    national_id: student.national_id,
-    school_id: student.school_id,
-    active: action === 'delete' ? false : student.active !== false,
-  });
-};
+) => postToAppsScript(buildStudentPayload(student, action));
 
 
-export const apiSaveManager = async (manager: Partial<User> & { id?: number }, action: 'add' | 'update' | 'delete' = 'update') => {
+export const buildManagerPayload = (manager: Partial<User> & { id?: number }, action: 'add' | 'update' | 'delete' = 'update') => {
   const payload: Record<string, any> = {
     action: action === 'add' ? 'manager_add' : action === 'delete' ? 'manager_delete' : 'manager_update',
-    id: manager.id, name: manager.name, username: manager.username, password: manager.password,
+    id: manager.id, name: manager.name, username: manager.username, password: manager.password, gender: manager.gender,
     school_id: manager.school_id, role: manager.role, active: manager.active,
     petty_cash_card: manager.petty_cash_card, petty_cash_bank: manager.petty_cash_bank,
     petty_cash_shaba: manager.petty_cash_shaba, petty_cash_limit: manager.petty_cash_limit,
     petty_cash_balance: manager.petty_cash_balance,
   };
-  return postToAppsScript(payload);
+  return payload;
 };
+export const apiSaveManager = async (manager: Partial<User> & { id?: number }, action: 'add' | 'update' | 'delete' = 'update') =>
+  postToAppsScript(buildManagerPayload(manager, action));
 
-export const apiSaveSchool = async (school: Partial<School> & { id?: number }, action: 'add' | 'update' | 'delete' = 'update') =>
-  postToAppsScript({
+export const buildSchoolPayload = (school: Partial<School> & { id?: number }, action: 'add' | 'update' | 'delete' = 'update') => ({
     action: action === 'add' ? 'school_add' : action === 'delete' ? 'school_delete' : 'school_update',
     id: school.id, name: school.name, code: school.code, type: school.type,
     moeen_code: school.moeen_code, petty_cash_card: school.petty_cash_card, pos_terminal_number: school.pos_terminal_number, active: school.active,
-  });
+});
+export const apiSaveSchool = async (school: Partial<School> & { id?: number }, action: 'add' | 'update' | 'delete' = 'update') =>
+  postToAppsScript(buildSchoolPayload(school, action));
 
-export const apiSaveStaffMember = async (staff: Partial<StaffMember> & { id?: number }, action: 'add' | 'update' | 'delete' = 'update') =>
-  postToAppsScript({
+export const buildStaffPayload = (staff: Partial<StaffMember> & { id?: number }, action: 'add' | 'update' | 'delete' = 'update') => ({
     action: action === 'add' ? 'staff_add' : action === 'delete' ? 'staff_delete' : 'staff_update',
     id: staff.id, school_id: staff.school_id, school_name: staff.school_name,
     name: staff.name, national_id: staff.national_id, phone: staff.phone,
@@ -191,99 +309,45 @@ export const apiSaveStaffMember = async (staff: Partial<StaffMember> & { id?: nu
     insurance_employee_share: staff.insurance_employee_share,
     bank_card_or_sheba: staff.bank_card_or_sheba, kol_code: staff.kol_code,
     moeen_code: staff.moeen_code, tafsili_code: staff.tafsili_code, active: staff.active,
-  });
+});
+export const apiSaveStaffMember = async (staff: Partial<StaffMember> & { id?: number }, action: 'add' | 'update' | 'delete' = 'update') =>
+  postToAppsScript(buildStaffPayload(staff, action));
 
 
-/**
- * Save Tuition (Payment or Debt) on Google Sheet via Apps Script
- */
-export const apiSaveTuition = async (
-  tx: Partial<Transaction> & { amount: number; student_id?: number }
-) => {
-  const isDebt = tx.kind === 'شهریه_بدهی';
-  const isApproved = tx.review_status === 'approved';
-  return postToAppsScript({
-    action: 'tuition_add',
-    id: tx.id,
-    date: tx.date || todayGregorian(),
-    student_id: tx.student_id,
-    school_id: tx.school_id,
-    type: isDebt ? 'debt' : 'payment',
-    amount: tx.amount,
-    description: tx.description,
-    payment_source: tx.payment_method || 'بانک',
-    tracking_code: tx.tracking_code || '',
-    review_status: tx.review_status || (isDebt ? 'approved' : 'pending'),
-    approved: isApproved,
-    // Google Apps Script saveAttachmentIfAny_ specifically expects `base64`
-    base64: tx.attachment_url || '',
-    image_url: tx.attachment_url || '',
-    file_name: `tuition_${tx.id || Date.now()}.jpg`,
-    mime_type: 'image/jpeg',
-  });
-};
+/** Save Tuition (Payment, Debt or Discount) on Google Sheet via Apps Script */
+export const apiSaveTuition = async (tx: Partial<Transaction> & { amount: number; student_id?: number }) =>
+  postToAppsScript(buildTuitionPayload(tx));
 
-/**
- * Save Expense on Google Sheet via Apps Script with receipt attachment
- */
-export const apiSaveExpense = async (
-  exp: Partial<Transaction> & { amount: number; category_name?: string }
-) => {
-  const isApproved = exp.review_status === 'approved';
-  return postToAppsScript({
-    action: 'expense_add',
-    id: exp.id,
-    date: exp.date || todayGregorian(),
-    school_id: exp.school_id || 1,
-    category: exp.expense_category_name || exp.category_name || 'هزینه‌های متفرقه',
-    amount: exp.amount,
-    description: exp.description || exp.comment || '',
-    payment_source: exp.payment_source || 'حساب مدرسه',
-    tracking_code: exp.tracking_code || '',
-    review_status: exp.review_status || 'pending',
-    approved: isApproved,
-    // Google Apps Script saveAttachmentIfAny_ specifically expects `base64`
-    base64: exp.attachment_url || '',
-    image_url: exp.attachment_url || '',
-    file_name: `expense_${exp.id || Date.now()}.jpg`,
-    mime_type: 'image/jpeg',
-  });
-};
+/** Save Expense on Google Sheet via Apps Script with receipt attachment */
+export const apiSaveExpense = async (exp: Partial<Transaction> & { amount: number; category_name?: string }) =>
+  postToAppsScript(buildExpensePayload(exp));
 
-/**
- * Review / Approve or Reject transaction on Google Apps Script
- */
-export const apiReviewTransaction = async (
+/** Review / Approve or Reject a transaction. `source` identifies the Tuition/Expenses row. */
+export const buildReviewPayload = (
   id: number,
   status: 'approved' | 'rejected',
   rejectionReason?: string
-) => {
-  return postToAppsScript({
+): Record<string, any> => {
+  if (id >= 200000000 && id < 900000000) {
+    // Ledger-only document (petty-cash deposit, voucher): reviewed through its ledger row.
+    return { action: 'transaction_review', id: id - 200000000, status, review_status: status, approved: status === 'approved', rejection_reason: rejectionReason || '' } as Record<string, any>;
+  }
+  const isExpense = id >= 100000 && id < 200000000;
+  return {
     action: 'transaction_review',
-    id,
+    source_type: isExpense ? 'expense' : 'tuition',
+    source_id: isExpense ? id - 100000 : id,
     status,
     review_status: status,
     approved: status === 'approved',
     rejection_reason: rejectionReason || '',
-  });
+  };
 };
+export const apiReviewTransaction = async (id: number, status: 'approved' | 'rejected', rejectionReason?: string) =>
+  postToAppsScript(buildReviewPayload(id, status, rejectionReason));
 
-/**
- * Update Cheque Status on Google Sheet via Apps Script
- */
-export const apiSaveCheque = async (
-  cheque: Partial<Cheque> & { id: number }
-) => {
-  return postToAppsScript({
-    action: 'cheque_review',
-    id: cheque.id,
-    status: cheque.status,
-    sayad_id: cheque.sayad_id,
-    amount: cheque.amount,
-    student_id: cheque.student_id,
-    school_id: cheque.school_id,
-  });
-};
+export const apiSaveCheque = async (cheque: Partial<Cheque> & { amount: number }) =>
+  postToAppsScript(buildChequePayload(cheque));
 
 /**
  * Parses any Excel workbook (.xlsx / .xls) exported from Google Sheets or created locally.
@@ -761,30 +825,45 @@ export const loadDataFromAppsScript = async (
 
   const transactions: Transaction[] = [];
 
+  const truthy = (v: any) => v === true || String(v).toLowerCase() === 'true';
+  const num = (v: any) => Number(String(v ?? 0).replace(/[^\d.-]/g, '')) || 0;
+  const rawLedger: any[] = Array.isArray(rawData.transactions) ? rawData.transactions : [];
+  // Bank reconciliation is stored on the ledger rows; mirror it onto tuition / expense items.
+  const ledgerReconciled = new Map<string, boolean>();
+  // Bank rows reference ledger ids; the app identifies transactions by their source row id.
+  const ledgerToAppId = new Map<string, number>();
+  rawLedger.forEach((l: any) => {
+    const k = String(l.kind || '');
+    const group = k === 'expense' ? 'e' : k === 'payment' || k === 'debt' ? 't' : '';
+    if (group) ledgerReconciled.set(`${group}:${l.source_id}`, truthy(l.reconciled));
+    if (group) ledgerToAppId.set(String(l.id), group === 'e' ? 100000 + Number(l.source_id) : Number(l.source_id));
+  });
+  const reviewOf = (row: any, forceApproved: boolean): 'approved' | 'rejected' | 'pending' => {
+    if (forceApproved) return 'approved';
+    const rs = String(row.review_status || row.status || '').toLowerCase();
+    if (rs === 'rejected') return 'rejected';
+    if (rs === 'approved' || truthy(row.approved)) return 'approved';
+    return 'pending';
+  };
+
   rawTuition.forEach((t: any, idx: number) => {
     const isDebt = t.type === 'debt' || String(t.type || '').includes('بدهی');
-    const amountNum = Number(String(t.amount || 0).replace(/[^\d.-]/g, '')) || 0;
+    const isDiscount = !isDebt && (String(t.kind || '') === 'تخفیف_شهریه' || String(t.payment_source || '') === 'تخفیف / بورسیه');
+    const amountNum = num(t.amount);
     const dateStr = dateFromExcelSerial(t.date) || todayGregorian();
     const stId = Number(t.student_id);
     const stObj = students.find((s) => s.id === stId);
     const scId = Number(t.school_id) || stObj?.school_id || 1;
-    const isApproved = t.approved === true || String(t.approved).toLowerCase() === 'true';
-    const isRejected = String(t.review_status).toLowerCase() === 'rejected' || String(t.status).toLowerCase() === 'rejected';
-    const reviewStatus: 'approved' | 'rejected' | 'pending' = isDebt
-      ? 'approved'
-      : isRejected
-      ? 'rejected'
-      : isApproved
-      ? 'approved'
-      : 'pending';
+    const reviewStatus = reviewOf(t, isDebt || isDiscount);
     const imgUrl = t.image_url || t.attachment_url || t.attachment || '';
+    const tid = Number(t.id) || 200 + idx;
 
     transactions.push({
-      id: Number(t.id) || 200 + idx,
+      id: tid,
       date: dateStr,
       jalali_date: dateStr ? jalaliFromGregorian(dateStr) : '',
       description: t.description || (isDebt ? 'شهریه تحصیلی' : 'پرداخت شهریه'),
-      kind: isDebt ? 'شهریه_بدهی' : 'شهریه',
+      kind: isDebt ? 'شهریه_بدهی' : isDiscount ? 'تخفیف_شهریه' : 'شهریه',
       amount: amountNum,
       debit: isDebt ? amountNum : 0,
       credit: !isDebt ? amountNum : 0,
@@ -794,28 +873,27 @@ export const loadDataFromAppsScript = async (
       school_id: scId,
       school_name: schoolMap.get(scId) || stObj?.school_name,
       tracking_code: t.tracking_code || '',
-      payment_method: t.payment_source || 'کارت به کارت',
-      reconciled: t.reconciled === true || String(t.reconciled).toLowerCase() === 'true',
+      payment_method: isDebt ? undefined : (t.payment_source || (isDiscount ? 'تخفیف / بورسیه' : 'کارت به کارت')),
+      discount_reason: t.discount_reason || undefined,
+      debt_item_type: t.debt_item_type || undefined,
+      installment_index: t.installment_index !== '' && t.installment_index !== undefined ? Number(t.installment_index) : undefined,
+      total_installments: t.total_installments !== '' && t.total_installments !== undefined ? Number(t.total_installments) : undefined,
+      pos_terminal_number: t.pos_terminal_number || undefined,
+      registered_by: t.created_by,
+      reconciled: truthy(t.reconciled) || ledgerReconciled.get(`t:${t.id}`) === true,
       review_status: reviewStatus,
+      rejection_reason: t.rejection_reason || undefined,
       attachment_url: imgUrl,
     });
   });
 
   rawExpenses.forEach((e: any, idx: number) => {
-    const amountNum = Number(String(e.amount || 0).replace(/[^\d.-]/g, '')) || 0;
+    const amountNum = num(e.amount);
     const dateStr = dateFromExcelSerial(e.date) || todayGregorian();
     const scId = Number(e.school_id) || 1;
     const desc = e.description || 'هزینه مدرسه';
     const isFee = desc.includes('کارمزد') || desc.includes('پایا') || desc.includes('ساتنا');
-    const isApproved = e.approved === true || String(e.approved).toLowerCase() === 'true';
-    const isRejected = String(e.review_status).toLowerCase() === 'rejected' || String(e.status).toLowerCase() === 'rejected';
-    const reviewStatus: 'approved' | 'rejected' | 'pending' = isFee
-      ? 'approved'
-      : isRejected
-      ? 'rejected'
-      : isApproved
-      ? 'approved'
-      : 'pending';
+    const reviewStatus = reviewOf(e, isFee);
     const imgUrl = e.image_url || e.attachment_url || e.attachment || '';
 
     transactions.push({
@@ -827,15 +905,55 @@ export const loadDataFromAppsScript = async (
       amount: amountNum,
       debit: amountNum,
       credit: 0,
+      expense_category_id: e.category_id || undefined,
       expense_category_name: isFee ? 'کارمزد بانک' : (e.category || 'هزینه‌های متفرقه اداری'),
       is_bank_fee: isFee,
       school_id: scId,
       school_name: schoolMap.get(scId),
       tracking_code: e.tracking_code || '',
       payment_method: e.payment_source || 'حساب مدرسه',
-      reconciled: e.reconciled === true || String(e.reconciled).toLowerCase() === 'true',
+      payment_source: e.payment_source || 'حساب مدرسه',
+      petty_cash_card: e.petty_cash_card || undefined,
+      linked_account_name: e.linked_account_name || undefined,
+      bank_transaction_id: e.bank_transaction_id !== '' && e.bank_transaction_id !== undefined ? Number(e.bank_transaction_id) : undefined,
+      registered_by: e.created_by,
+      reconciled: truthy(e.reconciled) || ledgerReconciled.get(`e:${e.id}`) === true,
       review_status: reviewStatus,
+      rejection_reason: e.rejection_reason || undefined,
       attachment_url: imgUrl,
+    });
+  });
+
+  // Ledger-only documents (petty-cash deposits, cash / cheque vouchers) have no Tuition/Expenses row.
+  rawLedger.forEach((l: any) => {
+    const k = String(l.kind || '');
+    if (!['cash_receipt', 'cash_payment', 'cheque_receipt', 'cheque_payment'].includes(k)) return;
+    const amountNum = num(l.amount);
+    const dateStr = dateFromExcelSerial(l.date) || todayGregorian();
+    const scId = Number(l.school_id) || 1;
+    const incoming = k.endsWith('receipt');
+    const petty = !!l.petty_cash_card;
+    transactions.push({
+      id: 200000000 + Number(l.id),
+      date: dateStr,
+      jalali_date: dateStr ? jalaliFromGregorian(dateStr) : '',
+      description: l.description || '',
+      kind: incoming ? 'دریافت متفرقه' : 'هزینه',
+      amount: amountNum,
+      debit: incoming ? 0 : amountNum,
+      credit: incoming ? amountNum : 0,
+      school_id: scId,
+      school_name: schoolMap.get(scId),
+      tracking_code: l.tracking_code || '',
+      payment_method: petty ? 'کارت تن‌خواه' : String(l.payment_source || ''),
+      payment_source: petty ? 'petty_cash' : undefined,
+      petty_cash_card: l.petty_cash_card || undefined,
+      linked_account_name: l.linked_account_name || undefined,
+      bank_transaction_id: l.bank_transaction_id !== '' && l.bank_transaction_id !== undefined ? Number(l.bank_transaction_id) : undefined,
+      registered_by: l.created_by,
+      reconciled: truthy(l.reconciled),
+      review_status: reviewOf(l, false),
+      rejection_reason: l.rejection_reason || undefined,
     });
   });
 
@@ -843,23 +961,30 @@ export const loadDataFromAppsScript = async (
     const stId = Number(c.student_id);
     const stObj = students.find((s) => s.id === stId);
     const scId = Number(c.school_id) || stObj?.school_id || 1;
-
+    const sayad = String(c.sayad_id || '');
+    const cType = ['sayad', 'non_sayad', 'gharzolhasane', 'guarantee'].includes(String(c.cheque_type))
+      ? (String(c.cheque_type) as Cheque['cheque_type'])
+      : sayad.length === 16 ? 'sayad' : 'non_sayad';
     return {
       id: Number(c.id) || idx + 1,
       student_id: stId,
-      student_name: stObj?.name || 'دانش‌آموز',
+      student_name: c.student_name || stObj?.name || 'دانش‌آموز',
       school_id: scId,
-      school_name: schoolMap.get(scId) || 'مدرسه',
-      amount: Number(String(c.amount || 0).replace(/[^\d.-]/g, '')) || 0,
-      sayad_id: c.sayad_id || '',
+      school_name: schoolMap.get(scId) || c.school_name || 'مدرسه',
+      amount: num(c.amount),
+      sayad_id: sayad,
+      cheque_number: c.cheque_number || undefined,
       due_date: dateFromExcelSerial(c.due_date) || todayGregorian(),
       issue_date: dateFromExcelSerial(c.date) || todayGregorian(),
       note: c.description || '',
       status: c.status || 'pending',
-      bank_name: c.bank_name || 'بانک ملی',
-      cheque_type: String(c.sayad_id || '').length === 16 ? 'sayad' : 'non_sayad',
-      in_favor_confirmed: true,
-      received_confirmed: true,
+      bank_name: c.bank_name || undefined,
+      cheque_type: cType,
+      cheque_purpose: (c.cheque_purpose || undefined) as Cheque['cheque_purpose'],
+      issuer_name: c.issuer_name || undefined,
+      in_favor_confirmed: truthy(c.in_favor_confirmed),
+      received_confirmed: truthy(c.received_confirmed),
+      attachment_url: c.image_url || c.attachment_url || undefined,
     };
   });
 
@@ -891,8 +1016,48 @@ export const loadDataFromAppsScript = async (
       school_id: Number(b.school_id) || 1, school_name: schoolMap.get(Number(b.school_id) || 1),
       amount: Number(String(b.amount || 0).replace(/[^\d.-]/g, '')) || 0,
       tracking_code: String(b.tracking_code || ''), bank_account: String(b.bank_account || ''),
-      description: String(b.description || ''), reconciled: b.matched === true || String(b.matched) === 'true',
-      matched_transaction_id: b.matched_transaction_id ? Number(b.matched_transaction_id) : undefined,
+      description: String(b.description || ''), reconciled: b.matched === true || String(b.matched) === 'true' || b.reconciled === true,
+      matched_transaction_id: b.matched_transaction_id ? (ledgerToAppId.get(String(b.matched_transaction_id)) ?? 200000000 + Number(b.matched_transaction_id)) : undefined,
+      direction: (b.direction || 'unknown') as BankTransaction['direction'],
+      balance: b.balance !== '' && b.balance !== undefined && b.balance !== null ? Number(b.balance) : undefined,
+      card_number: b.card_number || undefined,
+      source_card_number: b.source_card_number || undefined,
+      destination_card_number: b.destination_card_number || undefined,
+      terminal_number: b.terminal_number || undefined,
+      reference_number: b.reference_number || undefined,
+      pos_reference_code: b.pos_reference_code || undefined,
+      fee_amount: b.fee_amount !== '' && b.fee_amount !== undefined && b.fee_amount !== null ? Number(b.fee_amount) : undefined,
+      account_suffix: b.account_suffix || undefined,
+      transaction_time: b.transaction_time || undefined,
+      settlement_date: b.settlement_date || undefined,
+      assigned_student_id: b.assigned_student_id ? Number(b.assigned_student_id) : undefined,
+      assigned_student_name: b.assigned_student_name || undefined,
+      assigned_purpose: b.assigned_purpose || undefined,
+    })),
+    messages: (Array.isArray(rawData.messages) ? rawData.messages : []).map((m: any) => ({
+      id: String(m.id), message: String(m.message || ''), created_at: String(m.created_at || ''), author_name: String(m.author_name || ''),
+    })).filter((m: SeniorMessage) => m.message),
+    staffWorkLogs: (Array.isArray(rawData.staffWorkLogs) ? rawData.staffWorkLogs : []).map((w: any) => ({
+      id: Number(w.id), staff_id: Number(w.staff_id), staff_name: String(w.staff_name || ''), school_id: Number(w.school_id),
+      school_name: w.school_name || schoolMap.get(Number(w.school_id)), month_name: String(w.month_name || ''),
+      work_hours: Number(w.work_hours || 0), overtime_hours: Number(w.overtime_hours || 0), sessions_count: Number(w.sessions_count || 0),
+      absent_hours: Number(w.absent_hours || 0), recorded_by: String(w.recorded_by || ''), date: String(w.date || ''), notes: String(w.notes || ''),
+    })),
+    payroll: (Array.isArray(rawData.payroll) ? rawData.payroll : []).map((p: any) => ({
+      id: Number(p.id), staff_id: Number(p.staff_id), staff_name: String(p.staff_name || ''), school_id: Number(p.school_id),
+      school_name: p.school_name || schoolMap.get(Number(p.school_id)), month_name: String(p.month_name || ''),
+      payment_type: (p.payment_type || 'salary') as PayrollPayment['payment_type'],
+      gross_amount: Number(p.gross_amount || 0), insurance_deduction: Number(p.insurance_deduction || 0), net_paid_amount: Number(p.net_paid_amount || 0),
+      payment_date: String(p.payment_date || ''), tracking_code: String(p.tracking_code || ''), source: (p.source === 'own' ? 'own' : 'bank') as PayrollPayment['source'],
+      attachment_url: p.attachment_url || p.image_url || undefined, notes: String(p.notes || ''), created_at: String(p.created_at || ''),
+    })),
+    bankAccounts: (Array.isArray(rawData.bankAccounts) ? rawData.bankAccounts : []).map((a: any) => ({
+      id: Number(a.id), name: String(a.name || ''), bank_name: String(a.bank_name || ''), branch_name: a.branch_name || undefined,
+      account_number: String(a.account_number || ''), card_number: a.card_number || undefined, sheba_number: a.sheba_number || undefined,
+      school_id: Number(a.school_id), school_name: a.school_name || schoolMap.get(Number(a.school_id)),
+      pos_terminal_number: a.pos_terminal_number || undefined, kol_code: String(a.kol_code || '10'), moeen_code: String(a.moeen_code || ''),
+      tafsili_code: a.tafsili_code || undefined, initial_balance: Number(a.initial_balance || 0), is_active: a.is_active !== false && String(a.is_active) !== 'false',
+      notes: a.notes || undefined, created_at: a.created_at || undefined,
     })),
     staff: rawStaff.map((st: any, idx: number) => ({
       id: Number(st.id) || idx + 1,
