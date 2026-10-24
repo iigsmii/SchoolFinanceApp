@@ -209,7 +209,7 @@ export const apiSaveTuition = async (
 ) => {
   const isDebt = tx.kind === 'شهریه_بدهی';
   const isApproved = tx.review_status === 'approved';
-  return postToAppsScript({
+  const result = await postToAppsScript({
     action: 'tuition_add',
     id: tx.id,
     date: tx.date || todayGregorian(),
@@ -229,6 +229,8 @@ export const apiSaveTuition = async (
     file_name: `tuition_${tx.id || Date.now()}.jpg`,
     mime_type: 'image/jpeg',
   });
+  if (!result?.success) throw new Error(result?.error || result?.message || 'ثبت شهریه در Google Sheets انجام نشد.');
+  return result;
 };
 
 /**
@@ -238,7 +240,7 @@ export const apiSaveExpense = async (
   exp: Partial<Transaction> & { amount: number; category_name?: string }
 ) => {
   const isApproved = exp.review_status === 'approved';
-  return postToAppsScript({
+  const result = await postToAppsScript({
     action: 'expense_add',
     id: exp.id,
     date: exp.date || todayGregorian(),
@@ -256,6 +258,8 @@ export const apiSaveExpense = async (
     file_name: `expense_${exp.id || Date.now()}.jpg`,
     mime_type: 'image/jpeg',
   });
+  if (!result?.success) throw new Error(result?.error || result?.message || 'ثبت هزینه در Google Sheets انجام نشد.');
+  return result;
 };
 
 /**
@@ -266,7 +270,7 @@ export const apiReviewTransaction = async (
   status: 'approved' | 'rejected',
   rejectionReason?: string
 ) => {
-  return postToAppsScript({
+  const result = await postToAppsScript({
     action: 'transaction_review',
     id,
     status,
@@ -274,6 +278,8 @@ export const apiReviewTransaction = async (
     approved: status === 'approved',
     rejection_reason: rejectionReason || '',
   });
+  if (!result?.success) throw new Error(result?.error || result?.message || 'تغییر وضعیت تراکنش در Google Sheets انجام نشد.');
+  return result;
 };
 
 /**
