@@ -12,7 +12,7 @@
  * 4) Copy the /exec URL into Android ApiClient.java.
  */
 
-const BACKEND_BUILD = '2026.10.24.1';
+const BACKEND_BUILD = '2026.10.24.2';
 
 const CFG = {
   SPREADSHEET_ID: '1bFTL1edC-btgjp2KvvkwIM5WaJnycVFylTmFQQFRixk',
@@ -1087,10 +1087,11 @@ function tuitionAdd_(b) {
 
   if(type==='payment' && !String(b.tracking_code||'').trim() && paymentMethod!=='پول نقد') throw new Error('شماره پیگیری برای این روش پرداخت الزامی است.');
   const id=nextId_('Tuition');
+  const transactionId=nextId_('Transactions');
   const image=saveAttachmentIfAny_(b,'tuition',id,u.id);
   appendFinancialPair_('Tuition',[id,recordDate,String(b.student_id),String(schoolId),type,amount,String(b.description||''),String(b.tracking_code||''),image.url||'',u.id,now_(),false,false,paymentMethod],
-    [nextId_('Transactions'),recordDate,String(schoolId),type,amount,String(b.description||''),String(b.tracking_code||''),image.url||'',u.id,now_(),false,false,id,paymentMethod]);
-  return {success:true,id:id,image_url:image.url||'',payment_method:paymentMethod};
+    [transactionId,recordDate,String(schoolId),type,amount,String(b.description||''),String(b.tracking_code||''),image.url||'',u.id,now_(),false,false,id,paymentMethod]);
+  return {success:true,id:id,transaction_id:transactionId,image_url:image.url||'',payment_method:paymentMethod};
 }
 
 function tuitionBulkDebt_(b) {
@@ -1182,15 +1183,16 @@ function expenseAdd_(b) {
   activeSchool_(schoolId);const recordDate=date_(b.date);
   if(!String(b.tracking_code||'').trim()) throw new Error('شماره پیگیری الزامی است.');
   const id=nextId_('Expenses');
+  const transactionId=nextId_('Transactions');
   const image=saveAttachmentIfAny_(b,'expense',id,u.id);
   appendFinancialPair_('Expenses',[
     id,recordDate,String(schoolId),category,amount,String(b.description||''),
     String(b.tracking_code||''),image.url||'',u.id,now_(),false,false,String(b.payment_source||'bank')
   ],[
-    nextId_('Transactions'),recordDate,String(schoolId),'expense',amount,String(b.description||''),
+    transactionId,recordDate,String(schoolId),'expense',amount,String(b.description||''),
     String(b.tracking_code||''),image.url||'',u.id,now_(),false,false,id,String(b.payment_source||'bank')
   ]);
-  return {success:true,id:id,image_url:image.url||''};
+  return {success:true,id:id,transaction_id:transactionId,image_url:image.url||''};
 }
 
 function expenseUpdate_(b) {
