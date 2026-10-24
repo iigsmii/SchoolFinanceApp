@@ -1144,7 +1144,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       newTxId
     );
 
-    apiSaveTuition(newTx).then(() => {
+    apiSaveTuition(newTx).then((result) => {
+      if (result?.transaction_id && Number(result.transaction_id) !== newTx.id) {
+        const cloudId = Number(result.transaction_id);
+        setTransactions((prev) => prev.map((t) => t.id === newTx.id ? { ...t, id: cloudId } : t));
+        saveToStorage('transactions', loadFromStorage<Transaction[]>('transactions', []).map((t) => t.id === newTx.id ? { ...t, id: cloudId } : t));
+      }
       void syncWithGoogleSheets(spreadsheetId).catch(() => {});
     }).catch((e) => {
       console.warn('Cloud sync tuition payment failed:', e);
@@ -1315,7 +1320,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       newId
     );
 
-    apiSaveExpense(newTx).then(() => {
+    apiSaveExpense(newTx).then((result) => {
+      if (result?.transaction_id && Number(result.transaction_id) !== newTx.id) {
+        const cloudId = Number(result.transaction_id);
+        setTransactions((prev) => prev.map((t) => t.id === newTx.id ? { ...t, id: cloudId } : t));
+        saveToStorage('transactions', loadFromStorage<Transaction[]>('transactions', []).map((t) => t.id === newTx.id ? { ...t, id: cloudId } : t));
+      }
       void syncWithGoogleSheets(spreadsheetId).catch(() => {});
     }).catch((e) => {
       console.warn('Cloud sync expense failed:', e);
