@@ -42,6 +42,7 @@ import {
 import * as XLSX from 'xlsx';
 import { postToAppsScript } from '../../services/googleSheets';
 import { BankTransaction, Transaction, Student } from '../../types';
+import { openAttachment } from '../../services/attachments';
 
 export const BankScreen: React.FC = () => {
   const {
@@ -499,21 +500,6 @@ export const BankScreen: React.FC = () => {
       school_name: student?.school_name || b.school_name,
       reconciled: assignStudentCreateLedger ? true : b.reconciled,
     });
-
-    postToAppsScript({
-      action: 'bank_annotation',
-      school_id: student?.school_id || b.school_id,
-      date: b.date,
-      amount: b.amount,
-      tracking_code: b.tracking_code || '',
-      bank_account: b.bank_account || '',
-      card_number: b.card_number || b.bank_account || '',
-      direction: b.direction || 'unknown',
-      balance: b.balance,
-      student_id: student?.id || '',
-      student_name: student?.name || '',
-      purpose: purpose,
-    }).catch((err) => console.warn('Cloud annotation failed:', err));
 
     setAssignStudentBankRow(null);
   };
@@ -1111,13 +1097,6 @@ export const BankScreen: React.FC = () => {
         const count = importBankTransactions(assignedItems);
         const matchedCount = assignedItems.filter((item) => item.reconciled).length;
         const unmatchedCount = assignedItems.length - matchedCount;
-
-        postToAppsScript({
-          action: 'bank_upload',
-          file_name: file.name,
-          school_id: currentUser?.school_id || 1,
-          rows: assignedItems,
-        }).catch((err) => console.warn('Cloud sync for bank upload failed:', err));
 
         let reportMsg = `فایل «${sourceName}» (${isPosReport ? 'گزارش پایانه پوز شاپرک' : 'صورتحساب بانکی'}) با موفقیت خوانده شد: ${count} تراکنش بارگذاری گردید (${matchedCount} مورد تطبیق خودکار و ${unmatchedCount} مورد در صف بررسی).`;
         if (failedPosSkipped > 0) {
@@ -2045,14 +2024,13 @@ export const BankScreen: React.FC = () => {
                           <span className="font-bold text-indigo-900 flex items-center gap-1.5">
                             <Receipt className="w-4 h-4 text-indigo-700" /> مدرک پیوست دارد
                           </span>
-                          <a
-                            href={t.attachment_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                          <button
+                            type="button"
+                            onClick={() => void openAttachment(t.attachment_url!)}
                             className="text-indigo-700 font-bold underline"
                           >
                             مشاهده تصویر فیش
-                          </a>
+                          </button>
                         </div>
                       )}
 

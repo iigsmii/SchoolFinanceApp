@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { StaffExcelModal } from '../StaffExcelModal';
 import { SignatureUploader } from '../SignatureUploader';
+import { openAttachment } from '../../services/attachments';
 
 const MONTH_NAMES = [
   'مهر ۱۴۰۵',
@@ -932,15 +933,14 @@ export const StaffScreen: React.FC = () => {
 
                       <div className="flex items-center gap-2 self-end sm:self-auto">
                         {p.attachment_url && (
-                          <a
-                            href={p.attachment_url}
-                            target="_blank"
-                            rel="noreferrer"
+                          <button
+                            type="button"
+                            onClick={() => void openAttachment(p.attachment_url!)}
                             className="px-2.5 py-1.5 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-purple-700 text-xs font-bold flex items-center gap-1 shadow-2xs"
                           >
                             <Receipt className="w-3.5 h-3.5" />
                             <span>رسید</span>
-                          </a>
+                          </button>
                         )}
 
                         <button

@@ -25,6 +25,7 @@ import {
   CreditCard,
   FileText,
 } from 'lucide-react';
+import { AttachmentImg } from '../AttachmentImg';
 
 const IRANIAN_BANKS = [
   'بانک ملی ایران',
@@ -720,7 +721,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
               </button>
             </div>
             <div className="max-h-[70vh] overflow-auto rounded-2xl bg-gray-50 flex items-center justify-center p-2">
-              <img
+              <AttachmentImg
                 src={previewAttachment}
                 alt="Cheque attachment"
                 className="max-h-[65vh] w-auto object-contain rounded-xl shadow-xs"

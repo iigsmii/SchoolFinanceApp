@@ -31,6 +31,8 @@ import {
 import { ReceiptImageUploader } from '../ReceiptImageUploader';
 import { InvoicePrintModal } from '../InvoicePrintModal';
 import { matchesStudentSearch } from '../../utils/studentSearch';
+import { AttachmentImg } from '../AttachmentImg';
+import { openAttachment } from '../../services/attachments';
 
 const PAYMENT_METHODS = ['پول نقد', 'کارت به کارت', 'کارت خوان', 'چک'];
 
@@ -1508,7 +1510,7 @@ export const TuitionScreen: React.FC = () => {
               </button>
             </div>
             <div className="p-3 sm:p-5 overflow-auto flex items-center justify-center bg-gray-950/5 min-h-56">
-              <img
+              <AttachmentImg
                 src={selectedAttachment.url}
                 alt={selectedAttachment.title}
                 className="max-w-full max-h-[72vh] object-contain rounded-xl shadow-md border border-gray-200"
@@ -1516,16 +1518,14 @@ export const TuitionScreen: React.FC = () => {
             </div>
             <div className="p-3 border-t border-gray-100 flex items-center justify-between bg-gray-50 text-xs">
               <span className="text-gray-500">رسید بانکی پرداخت شهریه</span>
-              <a
-                href={selectedAttachment.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                download="receipt.jpg"
+              <button
+                type="button"
+                onClick={() => void openAttachment(selectedAttachment.url)}
                 className="px-3.5 py-1.5 rounded-xl bg-indigo-600 text-white font-bold flex items-center gap-1.5 shadow-2xs hover:bg-indigo-700"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>دانلود و باز کردن فایل اصلی</span>
-              </a>
+              </button>
             </div>
           </div>
         </div>
