@@ -1,7 +1,7 @@
 {
-  "version": "2.16.237",
+  "version": "2.16.238",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Add explicit Apps Script backend build/version diagnostic",
-  "build": 237,
-  "published_at": "2026-10-24T00:23:38Z"
+  "notes": "Treat failed Sheets mutations as errors",
+  "build": 238,
+  "published_at": "2026-10-24T00:31:16Z"
 }
