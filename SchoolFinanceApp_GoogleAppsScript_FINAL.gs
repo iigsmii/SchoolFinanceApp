@@ -12,6 +12,8 @@
  * 4) Copy the /exec URL into Android ApiClient.java.
  */
 
+const BACKEND_BUILD = '2026.10.24.1';
+
 const CFG = {
   SPREADSHEET_ID: '1bFTL1edC-btgjp2KvvkwIM5WaJnycVFylTmFQQFRixk',
   DRIVE_FOLDER_NAME: 'SchoolFinanceApp_Attachments',
@@ -221,6 +223,7 @@ function doGet(e) {
   try {
     const params=(e&&e.parameter)||{};
     const action=String(params.action||'').replace(/^\/+|\/+$/g,'').toLowerCase();
+    if(action==='backend_info' || action==='health') return json_({success:true,backend_version:BACKEND_BUILD,service:'SchoolFinanceApp Google Backend',deployment_check:'GET backend_info'});
     // Preserve query parameters (especially token/authToken) so GET fallback uses
     // the same authenticated request context as POST. Handlers still enforce auth_.
     const b=Object.assign({},params);
@@ -260,7 +263,7 @@ function doGet(e) {
     if(action==='app_version') return json_(appVersion_(b));
     if(action==='activity_logs')return json_(activityLogs_(b));
     if(action==='app_data_get') return json_(appDataGet_(b));
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.15.0',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:BACKEND_BUILD,time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
@@ -407,8 +410,9 @@ function doPost(e) {
       case 'my_claim': result=myClaim_(body); break;
       case 'app_version': result=appVersion_(body); break;
       case 'update_settings': result=updateSettings_(body); break;
-      case 'health': result={success:true}; break;
-      default: result={success:false,error:'Unknown action',action:action,backend_version:'2026-10-05-v2.12-expense-statement-update'};
+      case 'health': result={success:true,backend_version:BACKEND_BUILD}; break;
+      case 'backend_info': result={success:true,backend_version:BACKEND_BUILD,service:'SchoolFinanceApp Google Backend'}; break;
+      default: result={success:false,error:'Unknown action',action:action,backend_version:BACKEND_BUILD};
     }
     // Audit successful write/actions without storing passwords, base64 files, or raw request bodies.
     if(result && result.success && action!=='activity_logs' && action!=='summary' && action!=='students' && action!=='tuition' && action!=='expenses' && action!=='transactions' && action!=='bank_review' && action!=='schools' && action!=='managers' && action!=='categories' && action!=='messages' && action!=='parsian_school_map' && action!=='parsian_student_accounts') {
