@@ -18,7 +18,8 @@ const CFG = {
   SESSION_HOURS: 6,
   SHEETS: [
     'Managers','Schools','Students','Tuition','Expenses','Transactions',
-    'Bank','BankDetails','ExpenseCategories','Messages','Attachments','ParsianAccounts','Settings','ActivityLogs','Cheques','Requests','Staff'
+    'Bank','BankDetails','ExpenseCategories','Messages','Attachments','ParsianAccounts','Settings','ActivityLogs','Cheques','Requests','Staff',
+    'StaffWorkLogs','PayrollPayments','BankAccounts'
   ]
 };
 
@@ -28,19 +29,23 @@ const HEADERS = {
   Schools: ['id','name','code','active','created_at','petty_cash_card','type','moeen_code'],
   Staff: ['id','school_id','school_name','name','national_id','phone','role_title','contract_type','hourly_rate','base_salary','insurance_employer_share','insurance_employee_share','bank_card_or_sheba','kol_code','moeen_code','tafsili_code','active','created_at'],
   Students: ['id','name','grade','phone','national_id','school_id','kol_code','moeen_code','tafsili_code','active','created_at','father_phone','mother_phone'],
-  Tuition: ['id','date','student_id','school_id','type','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','payment_source'],
-  Expenses: ['id','date','school_id','category','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','payment_source'],
-  Transactions: ['id','date','school_id','kind','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','source_id','payment_source'],
+  // New columns are ALWAYS appended at the end so positional writers of older code keep working.
+  Tuition: ['id','date','student_id','school_id','type','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','payment_source','review_status','rejection_reason','kind','discount_reason','debt_item_type','installment_index','total_installments','pos_terminal_number'],
+  Expenses: ['id','date','school_id','category','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','payment_source','category_id','review_status','rejection_reason','petty_cash_card','linked_account_name','bank_transaction_id'],
+  Transactions: ['id','date','school_id','kind','amount','description','tracking_code','image_url','created_by','created_at','reconciled','approved','source_id','payment_source','review_status','rejection_reason','petty_cash_card','linked_account_name','bank_transaction_id'],
+  StaffWorkLogs: ['id','staff_id','staff_name','school_id','school_name','month_name','work_hours','overtime_hours','sessions_count','absent_hours','recorded_by','date','notes','created_at','active'],
+  PayrollPayments: ['id','staff_id','staff_name','school_id','school_name','month_name','payment_type','gross_amount','insurance_deduction','net_paid_amount','payment_date','tracking_code','source','image_url','notes','created_at','active','created_by'],
+  BankAccounts: ['id','name','bank_name','branch_name','account_number','card_number','sheba_number','school_id','school_name','pos_terminal_number','kol_code','moeen_code','tafsili_code','initial_balance','is_active','notes','created_at','created_by'],
   Bank: ['id','date','school_id','amount','description','tracking_code','bank_account','created_at','matched_transaction_id','matched','approved'],
   BankDetails: ['bank_id','source_card_number','destination_card_number','terminal_number','direction','balance','reference_number','pos_reference_code','fee_amount','account_suffix','transaction_time','settlement_date'],
   BankAnnotations: ['id','school_id','date','amount','tracking_code','bank_account','student_id','student_name','purpose','manager_id','updated_at','direction','balance','card_number'],
   ExpenseCategories: ['id','name','active','created_at'],
-  Messages: ['id','message','created_by','created_at','active','target_school_id','target_role'],
+  Messages: ['id','message','created_by','created_at','active','target_school_id','target_role','author_name'],
   Attachments: ['id','source_type','source_id','file_name','mime_type','drive_file_id','url','created_by','created_at'],
   ParsianAccounts: ['id','account_name','account_code','school_id','category','active'],
   Settings: ['key','value','updated_at'],
   ActivityLogs: ['id','date','user_id','username','user_name','role','school_id','action','entity_type','entity_id','description','details'],
-  Cheques: ['id','date','student_id','school_id','amount','sayad_id','due_date','description','created_by','created_at','payment_method','received_confirmed','in_favor_confirmed','status','approved_at','approved_by','bank_reconciled','bank_status','bank_date','image_url']
+  Cheques: ['id','date','student_id','school_id','amount','sayad_id','due_date','description','created_by','created_at','payment_method','received_confirmed','in_favor_confirmed','status','approved_at','approved_by','bank_reconciled','bank_status','bank_date','image_url','bank_name','cheque_type','cheque_number','issuer_name','cheque_purpose']
 };
 
 const DEFAULT_CATEGORIES = [
@@ -153,7 +158,7 @@ function setup() {
   const settings = sheet_('Settings');
   const settingKeys={};
   rows_('Settings').forEach(x=>settingKeys[String(x.obj.key||'').trim()]=true);
-  [['schoolfinance_version','2.15.0'],['android_version','2.15.0'],['android_apk_url',''],['bank_account_code','0-1-11'],['currency','IRR']].forEach(x=>{
+  [['schoolfinance_version','2.18.0'],['android_version','2.15.0'],['android_apk_url',''],['bank_account_code','0-1-11'],['currency','IRR']].forEach(x=>{
     if(!settingKeys[x[0]]) { settings.appendRow([x[0],x[1],now_()]); }
     else if(x[0]==='schoolfinance_version' || x[0]==='android_version') {
       const rr=rows_('Settings').find(y=>String(y.obj.key||'')===x[0]);
@@ -178,20 +183,7 @@ function doGet(e) {
     // Preserve query parameters (especially token/authToken) so GET fallback uses
     // the same authenticated request context as POST. Handlers still enforce auth_.
     const b=Object.assign({},params);
-    if(action==='sync' || action==='all') {
-      return json_({
-        success: true,
-        students: (students_(b)||{}).data || [],
-        schools: (schools_(b)||{}).data || [],
-        staff: (staff_(b)||{}).data || [],
-        tuition: (tuition_(b)||{}).data || [],
-        expenses: (expenses_(b)||{}).data || [],
-        cheques: (cheques_(b)||{}).data || [],
-        categories: (categories_(b)||{}).data || [],
-        // Manager records are restricted to senior/admin; ordinary managers still sync other data.
-        managers: (function(){ const u=auth_(b); return (u.role==='senior'||u.role==='admin') ? ((managers_(b)||{}).data||[]) : []; })(),
-      });
-    }
+    if(action==='sync' || action==='all') return json_(syncPayload_(b));
     if(action==='parsian_export') return json_(parsianExport_(b));
     if(action==='categories' || action==='expense_categories' || action==='expense-categories') return json_(categories_(b));
     if(action==='transactions') return json_(transactions_(b));
@@ -220,7 +212,7 @@ function doGet(e) {
 function ensureStructure_() {
   const cache=CacheService.getScriptCache();
   const ss = SpreadsheetApp.openById(CFG.SPREADSHEET_ID);
-  if(cache.get('structure_ready_v217')==='1' && ss.getSheetByName('Requests')) return;
+  if(cache.get('structure_ready_v218')==='1' && ss.getSheetByName('Requests')) return;
   CFG.SHEETS.forEach(name => {
     let sh = ss.getSheetByName(name);
     if (!sh) sh = ss.insertSheet(name);
@@ -232,7 +224,7 @@ function ensureStructure_() {
     }
     sh.setFrozenRows(1);
   });
-  cache.put('structure_ready_v216','1',300);
+  cache.put('structure_ready_v218','1',300);
 }
 
 let writeLockHeld_=false;
@@ -249,34 +241,17 @@ function doPost(e) {
     const actionAliases = {'students/import':'students_import','api/students/import':'students_import','student_import':'students_import','api/student/import':'students_import','expense_categories':'categories','expense-categories':'categories','api/expense-categories':'categories','api/expense_categories':'categories','api/finance-transaction':'finance_transaction'};
     action = actionAliases[action] || action;
 
-    if (action === 'sync' || action === 'all') {
-      const sessionUser = auth_(body);
-      const managerData = (sessionUser.role === 'senior' || sessionUser.role === 'admin') ? ((managers_(body)||{}).data || []) : [];
-      return json_({
-        success: true,
-        students: (students_(body)||{}).data || [],
-        schools: (schools_(body)||{}).data || [],
-        staff: (staff_(body)||{}).data || [],
-        tuition: (tuition_(body)||{}).data || [],
-        expenses: (expenses_(body)||{}).data || [],
-        cheques: (cheques_(body)||{}).data || [],
-        categories: (categories_(body)||{}).data || [],
-        managers: managerData,
-        bank: (bank_(body)||{}).data || [],
-        bankTransactions: (bank_(body)||{}).data || [],
-        transactions: (transactions_(body)||{}).data || [],
-      });
-    }
+    if (action === 'sync' || action === 'all') return json_(syncPayload_(body));
 
     // POST carries tokens in its body, but read-only actions do not need a write lock.
-    const reads={schools:schools_,staff:staff_,students:students_,tuition:tuition_,expenses:expenses_,transactions:transactions_,bank:bank_,bank_review:bankReview_,bank_rules_get:bankRulesGet_,categories:categories_,messages:messages_,managers:managers_,cheques:cheques_,cheque_list:chequeList_,cheque_alerts:chequeAlerts_,summary:summary_,my_claim:myClaim_,app_version:appVersion_,activity_logs:activityLogs_,parsian_export:parsianExport_,parsian_school_map:parsianSchoolMap_,parsian_student_accounts:parsianStudentAccounts_,attachment_read:attachmentRead_};
+    const reads={cheques_all:chequesAll_,staff_worklogs:staffWorkLogs_,payroll:payroll_,bank_accounts:bankAccounts_,schools:schools_,staff:staff_,students:students_,tuition:tuition_,expenses:expenses_,transactions:transactions_,bank:bank_,bank_review:bankReview_,bank_rules_get:bankRulesGet_,categories:categories_,messages:messages_,managers:managers_,cheques:cheques_,cheque_list:chequeList_,cheque_alerts:chequeAlerts_,summary:summary_,my_claim:myClaim_,app_version:appVersion_,activity_logs:activityLogs_,parsian_export:parsianExport_,parsian_school_map:parsianSchoolMap_,parsian_student_accounts:parsianStudentAccounts_,attachment_read:attachmentRead_};
     if(reads[action])return json_(reads[action](body));
     lock.waitLock(30000);locked=true;writeLockHeld_=true;
     ensureStructure_();
     ensureCoreData_();
     if (!body.request_id) body.request_id = Utilities.getUuid() + '-' + Utilities.getUuid();
     // Durable deduplication survives app restarts and lost network responses.
-    const guarded=['tuition_add','tuition_bulk_debt','expense_add','finance_transaction','cheque_review'];
+    const guarded=['tuition_add','tuition_bulk_debt','expense_add','finance_transaction','cheque_review','cheque_add','staff_worklog_add','payroll_add','bank_account_add','message_add','category_add','manager_add','school_add','staff_add','bank_upload'];
     if(guarded.indexOf(action)>=0){
       const user=auth_(body);
       const fingerprint=Object.keys(body).filter(k=>k!=='token'&&k!=='request_id').sort().map(k=>[k,body[k]]);
@@ -340,6 +315,15 @@ function doPost(e) {
       case 'cheques': result=cheques_(body); break;
       case 'cheque_list': result=chequeList_(body); break;
       case 'cheque_review': result=chequeReview_(body); break;
+      case 'cheque_add': result=chequeAdd_(body); break;
+      case 'cheques_all': result=chequesAll_(body); break;
+      case 'staff_worklog_add': result=staffWorkLogAdd_(body); break;
+      case 'staff_worklog_delete': result=staffWorkLogDelete_(body); break;
+      case 'payroll_add': result=payrollAdd_(body); break;
+      case 'payroll_delete': result=payrollDelete_(body); break;
+      case 'bank_account_add': result=bankAccountAdd_(body); break;
+      case 'bank_account_update': result=bankAccountUpdate_(body); break;
+      case 'bank_account_delete': result=bankAccountDelete_(body); break;
       case 'message_add': result=messageAdd_(body); break;
       case 'message_delete': result=messageDelete_(body); break;
       case 'managers': result=managers_(body); break;
@@ -627,7 +611,10 @@ function studentAdd_(b) {
       throw new Error('این کد ملی قبلاً برای دانش‌آموز دیگری ثبت شده است.');
     }
 
-    
+    // BUG FIX: `id` was never defined here, so every student_add failed with
+    // "id is not defined". Honour the client's id only when it is still free.
+    const requestedFree = requestedId > 0 && !rows_('Students',true).some(x=>String(x.obj.id)===String(requestedId));
+    const id = requestedFree ? requestedId : nextId_('Students');
     const grade=normalizeGrade_(b.grade || 'اول');
     const codes=studentAccountCodes_(id, grade, schoolId, nid);
     const sh=sheet_('Students');
@@ -1015,8 +1002,11 @@ function tuitionAdd_(b) {
   const recordDate=date_(b.date);
   const amount=amount_(b.amount);
   if(amount<=0) throw new Error('مبلغ نامعتبر است.');
-  const paymentMethod=String(b.payment_method||'').trim();
+  // The client historically sent the method as `payment_source`; accept both names.
+  const paymentMethod=String(b.payment_method||b.payment_source||'').trim();
   if(type==='payment' && !paymentMethod) throw new Error('نوع پرداخت را انتخاب کنید.');
+  const isDiscount=type==='payment' && (String(b.kind||'')==='تخفیف_شهریه' || paymentMethod==='تخفیف / بورسیه');
+  const senior=isSenior_(u);
 
   // Cheques are kept in a separate workflow and do NOT reduce student debt until senior approval.
   if(type==='payment' && paymentMethod==='چک') {
@@ -1031,12 +1021,16 @@ function tuitionAdd_(b) {
     return {success:true,cheque:true,id:id,pending:true,message:'چک برای تأیید کاربر ارشد ثبت شد.'};
   }
 
-  if(type==='payment' && !String(b.tracking_code||'').trim() && paymentMethod!=='پول نقد') throw new Error('شماره پیگیری برای این روش پرداخت الزامی است.');
+  if(type==='payment' && !isDiscount && !String(b.tracking_code||'').trim() && paymentMethod!=='پول نقد') throw new Error('شماره پیگیری برای این روش پرداخت الزامی است.');
   const id=nextId_('Tuition');
   const image=saveAttachmentIfAny_(b,'tuition',id,u.id);
-  appendFinancialPair_('Tuition',[id,recordDate,String(b.student_id),String(schoolId),type,amount,String(b.description||''),String(b.tracking_code||''),image.url||'',u.id,now_(),false,false,paymentMethod],
-    [nextId_('Transactions'),recordDate,String(schoolId),type,amount,String(b.description||''),String(b.tracking_code||''),image.url||'',u.id,now_(),false,false,id,paymentMethod]);
-  return {success:true,id:id,image_url:image.url||'',payment_method:paymentMethod};
+  // Receipts registered by a senior user are approved immediately (the app shows them as approved).
+  const approvedNow=type==='payment' && senior;
+  const reviewStatus=(type==='debt'||approvedNow)?'approved':'pending';
+  const tail=[reviewStatus,'',isDiscount?'تخفیف_شهریه':'',String(b.discount_reason||''),String(b.debt_item_type||''),b.installment_index===undefined?'':b.installment_index,b.total_installments===undefined?'':b.total_installments,String(b.pos_terminal_number||'')];
+  appendFinancialPair_('Tuition',[id,recordDate,String(b.student_id),String(schoolId),type,amount,String(b.description||''),String(b.tracking_code||''),image.url||'',u.id,now_(),false,approvedNow,paymentMethod].concat(tail),
+    [nextId_('Transactions'),recordDate,String(schoolId),type,amount,String(b.description||''),String(b.tracking_code||''),image.url||'',u.id,now_(),false,approvedNow,id,paymentMethod,reviewStatus,'','','','']);
+  return {success:true,id:id,image_url:image.url||'',payment_method:paymentMethod,review_status:reviewStatus};
 }
 
 function tuitionBulkDebt_(b) {
@@ -1061,17 +1055,19 @@ function tuitionBulkDebt_(b) {
     if(selected.length!==Object.keys(wanted).length) throw new Error('یک یا چند دانش‌آموز فعال در مدرسه انتخابی پیدا نشد.');
     if(!selected.length) throw new Error('دانش‌آموز انتخاب‌شده‌ای در این مدرسه پیدا نشد.');
     let added=0;
+    const createdIds=[];
     const tuition=sheet_('Tuition');
     const tx=sheet_('Transactions');
     let nextTuition=nextId_('Tuition');
     let nextTx=nextId_('Transactions');
     selected.forEach(s=>{
       const tid=nextTuition++;
-      appendFinancialPair_('Tuition',[tid,date,String(s.id),String(schoolId),'debt',amount,description,'','',u.id,now_(),false,false,''],
-        [nextTx++,date,String(schoolId),'debt',amount,description,'','',u.id,now_(),false,false,tid,'']);
+      appendFinancialPair_('Tuition',[tid,date,String(s.id),String(schoolId),'debt',amount,description,'','',u.id,now_(),false,false,'','approved','','','',String(b.debt_item_type||''),'','',''],
+        [nextTx++,date,String(schoolId),'debt',amount,description,'','',u.id,now_(),false,false,tid,'','approved','','','','']);
+      createdIds.push({student_id:s.id,id:tid});
       added++;
     });
-    return {success:true,added:added,amount:amount,description:description,school_id:schoolId,student_ids:selected.map(s=>s.id)};
+    return {success:true,added:added,amount:amount,description:description,school_id:schoolId,student_ids:selected.map(s=>s.id),ids:createdIds};
   } finally { lock.releaseLock(); }
 }
 
@@ -1129,14 +1125,18 @@ function expenseAdd_(b) {
   if(!String(b.tracking_code||'').trim()) throw new Error('شماره پیگیری الزامی است.');
   const id=nextId_('Expenses');
   const image=saveAttachmentIfAny_(b,'expense',id,u.id);
+  const approvedNow=isSenior_(u);
+  const reviewStatus=approvedNow?'approved':'pending';
   appendFinancialPair_('Expenses',[
     id,recordDate,String(schoolId),category,amount,String(b.description||''),
-    String(b.tracking_code||''),image.url||'',u.id,now_(),false,false,String(b.payment_source||'bank')
+    String(b.tracking_code||''),image.url||'',u.id,now_(),false,approvedNow,String(b.payment_source||'bank'),
+    String(b.category_id||''),reviewStatus,'',String(b.petty_cash_card||''),String(b.linked_account_name||''),b.bank_transaction_id===undefined?'':b.bank_transaction_id
   ],[
     nextId_('Transactions'),recordDate,String(schoolId),'expense',amount,String(b.description||''),
-    String(b.tracking_code||''),image.url||'',u.id,now_(),false,false,id,String(b.payment_source||'bank')
+    String(b.tracking_code||''),image.url||'',u.id,now_(),false,approvedNow,id,String(b.payment_source||'bank'),
+    reviewStatus,'',String(b.petty_cash_card||''),String(b.linked_account_name||''),b.bank_transaction_id===undefined?'':b.bank_transaction_id
   ]);
-  return {success:true,id:id,image_url:image.url||''};
+  return {success:true,id:id,image_url:image.url||'',review_status:reviewStatus};
 }
 
 function expenseUpdate_(b) {
@@ -1193,7 +1193,8 @@ function financeTransactionAdd_(b) {
   activeSchool_(schoolId);
   const detail=(kind==='cash_receipt'?'دریافت از: ':kind==='cash_payment'?'پرداخت به: ':kind==='cheque_receipt'?'دریافت چک از: ':'پرداخت چک به: ')+person+' | '+description+(cheque?' | بانک: '+String(b.bank_name||'')+' | سررسید: '+dueDate:'');
   const id=nextId_('Transactions');
-  sheet_('Transactions').appendRow([id,date,String(schoolId),kind,amount,detail,String(b.tracking_code||''),'',u.id,now_(),false,false,'',cheque?'چک':'نقدی']);
+  const approvedNow=isSenior_(u);
+  appendObj_('Transactions',{id:id,date:date,school_id:String(schoolId),kind:kind,amount:amount,description:detail,tracking_code:String(b.tracking_code||''),image_url:'',created_by:u.id,created_at:now_(),reconciled:false,approved:approvedNow,source_id:'',payment_source:cheque?'چک':'نقدی',review_status:approvedNow?'approved':'pending',rejection_reason:'',petty_cash_card:String(b.petty_cash_card||''),linked_account_name:String(b.linked_account_name||''),bank_transaction_id:b.bank_transaction_id===undefined?'':b.bank_transaction_id});
   return {success:true,id:id,kind:kind};
 }
 
@@ -1356,7 +1357,37 @@ function bankMatch_(b) {
   ]);
   return {success:true,matched:true};
 }
-function transactionReview_(b){ const u=auth_(b,['senior','admin']); const hit=findRow_('Transactions',b.id); if(!hit) throw new Error('تراکنش یافت نشد.'); const r=hit.obj; const approved=String(b.status||'')==='approved'; updateRow_('Transactions',hit.row,[r.id,r.date,r.school_id,r.kind,r.amount,r.description,r.tracking_code,r.image_url,r.created_by,r.created_at,r.reconciled,approved,r.source_id,r.payment_source||'']); return {success:true,approved:approved}; }
+function transactionReview_(b){
+  const u=auth_(b,['senior','admin']);
+  const status=String(b.status||b.review_status||'');
+  if(['approved','rejected','pending'].indexOf(status)<0) throw new Error('وضعیت بررسی نامعتبر است.');
+  const approved=status==='approved';
+  const reason=status==='rejected'?String(b.rejection_reason||'').slice(0,500):'';
+  let sourceTable='',sourceId='';
+  const srcType=String(b.source_type||'').toLowerCase();
+  if(srcType && b.source_id!==undefined && String(b.source_id)!==''){
+    sourceTable=(srcType==='expense'||srcType==='expenses')?'Expenses':'Tuition';
+    sourceId=String(b.source_id);
+  } else {
+    // Legacy: `id` is a row id of the Transactions ledger.
+    const hit=findRow_('Transactions',b.id); if(!hit) throw new Error('تراکنش یافت نشد.');
+    sourceId=String(hit.obj.source_id||'');
+    sourceTable=String(hit.obj.kind)==='expense'?'Expenses':((String(hit.obj.kind)==='payment'||String(hit.obj.kind)==='debt')?'Tuition':'');
+    if(!sourceTable) patchRow_('Transactions',hit.row,{approved:approved,review_status:status,rejection_reason:reason});
+  }
+  let touched=0;
+  if(sourceTable){
+    const src=findRow_(sourceTable,sourceId);
+    if(!src) throw new Error('رکورد اصلی تراکنش یافت نشد.');
+    if(!isSenior_(u)&&String(src.obj.school_id)!==String(u.school_id)) throw new Error('دسترسی مجاز نیست.');
+    patchRow_(sourceTable,src.row,{approved:approved,review_status:status,rejection_reason:reason}); touched++;
+    const ledgerKinds=sourceTable==='Expenses'?['expense']:['payment','debt'];
+    rows_('Transactions').forEach(x=>{
+      if(String(x.obj.source_id)===sourceId && ledgerKinds.indexOf(String(x.obj.kind))>=0){ patchRow_('Transactions',x.row,{approved:approved,review_status:status,rejection_reason:reason}); touched++; }
+    });
+  }
+  return {success:true,approved:approved,review_status:status,updated_rows:touched};
+}
 function bankReconcile_(b){
   auth_(b,['senior','admin']);
   const bankRows=rows_('Bank');
@@ -1585,7 +1616,7 @@ function messageAdd_(b) {
   const msg=String(b.message||'').trim();
   if(!msg) throw new Error('پیام خالی است.');
   const id=Utilities.getUuid();
-  sheet_('Messages').appendRow([id,msg,u.id,now_(),true,'','']);
+  appendObj_('Messages',{id:id,message:msg,created_by:u.id,created_at:now_(),active:true,target_school_id:'',target_role:'',author_name:u.name||''});
   return {success:true,id:id};
 }
 
@@ -1697,6 +1728,183 @@ function addSystemMessage_(msg,schoolId){ const id='SYS-'+Utilities.getUuid(); s
 function todayIso_(){ return Utilities.formatDate(new Date(),Session.getScriptTimeZone()||'Asia/Tehran','yyyy-MM-dd'); }
 function daysBetween_(a,b){ try{return Math.round((new Date(b+'T00:00:00').getTime()-new Date(a+'T00:00:00').getTime())/86400000);}catch(e){return 99999;} }
 
+
+/* ---------- SYNC PAYLOAD (shared by GET and POST) ---------- */
+function syncPayload_(b){
+  const u=auth_(b);
+  const managerData=isSenior_(u)?((managers_(b)||{}).data||[]):[];
+  const bankData=(bank_(b)||{}).data||[];
+  return {
+    success:true,
+    backend_version:'2.18.0',
+    students:(students_(b)||{}).data||[],
+    schools:(schools_(b)||{}).data||[],
+    staff:(staff_(b)||{}).data||[],
+    tuition:(tuition_(b)||{}).data||[],
+    expenses:(expenses_(b)||{}).data||[],
+    // ALL cheques (every status), scoped by role. The old `cheques_` was senior-only and
+    // pending-only, which made the whole sync fail for school managers.
+    cheques:(chequesAll_(b)||{}).data||[],
+    categories:(categories_(b)||{}).data||[],
+    managers:managerData,
+    bank:bankData,
+    bankTransactions:bankData,
+    transactions:(transactions_(b)||{}).data||[],
+    messages:(messages_(b)||{}).data||[],
+    staffWorkLogs:(staffWorkLogs_(b)||{}).data||[],
+    payroll:(payroll_(b)||{}).data||[],
+    bankAccounts:isSenior_(u)?((bankAccounts_(b)||{}).data||[]):[]
+  };
+}
+
+/* ---------- CHEQUES (all types, all statuses) ---------- */
+function chequesAll_(b){
+  const u=auth_(b);
+  const schools={}; rows_('Schools').forEach(x=>schools[String(x.obj.id)]=x.obj.name);
+  const students={}; rows_('Students').forEach(x=>students[String(x.obj.id)]=x.obj);
+  let data=rows_('Cheques').map(x=>Object.assign({},x.obj));
+  if(!isSenior_(u)) data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  data=data.map(x=>{const s=students[String(x.student_id)]||{};x.school_name=schools[String(x.school_id)]||'';x.student_name=s.name||'';x.student_grade=s.grade||'';return x;});
+  return {success:true,data:data};
+}
+
+function chequeAdd_(b){
+  const u=auth_(b);
+  const senior=isSenior_(u);
+  const schoolId=senior?String(b.school_id||u.school_id||''):String(u.school_id||'');
+  if(!schoolId||!b.student_id) throw new Error('مدرسه و دانش‌آموز الزامی است.');
+  activeSchool_(schoolId);activeStudentForSchool_(b.student_id,schoolId);
+  const amount=amount_(b.amount);
+  const type=String(b.cheque_type||'sayad');
+  if(['sayad','non_sayad','gharzolhasane','guarantee'].indexOf(type)<0) throw new Error('نوع چک نامعتبر است.');
+  const sayad=digits_(b.sayad_id||'');
+  if(type==='sayad' && !/^\d{16}$/.test(sayad)) throw new Error('شناسه صیاد چک باید دقیقاً ۱۶ رقمی باشد.');
+  if(sayad && !/^\d{16}$/.test(sayad)) throw new Error('شناسه صیاد چک باید دقیقاً ۱۶ رقمی باشد.');
+  if(sayad && rows_('Cheques').some(x=>String(x.obj.sayad_id)===sayad)) throw new Error('این شناسه صیادی قبلاً ثبت شده است.');
+  const issue=date_(b.date||b.issue_date), due=date_(b.due_date);
+  const inFavor=truthy_(b.in_favor_school)||truthy_(b.in_favor_confirmed);
+  // Policy kept from the original design: a cheque only reduces student debt after BOTH
+  // confirmations. Only a senior user can register it already confirmed.
+  const received=senior;
+  const favor=senior&&inFavor;
+  const approvedNow=received&&favor;
+  const id=nextId_('Cheques');
+  const image=saveAttachmentIfAny_(b,'cheque',id,u.id);
+  const row={id:id,date:issue,student_id:String(b.student_id),school_id:schoolId,amount:amount,sayad_id:sayad,due_date:due,description:String(b.description||b.note||''),created_by:u.id,created_at:now_(),payment_method:'چک',received_confirmed:received,in_favor_confirmed:favor,status:approvedNow?'approved':'pending',approved_at:approvedNow?now_():'',approved_by:approvedNow?u.id:'',bank_reconciled:false,bank_status:'',bank_date:'',image_url:image.url||'',bank_name:String(b.bank_name||''),cheque_type:type,cheque_number:String(b.cheque_number||''),issuer_name:String(b.issuer_name||''),cheque_purpose:String(b.cheque_purpose||'')};
+  appendObj_('Cheques',row);
+  let tuitionId='',txId='';
+  if(approvedNow){
+    tuitionId=nextId_('Tuition');txId=nextId_('Transactions');
+    const description='پرداخت با چک - '+(sayad||String(b.cheque_number||id));
+    appendFinancialPair_('Tuition',[tuitionId,issue,String(b.student_id),schoolId,'payment',amount,description,sayad,image.url||'',u.id,now_(),false,true,'چک','approved','','','','','','',''],
+      [txId,issue,schoolId,'payment',amount,description,sayad,image.url||'',u.id,now_(),false,true,tuitionId,'چک','approved','','','','']);
+  }
+  SpreadsheetApp.flush();
+  return {success:true,id:id,status:row.status,image_url:image.url||'',tuition_id:tuitionId,transaction_id:txId};
+}
+
+/* ---------- STAFF WORK LOGS ---------- */
+function staffWorkLogs_(b){
+  const u=auth_(b);
+  let data=rows_('StaffWorkLogs').map(x=>x.obj).filter(x=>String(x.active)!=='false');
+  if(!isSenior_(u)) data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  data=data.map(x=>{
+    ['id','staff_id','school_id'].forEach(k=>x[k]=Number(x[k]));
+    ['work_hours','overtime_hours','sessions_count','absent_hours'].forEach(k=>x[k]=Number(x[k]||0));
+    return x;
+  });
+  return {success:true,data:data};
+}
+function staffWorkLogAdd_(b){
+  const u=auth_(b);
+  const staff=findRow_('Staff',b.staff_id); if(!staff) throw new Error('پرسنل یافت نشد.');
+  const schoolId=String(staff.obj.school_id);
+  if(!isSenior_(u)&&schoolId!==String(u.school_id)) throw new Error('دسترسی به این مدرسه مجاز نیست.');
+  const month=String(b.month_name||'').trim(); if(!month) throw new Error('ماه کارکرد الزامی است.');
+  const num=(k)=>{const n=Number(b[k]||0); if(!isFinite(n)||n<0) throw new Error('مقدار '+k+' نامعتبر است.'); return n;};
+  const id=nextId_('StaffWorkLogs');
+  appendObj_('StaffWorkLogs',{id:id,staff_id:String(staff.obj.id),staff_name:String(staff.obj.name||''),school_id:schoolId,school_name:schoolName_(schoolId),month_name:month,work_hours:num('work_hours'),overtime_hours:num('overtime_hours'),sessions_count:num('sessions_count'),absent_hours:num('absent_hours'),recorded_by:String(b.recorded_by||u.name||''),date:String(b.date||''),notes:String(b.notes||''),created_at:now_(),active:true});
+  return {success:true,id:id};
+}
+function staffWorkLogDelete_(b){
+  const u=auth_(b);
+  const hit=findRow_('StaffWorkLogs',b.id); if(!hit) throw new Error('کارکرد یافت نشد.');
+  if(!isSenior_(u)&&String(hit.obj.school_id)!==String(u.school_id)) throw new Error('دسترسی مجاز نیست.');
+  patchRow_('StaffWorkLogs',hit.row,{active:false});
+  return {success:true};
+}
+
+/* ---------- PAYROLL PAYMENTS ---------- */
+function payroll_(b){
+  const u=auth_(b);
+  let data=rows_('PayrollPayments').map(x=>x.obj).filter(x=>String(x.active)!=='false');
+  if(!isSenior_(u)) data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  data=data.map(x=>{
+    ['id','staff_id','school_id'].forEach(k=>x[k]=Number(x[k]));
+    ['gross_amount','insurance_deduction','net_paid_amount'].forEach(k=>x[k]=Number(x[k]||0));
+    x.attachment_url=x.image_url||'';
+    return x;
+  });
+  return {success:true,data:data};
+}
+function payrollAdd_(b){
+  const u=auth_(b);
+  const staff=findRow_('Staff',b.staff_id); if(!staff) throw new Error('پرسنل یافت نشد.');
+  const schoolId=String(staff.obj.school_id);
+  if(!isSenior_(u)&&schoolId!==String(u.school_id)) throw new Error('دسترسی به این مدرسه مجاز نیست.');
+  const type=String(b.payment_type||'salary');
+  if(['salary','insurance','bonus','advance'].indexOf(type)<0) throw new Error('نوع پرداخت نامعتبر است.');
+  const net=Number(b.net_paid_amount||0), gross=Number(b.gross_amount||0), ins=Number(b.insurance_deduction||0);
+  if(!isFinite(net)||net<=0||!isFinite(gross)||gross<0||!isFinite(ins)||ins<0) throw new Error('مبالغ پرداخت نامعتبر است.');
+  const id=nextId_('PayrollPayments');
+  const image=saveAttachmentIfAny_(b,'payroll',id,u.id);
+  appendObj_('PayrollPayments',{id:id,staff_id:String(staff.obj.id),staff_name:String(staff.obj.name||''),school_id:schoolId,school_name:schoolName_(schoolId),month_name:String(b.month_name||''),payment_type:type,gross_amount:gross,insurance_deduction:ins,net_paid_amount:net,payment_date:String(b.payment_date||''),tracking_code:String(b.tracking_code||''),source:String(b.source||'bank'),image_url:image.url||'',notes:String(b.notes||''),created_at:now_(),active:true,created_by:u.id});
+  return {success:true,id:id,image_url:image.url||''};
+}
+function payrollDelete_(b){
+  const u=auth_(b);
+  const hit=findRow_('PayrollPayments',b.id); if(!hit) throw new Error('پرداخت یافت نشد.');
+  if(!isSenior_(u)&&String(hit.obj.school_id)!==String(u.school_id)) throw new Error('دسترسی مجاز نیست.');
+  patchRow_('PayrollPayments',hit.row,{active:false});
+  return {success:true};
+}
+
+/* ---------- BANK ACCOUNTS (definitions) ---------- */
+function bankAccounts_(b){
+  auth_(b,['senior','admin']);
+  const data=rows_('BankAccounts').map(x=>x.obj).filter(x=>String(x.is_active)!=='false').map(x=>{
+    x.id=Number(x.id); x.school_id=Number(x.school_id); x.initial_balance=Number(x.initial_balance||0); x.is_active=true; return x;
+  });
+  return {success:true,data:data};
+}
+function bankAccountFields_(b){
+  const f={};
+  ['name','bank_name','branch_name','account_number','card_number','sheba_number','pos_terminal_number','kol_code','moeen_code','tafsili_code','notes'].forEach(k=>{ if(b[k]!==undefined) f[k]=String(b[k]===null?'':b[k]); });
+  if(b.school_id!==undefined){ f.school_id=String(b.school_id); f.school_name=schoolName_(b.school_id); }
+  if(b.initial_balance!==undefined) f.initial_balance=Number(b.initial_balance||0);
+  if(b.is_active!==undefined) f.is_active=b.is_active!==false&&String(b.is_active)!=='false';
+  return f;
+}
+function bankAccountAdd_(b){
+  const u=auth_(b,['senior','admin']);
+  if(!String(b.name||'').trim()||!String(b.account_number||'').trim()) throw new Error('عنوان و شماره حساب الزامی است.');
+  const id=nextId_('BankAccounts');
+  appendObj_('BankAccounts',Object.assign({is_active:true},bankAccountFields_(b),{id:id,created_at:now_(),created_by:u.id}));
+  return {success:true,id:id};
+}
+function bankAccountUpdate_(b){
+  auth_(b,['senior','admin']);
+  const hit=findRow_('BankAccounts',b.id); if(!hit) throw new Error('حساب بانکی یافت نشد.');
+  patchRow_('BankAccounts',hit.row,bankAccountFields_(b));
+  return {success:true};
+}
+function bankAccountDelete_(b){
+  auth_(b,['senior','admin']);
+  const hit=findRow_('BankAccounts',b.id); if(!hit) throw new Error('حساب بانکی یافت نشد.');
+  patchRow_('BankAccounts',hit.row,{is_active:false});
+  return {success:true};
+}
+
 /* ---------- MANAGERS ---------- */
 
 function managers_(b) {
@@ -1716,7 +1924,7 @@ function managerAdd_(b) {
   const id=nextId_('Managers');
   sheet_('Managers').appendRow([
     id,String(b.name||''),String(b.username),sha256_(String(b.password)),
-    String(b.school_id||''),String(b.role||'manager'),true,now_(),String(b.petty_cash_card||''),String(b.petty_cash_bank||''),String(b.petty_cash_shaba||''),Number(b.petty_cash_limit||0),Number(b.petty_cash_balance||0)
+    String(b.school_id||''),String(b.role||'manager'),true,now_(),String(b.petty_cash_card||''),String(b.petty_cash_bank||''),String(b.petty_cash_shaba||''),Number(b.petty_cash_limit||0),Number(b.petty_cash_balance||0),String(b.gender||'')
   ]);
   return {success:true,id:id};
 }
@@ -1735,7 +1943,8 @@ function managerUpdate_(b) {
     b.petty_cash_bank!==undefined?b.petty_cash_bank:(r.petty_cash_bank||''),
     b.petty_cash_shaba!==undefined?b.petty_cash_shaba:(r.petty_cash_shaba||''),
     b.petty_cash_limit!==undefined?Number(b.petty_cash_limit||0):Number(r.petty_cash_limit||0),
-    b.petty_cash_balance!==undefined?Number(b.petty_cash_balance||0):Number(r.petty_cash_balance||0)
+    b.petty_cash_balance!==undefined?Number(b.petty_cash_balance||0):Number(r.petty_cash_balance||0),
+    b.gender!==undefined?String(b.gender||''):String(r.gender||'')
   ]);
   return {success:true};
 }
@@ -1776,7 +1985,7 @@ function attachment_(b) {
   const id=Utilities.getUuid();
   const sourceType=String(b.source_type||b.entity_type||'general').toLowerCase();
   const sourceId=String(b.source_id||b.entity_id||'');
-  const table=['expense','expenses'].indexOf(sourceType)>=0?'Expenses':(['tuition','payment','debt'].indexOf(sourceType)>=0?'Tuition':(sourceType==='cheque'?'Cheques':''));
+  const table=['expense','expenses'].indexOf(sourceType)>=0?'Expenses':(['tuition','payment','debt'].indexOf(sourceType)>=0?'Tuition':(sourceType==='cheque'?'Cheques':(sourceType==='payroll'?'PayrollPayments':'')));
   if(table){
     const target=findRow_(table,sourceId);
     if(!target)throw new Error('رکورد مقصد پیوست یافت نشد.');
@@ -1789,6 +1998,9 @@ function attachment_(b) {
     const target=findRow_('Cheques',sourceId);
     const values=HEADERS.Cheques.map(k=>k==='image_url'?saved.url:target.obj[k]);
     updateRow_('Cheques',target.row,values);
+  }else if(sourceType==='payroll'){
+    const target=findRow_('PayrollPayments',sourceId);
+    if(target) patchRow_('PayrollPayments',target.row,{image_url:saved.url});
   }else if(sourceId && (sourceType==='expense' || sourceType==='expenses')) {
     const hit=findRow_('Expenses',sourceId);
     if(hit) updateRow_('Expenses',hit.row,[hit.obj.id,hit.obj.date,hit.obj.school_id,hit.obj.category,hit.obj.amount,hit.obj.description,hit.obj.tracking_code,saved.url,hit.obj.created_by,hit.obj.created_at,hit.obj.reconciled,hit.obj.approved,hit.obj.payment_source||'bank']);
@@ -1806,7 +2018,7 @@ function attachmentRead_(b){
   const hit=rows_('Attachments').find(x=>String(x.obj.url)===String(b.url||''));
   if(!hit)throw new Error('پیوست ثبت‌شده یافت نشد.');
   const a=hit.obj;
-  const table=['expense','expenses'].indexOf(a.source_type)>=0?'Expenses':(['tuition','payment','debt'].indexOf(a.source_type)>=0?'Tuition':(a.source_type==='cheque'?'Cheques':''));
+  const table=['expense','expenses'].indexOf(a.source_type)>=0?'Expenses':(['tuition','payment','debt'].indexOf(a.source_type)>=0?'Tuition':(a.source_type==='cheque'?'Cheques':(a.source_type==='payroll'?'PayrollPayments':'')));
   let allowed=u.role==='senior';
   if(table){
     const record=findRow_(table,a.source_id);
@@ -1940,7 +2152,7 @@ function auditAfterAction_(action,b,result) {
   sh.appendRow([nextId_('ActivityLogs'),now_(),u.id,u.username||'',u.name||'',u.role||'',u.school_id||'',action,entityType,entityId,description,JSON.stringify(auditDetails_(action,b,result))]);
 }
 function auditDescription_(action,b,r){
-  const map={student_add:'افزودن دانش‌آموز',student_update:'ویرایش دانش‌آموز',student_delete:'حذف/غیرفعال‌کردن دانش‌آموز',students_import:'ورود دانش‌آموزان از Excel',tuition_add:'ثبت بدهی/پرداخت شهریه',tuition_bulk_debt:'ثبت گروهی بدهی شهریه',tuition_update:'ویرایش رکورد شهریه',tuition_delete:'حذف رکورد شهریه',expense_add:'ثبت هزینه',expense_update:'ویرایش هزینه',expense_delete:'حذف هزینه',transaction_delete:'حذف تراکنش',transaction_review:'بررسی تراکنش',bank_reconcile:'تطبیق تراکنش‌های بانک',bank_upload:'ورود فایل بانک',manager_add:'افزودن مدیر',manager_update:'ویرایش مدیر',manager_delete:'حذف/غیرفعال‌کردن مدیر',manager_import_attached:'همگام‌سازی مدیران',school_add:'افزودن مدرسه',school_update:'ویرایش مدرسه',school_delete:'غیرفعال‌کردن مدرسه',message_add:'ارسال پیام به مدیران',message_delete:'حذف پیام',category_add:'افزودن دسته هزینه',category_update:'ویرایش دسته هزینه',category_delete:'غیرفعال‌کردن دسته هزینه',parsian_export:'خروجی Excel پارسیان'};
+  const map={student_add:'افزودن دانش‌آموز',student_update:'ویرایش دانش‌آموز',student_delete:'حذف/غیرفعال‌کردن دانش‌آموز',students_import:'ورود دانش‌آموزان از Excel',tuition_add:'ثبت بدهی/پرداخت شهریه',tuition_bulk_debt:'ثبت گروهی بدهی شهریه',tuition_update:'ویرایش رکورد شهریه',tuition_delete:'حذف رکورد شهریه',expense_add:'ثبت هزینه',expense_update:'ویرایش هزینه',expense_delete:'حذف هزینه',transaction_delete:'حذف تراکنش',transaction_review:'بررسی تراکنش',bank_reconcile:'تطبیق تراکنش‌های بانک',bank_upload:'ورود فایل بانک',cheque_add:'ثبت چک',staff_worklog_add:'ثبت کارکرد پرسنل',staff_worklog_delete:'حذف کارکرد پرسنل',payroll_add:'ثبت پرداخت حقوق/بیمه',payroll_delete:'حذف پرداخت حقوق/بیمه',bank_account_add:'تعریف حساب بانکی',bank_account_update:'ویرایش حساب بانکی',bank_account_delete:'حذف حساب بانکی',manager_add:'افزودن مدیر',manager_update:'ویرایش مدیر',manager_delete:'حذف/غیرفعال‌کردن مدیر',manager_import_attached:'همگام‌سازی مدیران',school_add:'افزودن مدرسه',school_update:'ویرایش مدرسه',school_delete:'غیرفعال‌کردن مدرسه',message_add:'ارسال پیام به مدیران',message_delete:'حذف پیام',category_add:'افزودن دسته هزینه',category_update:'ویرایش دسته هزینه',category_delete:'غیرفعال‌کردن دسته هزینه',parsian_export:'خروجی Excel پارسیان'};
   let d=map[action]||action;
   if(action==='tuition_bulk_debt') d+=' | '+String(r.added||0)+' نفر | '+String(r.amount||0)+' ریال | '+String(r.description||'');
   else if(action==='students_import') d+=' | '+String(r.added||0)+' اضافه | '+String(r.skipped||0)+' تکراری | '+String(r.invalid||0)+' نیازمند اصلاح';
@@ -2071,6 +2283,29 @@ function appendByHeaders_(name,values){
   const sh=sheet_(name),headers=sh.getRange(1,1,1,sh.getLastColumn()).getDisplayValues()[0].map(String);
   const canonical=HEADERS[name];sh.appendRow(headers.map(h=>{const i=canonical.indexOf(h);return i>=0&&i<values.length?values[i]:'';}));
 }
+/** Append one row built from an object, matched to the REAL sheet headers (adds missing canonical columns). */
+function appendObj_(name,obj){
+  const sh=sheet_(name);
+  const headers=sh.getRange(1,1,1,Math.max(1,sh.getLastColumn())).getDisplayValues()[0].map(h=>String(h||'').trim());
+  (HEADERS[name]||[]).forEach(h=>{ if(headers.indexOf(h)<0){ sh.getRange(1,headers.length+1).setValue(h); headers.push(h); } });
+  sh.appendRow(headers.map(h=>obj[h]===undefined||obj[h]===null?'':obj[h]));
+  return sh.getLastRow();
+}
+/** Update only the given keys of an existing row, by header name (adds missing canonical columns). */
+function patchRow_(name,row,obj){
+  const sh=sheet_(name);
+  const headers=sh.getRange(1,1,1,Math.max(1,sh.getLastColumn())).getDisplayValues()[0].map(h=>String(h||'').trim());
+  Object.keys(obj).forEach(k=>{
+    let col=headers.indexOf(k);
+    if(col<0){
+      if((HEADERS[name]||[]).indexOf(k)<0) return;
+      col=headers.length; sh.getRange(1,col+1).setValue(k); headers.push(k);
+    }
+    sh.getRange(row,col+1).setValue(obj[k]);
+  });
+}
+function isSenior_(u){ return !!u && (u.role==='senior'||u.role==='admin'); }
+function truthy_(v){ return v===true||String(v).toLowerCase()==='true'; }
 function appendFinancialPair_(name,source,ledger){
   const a=sheet_(name),t=sheet_('Transactions'),ar=a.getLastRow(),tr=t.getLastRow();
   try{appendByHeaders_(name,source);appendByHeaders_('Transactions',ledger);SpreadsheetApp.flush();}

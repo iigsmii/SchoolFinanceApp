@@ -152,4 +152,95 @@ test('bounced cheque payment no longer reduces the student balance',()=>{
   assert.equal(run("findRow_('Tuition',20)"),null);assert.equal(run("findRow_('Transactions',20)"),null);
 });
 test('unsupported bank CSV cannot report false success',()=>assert.throws(()=>call('importBankCsv_',{})));
+
+/* ---- full-sync regression tests (v2.18) ---- */
+test('student_add no longer throws "id is not defined" and keeps a free client id',()=>{
+  const r=post({action:'student_add',token:manager,id:777,name:'تست',grade:'اول',national_id:'0098765432',school_id:1,phone:'09121111111'});
+  assert.equal(r.success,true);assert.equal(r.id,777);
+  assert.equal(run("findRow_('Students',777).obj.national_id"),'0098765432');
+  const again=post({action:'student_add',token:manager,id:777,name:'تست',grade:'اول',national_id:'0098765432',school_id:1});
+  assert.equal(again.duplicate,true);
+  const taken=post({action:'student_add',token:manager,id:777,name:'دیگر',grade:'اول',national_id:'0098765433',school_id:1});
+  assert.equal(taken.success,true);assert.notEqual(taken.id,777);
+});
+test('tuition_add accepts the app field payment_source; manager=pending, senior=approved',()=>{
+  const m=post({action:'tuition_add',token:manager,student_id:1,school_id:1,type:'payment',payment_source:'کارت به کارت',tracking_code:'APP1',amount:1000,date:'2026-10-15'});
+  assert.equal(m.success,true);assert.equal(m.review_status,'pending');
+  assert.equal(run(`findRow_('Tuition',${m.id}).obj.approved`),false);
+  const s=post({action:'tuition_add',token:senior,student_id:1,school_id:1,type:'payment',payment_source:'کارت به کارت',tracking_code:'APP2',amount:1000,date:'2026-10-15'});
+  assert.equal(s.success,true);assert.equal(s.review_status,'approved');
+  assert.equal(run(`findRow_('Tuition',${s.id}).obj.approved`),true);
+  assert.equal(run(`findRow_('Transactions',nextId_('Transactions')-1).obj.approved`),true);
+});
+test('discount needs no tracking code and keeps its reason',()=>{
+  const r=post({action:'tuition_add',token:senior,student_id:1,school_id:1,type:'payment',payment_method:'تخفیف / بورسیه',kind:'تخفیف_شهریه',discount_reason:'ایثارگر',amount:500,date:'2026-10-15'});
+  assert.equal(r.success,true);
+  assert.equal(run(`findRow_('Tuition',${r.id}).obj.discount_reason`),'ایثارگر');
+  assert.equal(run(`findRow_('Tuition',${r.id}).obj.kind`),'تخفیف_شهریه');
+});
+test('bulk debt returns the created tuition ids',()=>{
+  const r=post({action:'tuition_bulk_debt',token:senior,school_id:1,student_ids:[1],amount:900,date:'2026-10-15',description:'ثبت گروهی'});
+  assert.equal(r.success,true);assert.equal(r.ids.length,1);assert.equal(r.ids[0].student_id,1);
+  assert.equal(run(`findRow_('Tuition',${r.ids[0].id}).obj.review_status`),'approved');
+});
+test('transaction_review updates the Tuition/Expenses row that sync reads, incl. rejection reason',()=>{
+  const m=post({action:'tuition_add',token:manager,student_id:1,school_id:1,type:'payment',payment_method:'پول نقد',amount:300,date:'2026-10-15'});
+  const ok=post({action:'transaction_review',token:senior,source_type:'tuition',source_id:m.id,status:'approved'});
+  assert.equal(ok.success,true);assert.equal(run(`findRow_('Tuition',${m.id}).obj.approved`),true);
+  const no=post({action:'transaction_review',token:senior,source_type:'tuition',source_id:m.id,status:'rejected',rejection_reason:'فیش مخدوش'});
+  assert.equal(run(`findRow_('Tuition',${m.id}).obj.review_status`),'rejected');
+  assert.equal(run(`findRow_('Tuition',${m.id}).obj.rejection_reason`),'فیش مخدوش');
+  assert.equal(run(`rows_('Transactions').filter(x=>String(x.obj.source_id)==='${m.id}'&&x.obj.kind==='payment')[0].obj.review_status`),'rejected');
+  assert.equal(post({action:'transaction_review',token:manager,source_type:'tuition',source_id:m.id,status:'approved'}).success,false);
+});
+test('expense_add keeps petty-cash/category fields; senior-created is approved',()=>{
+  const r=post({action:'expense_add',token:senior,school_id:1,category:'اینترنت',category_id:'5',amount:2000,date:'2026-10-15',tracking_code:'E1',payment_source:'petty_cash',petty_cash_card:'6037000000000000',linked_account_name:'حساب ۱',bank_transaction_id:12,description:'x'});
+  assert.equal(r.success,true);
+  assert.equal(run(`findRow_('Expenses',${r.id}).obj.approved`),true);
+  assert.equal(run(`findRow_('Expenses',${r.id}).obj.petty_cash_card`),'6037000000000000');
+  assert.equal(String(run(`findRow_('Expenses',${r.id}).obj.bank_transaction_id`)),'12');
+});
+test('cheque_add: non-sayad by manager stays pending; senior-confirmed creates the payment once',()=>{
+  const m=post({action:'cheque_add',token:manager,student_id:1,school_id:1,amount:4000,date:'2026-10-15',due_date:'2026-12-01',cheque_type:'non_sayad',bank_name:'ملت',cheque_number:'55',issuer_name:'پدر',in_favor_school:true});
+  assert.equal(m.success,true);assert.equal(m.status,'pending');assert.equal(m.tuition_id,'');
+  assert.equal(run(`findRow_('Cheques',${m.id}).obj.bank_name`),'ملت');
+  const n=run("rows_('Tuition').length");
+  const s=post({action:'cheque_add',token:senior,student_id:1,school_id:1,amount:4100,date:'2026-10-15',due_date:'2026-12-01',cheque_type:'sayad',sayad_id:'6221061234567890',in_favor_school:true});
+  assert.equal(s.status,'approved');assert.equal(run("rows_('Tuition').length"),n+1);
+  assert.equal(post({action:'cheque_add',token:senior,student_id:1,school_id:1,amount:1,date:'2026-10-15',due_date:'2026-12-01',cheque_type:'sayad',sayad_id:'6221061234567890'}).success,false);
+});
+test('sync works for a school manager and returns every data set incl. all cheque statuses',()=>{
+  const r=post({action:'sync',token:manager});
+  assert.equal(r.success,true);
+  for(const k of ['students','schools','tuition','expenses','cheques','categories','bank','transactions','messages','staffWorkLogs','payroll','bankAccounts'])assert.ok(Array.isArray(r[k]),k);
+  assert.ok(r.cheques.some(c=>c.status==='approved')||r.cheques.length>=1);
+  assert.deepEqual(r.bankAccounts,[]);
+  assert.equal(post({action:'sync',token:senior}).success,true);
+});
+test('work logs, payroll (with image) and bank accounts round-trip through sync',()=>{
+  store.Staff.appendRow([1,'1','School 1','معلم','0011223344','0912','آموزگار','hourly',100,0,0,0,'','','','',true,'']);
+  const w=post({action:'staff_worklog_add',token:manager,staff_id:1,month_name:'مهر ۱۴۰۵',work_hours:10,overtime_hours:2,date:'2026-10-20'});
+  assert.equal(w.success,true);
+  const p=post({action:'payroll_add',token:manager,staff_id:1,month_name:'مهر ۱۴۰۵',payment_type:'salary',gross_amount:1000,insurance_deduction:100,net_paid_amount:900,payment_date:'2026-10-20',tracking_code:'P1',source:'bank',base64:'AA==',file_name:'r.jpg',mime_type:'image/jpeg'});
+  assert.equal(p.success,true);assert.ok(p.image_url);
+  assert.equal(post({action:'bank_account_add',token:manager,name:'x',account_number:'1'}).success,false);
+  const a=post({action:'bank_account_add',token:senior,name:'حساب اصلی',bank_name:'ملی',account_number:'123',school_id:1,initial_balance:5000});
+  assert.equal(a.success,true);
+  assert.equal(post({action:'bank_account_update',token:senior,id:a.id,notes:'یادداشت'}).success,true);
+  const r=post({action:'sync',token:senior});
+  assert.equal(r.staffWorkLogs.length,1);assert.equal(r.payroll[0].attachment_url,p.image_url);
+  assert.equal(r.bankAccounts[0].notes,'یادداشت');
+  assert.equal(post({action:'payroll_delete',token:manager,id:p.id}).success,true);
+  assert.equal(post({action:'sync',token:senior}).payroll.length,0);
+});
+test('messages store the author and are returned by sync; categories round-trip',()=>{
+  const m=post({action:'message_add',token:senior,message:'سلام'});
+  assert.equal(m.success,true);
+  const r=post({action:'sync',token:manager});
+  assert.ok(r.messages.some(x=>x.message==='سلام'&&x.author_name==='Senior'));
+  const c=post({action:'category_add',token:senior,name:'دسته جدید'});
+  assert.equal(post({action:'sync',token:manager}).categories.some(x=>x.name==='دسته جدید'),true);
+  assert.equal(post({action:'category_update',token:senior,id:c.id,active:false}).success,true);
+});
+
 console.log(`\n${passed} backend regression tests passed (mocked, not live Apps Script).`);
