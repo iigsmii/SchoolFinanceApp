@@ -1,7 +1,7 @@
 {
-  "version": "2.16.255",
+  "version": "2.16.256",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Register seven POS terminals without school assignments",
-  "build": 255,
-  "published_at": "2026-10-25T16:58:01Z"
+  "notes": "Fix POS terminal normalization in defaults merge",
+  "build": 256,
+  "published_at": "2026-10-25T17:00:15Z"
 }
