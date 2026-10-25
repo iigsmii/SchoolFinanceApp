@@ -1661,7 +1661,7 @@ function cheques_(b){
   const students={}; rows_('Students').forEach(x=>students[String(x.obj.id)]=x.obj);
   let data=rows_('Cheques').map(x=>Object.assign({},x.obj));
   if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>String(x.school_id)===String(u.school_id));
-  data=data.filter(x=>String(x.status||'pending')==='pending').map(x=>{x.school_name=schools[String(x.school_id)]||'';x.student_name=students[String(x.student_id)]?.name||'';x.student_grade=students[String(x.student_id)]?.grade||'';return x;});
+  data=data.filter(x=>String(x.status||'pending')==='pending').map(x=>{x.school_name=schools[String(x.school_id)]||'';x.student_name=students[String(x.student_id)]?.name||x.issuer_name||'صادرکننده نامشخص';x.student_grade=students[String(x.student_id)]?.grade||'';x.attachment_url=x.image_url||'';return x;});
   return {success:true,data:data};
 }
 function chequeList_(b){
@@ -1671,7 +1671,7 @@ function chequeList_(b){
   let data=rows_('Cheques').map(x=>Object.assign({},x.obj))
     .filter(x=>['approved','bounced','rejected','paid'].indexOf(String(x.status))>=0);
   if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>String(x.school_id)===String(u.school_id));
-  data=data.map(x=>{const s=students[String(x.student_id)]||{};x.school_name=schools[String(x.school_id)]||'';x.student_name=s.name||'';x.student_grade=s.grade||'';return x;})
+  data=data.map(x=>{const s=students[String(x.student_id)]||{};x.school_name=schools[String(x.school_id)]||'';x.student_name=s.name||x.issuer_name||'صادرکننده نامشخص';x.student_grade=s.grade||'';x.attachment_url=x.image_url||'';return x;})
     .sort((a,b)=>String(a.due_date||'').localeCompare(String(b.due_date||'')));
   return {success:true,data:data};
 }
@@ -1789,7 +1789,7 @@ function chequesAll_(b){
   const students={}; rows_('Students').forEach(x=>students[String(x.obj.id)]=x.obj);
   let data=rows_('Cheques').map(x=>Object.assign({},x.obj));
   if(!isSenior_(u)) data=data.filter(x=>String(x.school_id)===String(u.school_id));
-  data=data.map(x=>{const s=students[String(x.student_id)]||{};x.school_name=schools[String(x.school_id)]||'';x.student_name=s.name||'';x.student_grade=s.grade||'';return x;});
+  data=data.map(x=>{const s=students[String(x.student_id)]||{};x.school_name=schools[String(x.school_id)]||'';x.student_name=s.name||x.issuer_name||'صادرکننده نامشخص';x.student_grade=s.grade||'';x.attachment_url=x.image_url||'';return x;});
   return {success:true,data:data};
 }
 
@@ -1797,8 +1797,11 @@ function chequeAdd_(b){
   const u=auth_(b);
   const senior=isSenior_(u);
   const schoolId=senior?String(b.school_id||u.school_id||''):String(u.school_id||'');
-  if(!schoolId||!b.student_id) throw new Error('مدرسه و دانش‌آموز الزامی است.');
-  activeSchool_(schoolId);activeStudentForSchool_(b.student_id,schoolId);
+  const studentId=String(b.student_id||'').trim() && Number(b.student_id)>0 ? String(b.student_id).trim() : '';
+  if(!schoolId) throw new Error('مدرسه مربوط به چک الزامی است.');
+  activeSchool_(schoolId);
+  if(studentId) activeStudentForSchool_(studentId,schoolId);
+  else if(!String(b.issuer_name||'').trim()) throw new Error('نام صادرکننده چک الزامی است.');
   const amount=amount_(b.amount);
   const type=String(b.cheque_type||'sayad');
   if(['sayad','non_sayad','gharzolhasane','guarantee'].indexOf(type)<0) throw new Error('نوع چک نامعتبر است.');
@@ -1815,10 +1818,10 @@ function chequeAdd_(b){
   const approvedNow=received&&favor;
   const id=nextId_('Cheques');
   const image=saveAttachmentIfAny_(b,'cheque',id,u.id);
-  const row={id:id,date:issue,student_id:String(b.student_id),school_id:schoolId,amount:amount,sayad_id:sayad,due_date:due,description:String(b.description||b.note||''),created_by:u.id,created_at:now_(),payment_method:'چک',received_confirmed:received,in_favor_confirmed:favor,status:approvedNow?'approved':'pending',approved_at:approvedNow?now_():'',approved_by:approvedNow?u.id:'',bank_reconciled:false,bank_status:'',bank_date:'',image_url:image.url||'',bank_name:String(b.bank_name||''),cheque_type:type,cheque_number:String(b.cheque_number||''),issuer_name:String(b.issuer_name||''),cheque_purpose:String(b.cheque_purpose||'')};
+  const row={id:id,date:issue,student_id:studentId,school_id:schoolId,amount:amount,sayad_id:sayad,due_date:due,description:String(b.description||b.note||''),created_by:u.id,created_at:now_(),payment_method:'چک',received_confirmed:received,in_favor_confirmed:favor,status:approvedNow?'approved':'pending',approved_at:approvedNow?now_():'',approved_by:approvedNow?u.id:'',bank_reconciled:false,bank_status:'',bank_date:'',image_url:image.url||'',bank_name:String(b.bank_name||''),cheque_type:type,cheque_number:String(b.cheque_number||''),issuer_name:String(b.issuer_name||''),cheque_purpose:String(b.cheque_purpose||'')};
   appendObj_('Cheques',row);
   let tuitionId='',txId='';
-  if(approvedNow){
+  if(approvedNow && studentId){
     tuitionId=nextId_('Tuition');txId=nextId_('Transactions');
     const description='پرداخت با چک - '+(sayad||String(b.cheque_number||id));
     appendFinancialPair_('Tuition',[tuitionId,issue,String(b.student_id),schoolId,'payment',amount,description,sayad,image.url||'',u.id,now_(),false,true,'چک','approved','','','','','','',''],
