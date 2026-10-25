@@ -3,6 +3,8 @@ import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { Transaction } from '../../types';
 import { JalaliDatePicker } from '../JalaliDatePicker';
+import { QuickAmountPad } from '../QuickAmountPad';
+import { PersianVoiceTypingButton } from '../PersianVoiceTypingButton';
 import { jalaliToIso, jalaliFromGregorian, todayJalali, formatRial, latinDigits } from '../../utils/jalali';
 import {
   Receipt,
@@ -579,6 +581,8 @@ export const ExpensesScreen: React.FC = () => {
                 <input
                   type="tel"
                   inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="off"
                   value={formAmount}
                   onChange={(e) => {
                     const latin = latinDigits(e.target.value);
@@ -588,6 +592,11 @@ export const ExpensesScreen: React.FC = () => {
                   placeholder="مثال: ۱۴,۵۰۰,۰۰۰"
                   className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left focus:outline-hidden"
                   dir="ltr"
+                />
+                <QuickAmountPad
+                  value={formAmount}
+                  onChange={setFormAmount}
+                  accentColor={accentColor}
                 />
                 {formAmount && (
                   <div
@@ -669,9 +678,21 @@ export const ExpensesScreen: React.FC = () => {
               )}
 
               <div>
-                <label className="block text-xs font-bold text-[#341648] mb-1.5">
-                  شرح و توضیحات هزینه
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-[#341648]">
+                    شرح و توضیحات هزینه
+                  </label>
+                  <PersianVoiceTypingButton
+                    onTranscript={(text) => {
+                      const val = formComment ? `${formComment} ${text}` : text;
+                      setFormComment(val);
+                      if (val.includes('کارمزد') || val.includes('پایا') || val.includes('ساتنا')) {
+                        const feeCat = categories.find((c) => c.name === 'کارمزد بانک');
+                        if (feeCat) setFormCategoryId(feeCat.id);
+                      }
+                    }}
+                  />
+                </div>
                 <input
                   type="text"
                   value={formComment}

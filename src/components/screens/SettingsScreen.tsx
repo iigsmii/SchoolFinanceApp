@@ -19,6 +19,7 @@ import {
   Receipt,
 } from 'lucide-react';
 import { DEFAULT_SPREADSHEET_ID, postToAppsScript } from '../../services/googleSheets';
+import { toPersianDigits } from '../../utils/jalali';
 
 const THEME_NAMES = [
   { name: 'بنفش سلطنتی (اصلی)', color: '#62205f' },
@@ -46,6 +47,8 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
     webAppUrl,
     setWebAppUrl,
     syncStatus,
+    syncProgress,
+    syncStageText,
     syncError,
     lastSyncTime,
     connectWithGoogle,
@@ -367,9 +370,32 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
                 style={{ backgroundColor: accentColor }}
               >
                 <RefreshCw className={`w-4 h-4 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
-                <span>همگام‌سازی و بارگذاری زنده از Google Sheets</span>
+                <span>
+                  {syncStatus === 'syncing'
+                    ? `در حال همگام‌سازی (${toPersianDigits(syncProgress)}٪)...`
+                    : 'همگام‌سازی و بارگذاری زنده از Google Sheets'}
+                </span>
               </button>
             </div>
+
+            {/* Live Progress Bar in Settings Screen */}
+            {syncStatus === 'syncing' && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between text-xs text-amber-900 font-bold">
+                  <div className="flex items-center gap-2">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-600 shrink-0" />
+                    <span>{syncStageText || 'ارسال و دریافت اطلاعات از گوگل شیت...'}</span>
+                  </div>
+                  <span className="font-mono tabular-nums text-xs font-black">{toPersianDigits(syncProgress)}٪</span>
+                </div>
+                <div className="w-full h-2 bg-amber-200/70 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-amber-500 via-purple-600 to-emerald-500 transition-all duration-300 ease-out rounded-full"
+                    style={{ width: `${Math.max(6, syncProgress)}%` }}
+                  />
+                </div>
+              </div>
+            )}
 
             {syncError && (
               <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs font-semibold flex items-center gap-2">

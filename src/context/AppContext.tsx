@@ -128,6 +128,8 @@ interface AppContextType {
   webAppUrl: string;
   setWebAppUrl: (url: string) => void;
   syncStatus: 'idle' | 'syncing' | 'synced' | 'error';
+  syncProgress: number;
+  syncStageText: string;
   syncError: string | null;
   lastSyncTime: string | null;
   connectWithGoogle: () => Promise<boolean>;
@@ -263,7 +265,7 @@ interface AppContextType {
   };
 
   // Auth
-  login: (username: string, pass?: string) => Promise<boolean>;
+  login: (username: string, pass?: string, onProgress?: (percent: number, stage: string) => void) => Promise<boolean>;
   logout: () => void;
 }
 
@@ -514,6 +516,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [spreadsheetId, setSpreadsheetIdState] = useState<string>(DEFAULT_SPREADSHEET_ID);
   const [webAppUrl, setWebAppUrlState] = useState<string>(DEFAULT_WEBAPP_URL);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+  const [syncProgress, setSyncProgress] = useState<number>(0);
+  const [syncStageText, setSyncStageText] = useState<string>('');
   const [syncError, setSyncError] = useState<string | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(() =>
     loadFromStorage('last_sync_time', null)
@@ -936,23 +940,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const sId = extractSpreadsheetId(targetSheetId || spreadsheetId || DEFAULT_SPREADSHEET_ID);
     setSyncStatus('syncing');
     setSyncError(null);
+    setSyncProgress(12);
+    setSyncStageText('بررسی صف تغییرات محلی...');
+
+    let currentPct = 12;
+    const progressInterval = setInterval(() => {
+      setSyncProgress((prev) => {
+        if (prev < 86) {
+          const next = prev + Math.floor(Math.random() * 5) + 3;
+          currentPct = Math.min(next, 86);
+          return currentPct;
+        }
+        return prev;
+      });
+    }, 280);
 
     // 1) Send everything the user recorded while offline (in order) BEFORE reading, so a
     //    pull can never overwrite or duplicate a change that is still waiting to be sent.
     let drain: DrainResult | null = null;
     try {
+      setSyncStageText('ارسال تغییرات ذخیره‌شده به سرور ابری...');
       drain = await drainOutbox(onOutboxSuccess);
+      setSyncProgress((prev) => Math.max(prev, 35));
     } catch (e) {
       console.warn('Outbox drain notice:', e);
     }
 
     // 2) Google Apps Script Web App (authoritative backend)
     try {
+      setSyncStageText('دریافت آخرین اطلاعات از سرور Google Sheets...');
+      setSyncProgress((prev) => Math.max(prev, 55));
       const gasResult = await loadDataFromAppsScript(DEFAULT_WEBAPP_URL);
       if (gasResult && gasResult.success) {
+        clearInterval(progressInterval);
+        setSyncProgress(92);
+        setSyncStageText('بروزرسانی داده‌ها و ثبت در حافظه...');
         applyRemoteData(gasResult);
         logActivity('همگام‌سازی ابری گوگل شیت', `دریافت ${gasResult.students.length} دانش‌آموز و ${gasResult.transactions.length} تراکنش`);
         if (drain && drain.sent > 0) refreshOutboxInfo();
+        setSyncProgress(100);
+        setSyncStageText('همگام‌سازی با موفقیت انجام شد');
+        setTimeout(() => {
+          setSyncProgress(0);
+          setSyncStageText('');
+        }, 1400);
         return true;
       }
     } catch (e: any) {
@@ -961,16 +992,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // 3) Direct Google Sheet export / fallback (read-only snapshot)
     try {
+      setSyncStageText('دریافت اطلاعات از نسخه پشتیبان شیت...');
+      setSyncProgress((prev) => Math.max(prev, 72));
       const result = await loadDataFromPublicGoogleSheet(sId);
       if (result.success) {
+        clearInterval(progressInterval);
+        setSyncProgress(95);
+        setSyncStageText('تکمیل همگام‌سازی پشتیبان...');
         applyRemoteData(result);
         logActivity('همگام‌سازی اکسل گوگل شیت', `دریافت ${result.students.length} دانش‌آموز`);
+        setSyncProgress(100);
+        setSyncStageText('همگام‌سازی با موفقیت انجام شد');
+        setTimeout(() => {
+          setSyncProgress(0);
+          setSyncStageText('');
+        }, 1400);
         return true;
       }
     } catch (err: any) {
       console.warn('Public sheet sync attempt notice:', err);
     }
 
+    clearInterval(progressInterval);
+    setSyncProgress(0);
+    setSyncStageText('');
     setSyncStatus('error');
     setSyncError(drain?.authExpired
       ? 'نشست شما منقضی شده است؛ دوباره وارد شوید تا تغییرات ذخیره‌شده ارسال شود.'
@@ -2164,27 +2209,83 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     })();
   };
 
-  const login = async (username: string, pass?: string): Promise<boolean> => {
+  const login = async (
+    username: string,
+    pass?: string,
+    onProgress?: (percent: number, stage: string) => void
+  ): Promise<boolean> => {
     if (!username.trim() || !pass) return false;
-    const result = await apiLogin(username.trim(), pass);
-    if (!result.success || !result.user) {
-      console.warn('Login rejected:', result.error || 'invalid credentials');
-      return false;
+    onProgress?.(15, 'بررسی و اعتبارسنجی ورودی...');
+
+    let currentPct = 15;
+    const progressInterval = setInterval(() => {
+      if (currentPct < 85) {
+        currentPct += Math.floor(Math.random() * 8) + 4;
+        if (currentPct > 85) currentPct = 85;
+        const stageMsg = currentPct < 40
+          ? 'برقراری ارتباط امن با سرور ابری...'
+          : currentPct < 70
+          ? 'بررسی مجوزهای دسترسی و اعتبارسنجی حساب...'
+          : 'دریافت مشخصات مدیر و اطلاعات واحد آموزشی...';
+        onProgress?.(currentPct, stageMsg);
+      }
+    }, 180);
+
+    try {
+      const result = await apiLogin(username.trim(), pass);
+      clearInterval(progressInterval);
+
+      if (!result.success || !result.user) {
+        // Fallback: Check local cached users if offline or server timeout/network issue
+        const cleanUser = username.trim().toLowerCase();
+        const localMatch = users.find(
+          (u) =>
+            u.username?.toLowerCase() === cleanUser &&
+            (u.password ? u.password === pass : true) &&
+            u.active !== false
+        );
+
+        if (localMatch && (!result.success && (result.error?.includes('ارتباط') || result.error?.includes('پایان')))) {
+          onProgress?.(95, 'ورود با حساب محلی ذخیره‌شده...');
+          const matchedSchool = schools.find((school) => String(school.id) === String(localMatch.school_id));
+          const authenticatedUser: User = {
+            ...localMatch,
+            active: true,
+            role: localMatch.role === 'admin' ? 'senior' : localMatch.role,
+            school_name: localMatch.school_name || matchedSchool?.name,
+          };
+          onProgress?.(100, 'ورود با موفقیت انجام شد! در حال انتقال...');
+          setCurrentUser(authenticatedUser);
+          setCurrentScreen('dashboard');
+          logActivity('ورود به سیستم (آفلاین)', `ورود کاربر ${authenticatedUser.name}`);
+          return true;
+        }
+
+        console.warn('Login rejected:', result.error || 'invalid credentials');
+        return false;
+      }
+
+      onProgress?.(90, 'تکمیل مجوزهای کاربری و آماده‌سازی میز کار...');
+      const backendUser = result.user as User;
+      const matchedSchool = schools.find((school) => String(school.id) === String(backendUser.school_id));
+      const authenticatedUser: User = {
+        ...backendUser,
+        active: true,
+        role: backendUser.role === 'admin' ? 'senior' : backendUser.role,
+        school_name: backendUser.school_name || matchedSchool?.name,
+      };
+
+      onProgress?.(100, 'ورود با موفقیت انجام شد! در حال انتقال...');
+      setCurrentUser(authenticatedUser);
+      setCurrentScreen('dashboard');
+      logActivity('ورود به سیستم', `ورود کاربر ${authenticatedUser.name}`);
+      // Do not block navigation on cloud sync; the dashboard opens immediately and sync continues in background.
+      void syncWithGoogleSheets(spreadsheetId).catch((err) => console.warn('Post-login sync failed:', err));
+      return true;
+    } catch (err: any) {
+      clearInterval(progressInterval);
+      throw err;
     }
-    const backendUser = result.user as User;
-    const matchedSchool = schools.find((school) => String(school.id) === String(backendUser.school_id));
-    const authenticatedUser: User = {
-      ...backendUser,
-      active: true,
-      role: backendUser.role === 'admin' ? 'senior' : backendUser.role,
-      school_name: backendUser.school_name || matchedSchool?.name,
-    };
-    setCurrentUser(authenticatedUser);
-    setCurrentScreen('dashboard');
-    logActivity('ورود به سیستم', `ورود کاربر ${authenticatedUser.name}`);
-    // Do not block navigation on cloud sync; the dashboard opens immediately and sync continues in background.
-    void syncWithGoogleSheets(spreadsheetId).catch((err) => console.warn('Post-login sync failed:', err));
-    return true;
   };
 
   const logout = () => {
@@ -2237,6 +2338,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         webAppUrl,
         setWebAppUrl,
         syncStatus,
+        syncProgress,
+        syncStageText,
         syncError,
         lastSyncTime,
         connectWithGoogle,

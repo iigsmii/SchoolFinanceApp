@@ -5,6 +5,8 @@ import { ArrowRight, UserCircle, Settings, Cloud, RefreshCw, CheckCircle2, Alert
 import { PWAInstallButton } from './PWAInstallButton';
 import { ScreenType } from '../types';
 
+import { toPersianDigits } from '../utils/jalali';
+
 interface HeaderProps {
   title: string;
   showBack?: boolean;
@@ -17,6 +19,8 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack = true }) => {
     accentColor,
     isConnectedToGoogleSheets,
     syncStatus,
+    syncProgress,
+    syncStageText,
     syncWithGoogleSheets,
     connectWithGoogle,
     goBack,
@@ -35,7 +39,17 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack = true }) => {
   };
 
   return (
-    <header className="sticky top-0 z-30 bg-[#f8f5f9]/95 backdrop-blur-md border-b border-[#e5dde8] px-4 py-3 transition-colors">
+    <header className="sticky top-0 z-30 bg-[#f8f5f9]/95 backdrop-blur-md border-b border-[#e5dde8] px-4 py-3 transition-colors relative">
+      {/* Hairline Progress Bar along the bottom of the Header during Sync */}
+      {syncStatus === 'syncing' && (
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-amber-100 overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-amber-500 via-purple-600 to-emerald-500 transition-all duration-300 ease-out"
+            style={{ width: `${Math.max(6, syncProgress)}%` }}
+          />
+        </div>
+      )}
+
       <div className="max-w-4xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-3">
           {showBack && (
@@ -67,13 +81,13 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack = true }) => {
           {/* PWA Install Button */}
           <PWAInstallButton variant="header" />
 
-          {/* Cloud Sync Status Badge */}
+          {/* Cloud Sync Status Badge with Live Percentage */}
           <button
             onClick={handleSyncClick}
             disabled={syncStatus === 'syncing'}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-xs ${
               syncStatus === 'syncing'
-                ? 'bg-amber-50 text-amber-700 border-amber-200 animate-pulse'
+                ? 'bg-amber-50 text-amber-800 border-amber-300'
                 : isConnectedToGoogleSheets
                 ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
                 : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border-indigo-200'
@@ -86,8 +100,11 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack = true }) => {
           >
             {syncStatus === 'syncing' ? (
               <>
-                <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-600" />
-                <span className="hidden sm:inline">در حال همگام‌سازی...</span>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-600 shrink-0" />
+                <span className="hidden xs:inline">همگام‌سازی</span>
+                <span className="font-mono tabular-nums font-black px-1.5 py-0.5 rounded-md bg-amber-200/90 text-amber-950 text-[11px]">
+                  {toPersianDigits(syncProgress)}٪
+                </span>
               </>
             ) : isConnectedToGoogleSheets ? (
               <>
@@ -124,6 +141,17 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack = true }) => {
           </button>
         </div>
       </div>
+      {syncStatus === 'syncing' && syncStageText && (
+        <div className="max-w-4xl mx-auto mt-2 text-xs flex items-center justify-between px-3 py-1.5 rounded-xl bg-amber-50/90 border border-amber-200 text-amber-900 shadow-2xs animate-in fade-in duration-200" dir="rtl">
+          <div className="flex items-center gap-2">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-600 shrink-0" />
+            <span className="font-medium">{syncStageText}</span>
+          </div>
+          <span className="font-mono tabular-nums font-black text-xs text-amber-950 bg-amber-200/70 px-2 py-0.5 rounded-md">
+            {toPersianDigits(syncProgress)}٪
+          </span>
+        </div>
+      )}
       {(pendingSyncCount > 0 || failedSyncItems.length > 0) && (
         <div className="max-w-4xl mx-auto mt-2 text-xs" dir="rtl">
           {pendingSyncCount > 0 && failedSyncItems.length === 0 && (

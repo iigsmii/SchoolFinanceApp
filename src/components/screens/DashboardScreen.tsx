@@ -51,7 +51,7 @@ import {
   Pie,
 } from 'recharts';
 import { ScreenType, Student } from '../../types';
-import { formatRial, latinDigits } from '../../utils/jalali';
+import { formatRial, latinDigits, toPersianDigits } from '../../utils/jalali';
 import { playClickSound } from '../../utils/soundEffects';
 
 const CHART_COLORS = ['#62205f', '#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6', '#f43f5e'];
@@ -70,6 +70,8 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
     isConnectedToGoogleSheets,
     spreadsheetId,
     syncStatus,
+    syncProgress,
+    syncStageText,
     syncError,
     lastSyncTime,
     syncWithGoogleSheets,
@@ -353,10 +355,10 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
               type="button"
               onClick={() => syncWithGoogleSheets()}
               disabled={syncStatus === 'syncing'}
-              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs active:scale-95 transition-all"
+              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all"
             >
               <RefreshCw className={`w-3 h-3 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
-              <span>همگام‌سازی</span>
+              <span>{syncStatus === 'syncing' ? `همگام‌سازی (${toPersianDigits(syncProgress)}٪)` : 'همگام‌سازی'}</span>
             </button>
           ) : (
             <button
@@ -380,6 +382,25 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
           </button>
         </div>
       </div>
+
+      {/* Progress Bar inside Dashboard Sync Card when actively syncing */}
+      {syncStatus === 'syncing' && (
+        <div className="rounded-xl p-2.5 bg-amber-50/90 border border-amber-200/90 space-y-1.5 text-xs animate-in fade-in duration-200" dir="rtl">
+          <div className="flex items-center justify-between text-[11px] text-amber-900 font-bold">
+            <div className="flex items-center gap-1.5">
+              <RefreshCw className="w-3 h-3 animate-spin text-amber-600 shrink-0" />
+              <span>{syncStageText || 'در حال همگام‌سازی داده‌های ابری...'}</span>
+            </div>
+            <span className="font-mono tabular-nums text-xs font-black">{toPersianDigits(syncProgress)}٪</span>
+          </div>
+          <div className="w-full h-1.5 bg-amber-200/60 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-amber-500 via-purple-600 to-emerald-500 transition-all duration-300 ease-out rounded-full"
+              style={{ width: `${Math.max(6, syncProgress)}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {offlineSuccessNotice && (
         <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center justify-between gap-2">

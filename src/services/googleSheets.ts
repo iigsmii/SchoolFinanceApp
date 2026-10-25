@@ -130,12 +130,16 @@ export const postToAppsScript = async (
 /** Authenticate against the Apps Script Managers table. Password hashes never leave the server. */
 export const apiLogin = async (username: string, password: string): Promise<{ success: boolean; token?: string; user?: User; error?: string }> => {
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
     const res = await fetch(DEFAULT_WEBAPP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action: 'login', username: username.trim(), password }),
       mode: 'cors',
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
     const result = await res.json();
     if (!res.ok || !result?.success || !result?.token || !result?.user) {
       return { success: false, error: result?.error || 'نام کاربری یا رمز عبور نامعتبر است.' };
@@ -143,6 +147,9 @@ export const apiLogin = async (username: string, password: string): Promise<{ su
     if (typeof localStorage !== 'undefined') localStorage.setItem('school_finance_auth_token', result.token);
     return { success: true, token: result.token, user: result.user };
   } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      return { success: false, error: 'زمان پاسخ‌دهی سرور ورود به پایان رسید. لطفاً اتصال اینترنت خود را بررسی نمایید.' };
+    }
     return { success: false, error: err?.message || 'ارتباط با سرور ورود برقرار نشد.' };
   }
 };
@@ -732,6 +739,7 @@ export const loadDataFromAppsScript = async (
         owner: OWNER_EMAIL,
       }),
       mode: 'cors',
+      signal: AbortSignal.timeout(16000),
     });
     if (postRes.ok) {
       const json = await postRes.json();
@@ -746,7 +754,9 @@ export const loadDataFromAppsScript = async (
   // 2. Fallback to GET action: 'sync'
   if (!rawData) {
     try {
-      const getRes = await fetch(`${cleanUrl}?action=sync&token=${encodeURIComponent(authToken)}&owner=${encodeURIComponent(OWNER_EMAIL)}`);
+      const getRes = await fetch(`${cleanUrl}?action=sync&token=${encodeURIComponent(authToken)}&owner=${encodeURIComponent(OWNER_EMAIL)}`, {
+        signal: AbortSignal.timeout(16000),
+      });
       if (getRes.ok) {
         const json = await getRes.json();
         if (json && (json.success || Array.isArray(json.students))) {

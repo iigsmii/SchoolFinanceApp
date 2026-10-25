@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Student, Transaction } from '../types';
 import { JalaliDatePicker } from './JalaliDatePicker';
+import { QuickAmountPad } from './QuickAmountPad';
 import { todayJalali, jalaliToIso, formatRial, latinDigits } from '../utils/jalali';
 import { matchesStudentSearch } from '../utils/studentSearch';
 import {
@@ -248,14 +249,21 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
             <input
               type="tel"
               inputMode="numeric"
+              pattern="[0-9]*"
+              autoComplete="off"
               value={tuitionAmount}
               onChange={(e) => {
-                const raw = e.target.value.replace(/\D/g, '');
+                const raw = latinDigits(e.target.value).replace(/\D/g, '');
                 setTuitionAmount(raw ? Number(raw).toLocaleString('en-US') : '');
               }}
               placeholder="مثال: ۱۸۰,۰۰۰,۰۰۰"
               className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left focus:outline-hidden focus:border-[#62205f]"
               dir="ltr"
+            />
+            <QuickAmountPad
+              value={tuitionAmount}
+              onChange={setTuitionAmount}
+              accentColor={accentColor}
             />
 
             {/* Quick Presets */}

@@ -2,8 +2,8 @@
  * Persian Number & Input Utility Functions
  *
  * Provides safe conversions for parsing Persian/Arabic digits to English digits
- * without any global DOM interception or keyboard hijacking, ensuring
- * standard mobile virtual keyboards, backspace, and cursor navigation work 100% normally.
+ * without DOM hijacking, ensuring Android/iOS mobile virtual keyboards,
+ * backspace, and cursor navigation work 100% normally.
  */
 
 export const toLatinDigits = (str: string = ''): string => {
@@ -14,6 +14,27 @@ export const toLatinDigits = (str: string = ''): string => {
     // 0x0660 to 0x0669: Arabic digits ٠-٩
     return String(code >= 0x06f0 && code <= 0x06f9 ? code - 0x06f0 : code - 0x0660);
   });
+};
+
+export const toPersianDigits = (str: string | number = ''): string => {
+  if (str === null || str === undefined || str === '') return '';
+  const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+  return String(str).replace(/[0-9]/g, (w) => persianDigits[Number(w)]);
+};
+
+/**
+ * Normalizes general Persian text: converts Arabic Yeh/Kaf to Persian, cleans tatweel,
+ * retains proper Persian half-spaces.
+ */
+export const normalizePersianCleanText = (str: string = ''): string => {
+  if (!str) return '';
+  return String(str)
+    .replace(/[يى]/g, 'ی')
+    .replace(/ك/g, 'ک')
+    .replace(/[ةۀ]/g, 'ه')
+    .replace(/ـ+/g, '') // strip tatweel
+    .replace(/[ \t]+/g, ' ')
+    .trim();
 };
 
 export const normalizePersianLiveText = (str: string = ''): string => {
@@ -42,6 +63,13 @@ export const formatAmountString = (val: string | number): string => {
   const num = parseAmountValue(val);
   if (num === 0 && (!val || val === '0')) return val === '0' ? '0' : '';
   return num.toLocaleString('en-US');
+};
+
+/**
+ * Cleans user input for phone numbers, national IDs, or raw digit fields.
+ */
+export const cleanNumericString = (val: string = ''): string => {
+  return toLatinDigits(val).replace(/\D/g, '');
 };
 
 /**

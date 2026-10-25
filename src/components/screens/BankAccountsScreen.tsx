@@ -1026,8 +1026,10 @@ export const BankAccountsScreen: React.FC = () => {
                 <div>
                   <label className="block text-xs font-bold text-[#341648] mb-1.5">مانده آغازین حساب (ریال)</label>
                   <input
-                    type="text"
+                    type="tel"
                     inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="off"
                     value={formInitialBalance}
                     onChange={(e) => {
                       const raw = latinDigits(e.target.value).replace(/\D/g, '');

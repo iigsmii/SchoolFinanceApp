@@ -195,10 +195,17 @@ export const SchoolsScreen: React.FC = () => {
                 <label className="block text-xs font-bold text-[#341648] mb-1.5">
                   شماره پایانه دستگاه پوز
                 </label>
-                <input type="text" inputMode="numeric" value={formPosTerminal}
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="off"
+                  value={formPosTerminal}
                   onChange={(e) => setFormPosTerminal(e.target.value.replace(/[^0-9۰-۹٠-٩]/g, ''))}
                   placeholder="شماره پایانه روی رسید/صورتحساب پوز"
-                  className="w-full px-4 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left" dir="ltr" />
+                  className="w-full px-4 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left"
+                  dir="ltr"
+                />
                 <p className="text-[11px] text-gray-500 mt-1">برای انتساب خودکار تراکنش‌های پوز به این مدرسه استفاده می‌شود.</p>
               </div>
               <div>

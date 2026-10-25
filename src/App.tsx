@@ -167,7 +167,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <>
+    <div className="min-h-screen bg-[#f8f5f9] animate-in fade-in zoom-in-[0.98] duration-500 ease-out">
       {renderScreen()}
 
       {/* Confirmation Modal when user presses Back on Dashboard to Exit App */}
@@ -209,6 +209,6 @@ export const App: React.FC = () => {
       {/* PWA Update notification banner */}
       <PWAUpdatePrompt />
       <AppUpdatePrompt />
-    </>
+    </div>
   );
 };

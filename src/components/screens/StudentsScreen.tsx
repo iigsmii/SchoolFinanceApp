@@ -4,6 +4,7 @@ import { Header } from '../Header';
 import { Student } from '../../types';
 import { buildParsianCode } from '../../utils/parsian';
 import { matchesStudentSearch } from '../../utils/studentSearch';
+import { latinDigits } from '../../utils/jalali';
 import {
   UserPlus,
   FileSpreadsheet,
@@ -533,10 +534,13 @@ export const StudentsScreen: React.FC = () => {
                     کد ملی (۱۰ رقم) <span className="text-rose-500">*</span>
                   </label>
                   <input
-                    type="text"
+                    type="tel"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="off"
                     maxLength={10}
                     value={formNationalId}
-                    onChange={(e) => setFormNationalId(e.target.value.replace(/\D/g, ''))}
+                    onChange={(e) => setFormNationalId(latinDigits(e.target.value).replace(/\D/g, ''))}
                     placeholder="1190248561"
                     className="w-full px-3 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs sm:text-sm text-[#302735] focus:outline-hidden focus:border-[#62205f] font-mono text-left"
                     dir="ltr"
@@ -551,10 +555,13 @@ export const StudentsScreen: React.FC = () => {
                     شماره همراه پدر:
                   </label>
                   <input
-                    type="text"
+                    type="tel"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="off"
                     maxLength={11}
                     value={formFatherPhone}
-                    onChange={(e) => setFormFatherPhone(e.target.value.replace(/\D/g, ''))}
+                    onChange={(e) => setFormFatherPhone(latinDigits(e.target.value).replace(/\D/g, ''))}
                     placeholder="09131234567"
                     className="w-full px-3 py-2 bg-white rounded-xl border border-blue-200 text-xs sm:text-sm text-[#302735] font-mono text-left outline-hidden focus:border-blue-500"
                     dir="ltr"
@@ -566,10 +573,13 @@ export const StudentsScreen: React.FC = () => {
                     شماره همراه مادر:
                   </label>
                   <input
-                    type="text"
+                    type="tel"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="off"
                     maxLength={11}
                     value={formMotherPhone}
-                    onChange={(e) => setFormMotherPhone(e.target.value.replace(/\D/g, ''))}
+                    onChange={(e) => setFormMotherPhone(latinDigits(e.target.value).replace(/\D/g, ''))}
                     placeholder="09139876543"
                     className="w-full px-3 py-2 bg-white rounded-xl border border-purple-200 text-xs sm:text-sm text-[#302735] font-mono text-left outline-hidden focus:border-purple-500"
                     dir="ltr"

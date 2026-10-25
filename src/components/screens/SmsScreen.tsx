@@ -4,6 +4,7 @@ import { Header } from '../Header';
 import { formatRial, jalaliFromGregorian } from '../../utils/jalali';
 import { matchesStudentSearch } from '../../utils/studentSearch';
 import { calculateStudentOverdue, formatSmsTemplate } from '../../utils/debt';
+import { PersianVoiceTypingButton } from '../PersianVoiceTypingButton';
 import { Student } from '../../types';
 import {
   MessageSquare,
@@ -862,9 +863,16 @@ export const SmsScreen: React.FC = () => {
 
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-bold text-[#341648]">
-                  متن پیامک (قابل ویرایش دستی):
-                </label>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-bold text-[#341648]">
+                    متن پیامک (قابل ویرایش دستی):
+                  </label>
+                  <PersianVoiceTypingButton
+                    onTranscript={(text) =>
+                      setEditableMessage((prev) => (prev ? `${prev} ${text}` : text))
+                    }
+                  />
+                </div>
                 <span className="text-[10px] text-gray-500 font-mono">
                   {editableMessage.length} نویسه • {Math.ceil(editableMessage.length / 70) || 1} پارت پیامک
                 </span>

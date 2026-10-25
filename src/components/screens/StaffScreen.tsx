@@ -1115,12 +1115,14 @@ export const StaffScreen: React.FC = () => {
                       نرخ هر ساعت کارکرد (ریال)
                     </label>
                     <input
-                      type="text"
-                    inputMode="numeric"
+                      type="tel"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      autoComplete="off"
                       disabled={!isSenior}
                       value={staffHourlyRate}
                       onChange={(e) => {
-                        const raw = e.target.value.replace(/\D/g, '');
+                        const raw = latinDigits(e.target.value).replace(/\D/g, '');
                         setStaffHourlyRate(raw ? Number(raw).toLocaleString('en-US') : '');
                       }}
                       placeholder="مثال: ۱,۵۰۰,۰۰۰"
@@ -1134,12 +1136,14 @@ export const StaffScreen: React.FC = () => {
                       حقوق پایه ماهانه (ریال)
                     </label>
                     <input
-                      type="text"
-                    inputMode="numeric"
+                      type="tel"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      autoComplete="off"
                       disabled={!isSenior}
                       value={staffBaseSalary}
                       onChange={(e) => {
-                        const raw = e.target.value.replace(/\D/g, '');
+                        const raw = latinDigits(e.target.value).replace(/\D/g, '');
                         setStaffBaseSalary(raw ? Number(raw).toLocaleString('en-US') : '');
                       }}
                       placeholder="مثال: ۱۲۰,۰۰۰,۰۰۰"
@@ -1155,12 +1159,14 @@ export const StaffScreen: React.FC = () => {
                       سهم بیمه کارفرما / مدرسه (ریال)
                     </label>
                     <input
-                      type="text"
-                    inputMode="numeric"
+                      type="tel"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      autoComplete="off"
                       disabled={!isSenior}
                       value={staffEmployerIns}
                       onChange={(e) => {
-                        const raw = e.target.value.replace(/\D/g, '');
+                        const raw = latinDigits(e.target.value).replace(/\D/g, '');
                         setStaffEmployerIns(raw ? Number(raw).toLocaleString('en-US') : '');
                       }}
                       placeholder="۲۳ درصد سهم مدرسه"
@@ -1174,12 +1180,14 @@ export const StaffScreen: React.FC = () => {
                       کسورات سهم بیمه کارمند (ریال)
                     </label>
                     <input
-                      type="text"
-                    inputMode="numeric"
+                      type="tel"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      autoComplete="off"
                       disabled={!isSenior}
                       value={staffEmployeeIns}
                       onChange={(e) => {
-                        const raw = e.target.value.replace(/\D/g, '');
+                        const raw = latinDigits(e.target.value).replace(/\D/g, '');
                         setStaffEmployeeIns(raw ? Number(raw).toLocaleString('en-US') : '');
                       }}
                       placeholder="۷ درصد کسر از حقوق"
@@ -1469,11 +1477,13 @@ export const StaffScreen: React.FC = () => {
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">مبلغ ناخالص (ریال)</label>
                   <input
-                    type="text"
+                    type="tel"
                     inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="off"
                     value={payGrossAmount}
                     onChange={(e) => {
-                      const raw = e.target.value.replace(/\D/g, '');
+                      const raw = latinDigits(e.target.value).replace(/\D/g, '');
                       setPayGrossAmount(raw ? Number(raw).toLocaleString('en-US') : '');
                     }}
                     className="w-full px-3 py-2 bg-gray-50 rounded-xl border border-gray-300 text-xs font-mono text-left"
@@ -1484,11 +1494,13 @@ export const StaffScreen: React.FC = () => {
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">کسر بیمه (ریال)</label>
                   <input
-                    type="text"
+                    type="tel"
                     inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="off"
                     value={payInsuranceDeduction}
                     onChange={(e) => {
-                      const raw = e.target.value.replace(/\D/g, '');
+                      const raw = latinDigits(e.target.value).replace(/\D/g, '');
                       setPayInsuranceDeduction(raw ? Number(raw).toLocaleString('en-US') : '');
                     }}
                     className="w-full px-3 py-2 bg-gray-50 rounded-xl border border-gray-300 text-xs font-mono text-left"
@@ -1499,11 +1511,13 @@ export const StaffScreen: React.FC = () => {
                 <div>
                   <label className="block text-xs font-bold text-emerald-800 mb-1">خالص پرداختی (ریال) *</label>
                   <input
-                    type="text"
+                    type="tel"
                     inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="off"
                     value={payNetAmount}
                     onChange={(e) => {
-                      const raw = e.target.value.replace(/\D/g, '');
+                      const raw = latinDigits(e.target.value).replace(/\D/g, '');
                       setPayNetAmount(raw ? Number(raw).toLocaleString('en-US') : '');
                     }}
                     className="w-full px-3 py-2 bg-emerald-50 rounded-xl border border-emerald-300 text-xs font-mono font-bold text-emerald-900 text-left"

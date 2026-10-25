@@ -3,6 +3,8 @@ import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { Student, Transaction } from '../../types';
 import { JalaliDatePicker } from '../JalaliDatePicker';
+import { QuickAmountPad } from '../QuickAmountPad';
+import { PersianVoiceTypingButton } from '../PersianVoiceTypingButton';
 import { jalaliToIso, jalaliFromGregorian, todayJalali, formatRial, latinDigits } from '../../utils/jalali';
 import {
   Search,
@@ -780,6 +782,8 @@ export const TuitionScreen: React.FC = () => {
                 <input
                   type="tel"
                   inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="off"
                   value={formAmount}
                   onChange={(e) => {
                     const raw = latinDigits(e.target.value).replace(/\D/g, '');
@@ -788,6 +792,11 @@ export const TuitionScreen: React.FC = () => {
                   placeholder="مثال: ۱۸۰,۰۰۰,۰۰۰"
                   className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm text-[#302735] font-mono text-left focus:outline-hidden focus:border-[#62205f]"
                   dir="ltr"
+                />
+                <QuickAmountPad
+                  value={formAmount}
+                  onChange={setFormAmount}
+                  accentColor={accentColor}
                 />
                 {formAmount && <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800" aria-live="polite">معادل به حروف (تومان): {amountInTomanWords(formAmount)}</div>}
               </div>
@@ -928,6 +937,8 @@ export const TuitionScreen: React.FC = () => {
                 <input
                   type="tel"
                   inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="off"
                   value={formAmount}
                   onChange={(e) => {
                     const raw = latinDigits(e.target.value).replace(/\D/g, '');
@@ -936,6 +947,11 @@ export const TuitionScreen: React.FC = () => {
                   placeholder="مثال: ۵۰,۰۰۰,۰۰۰"
                   className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm text-[#302735] font-mono text-left focus:outline-hidden focus:border-[#62205f]"
                   dir="ltr"
+                />
+                <QuickAmountPad
+                  value={formAmount}
+                  onChange={setFormAmount}
+                  accentColor={accentColor}
                 />
                 {formAmount && <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800" aria-live="polite">معادل به حروف (تومان): {amountInTomanWords(formAmount)}</div>}
               </div>
@@ -1206,6 +1222,8 @@ export const TuitionScreen: React.FC = () => {
                 <input
                   type="tel"
                   inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="off"
                   value={formAmount}
                   onChange={(e) => {
                     const raw = latinDigits(e.target.value).replace(/\D/g, '');
@@ -1214,6 +1232,12 @@ export const TuitionScreen: React.FC = () => {
                   placeholder="مثال: ۳۰,۰۰۰,۰۰۰"
                   className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm text-[#302735] font-mono text-left focus:outline-hidden focus:border-[#62205f]"
                   dir="ltr"
+                />
+                <QuickAmountPad
+                  value={formAmount}
+                  onChange={setFormAmount}
+                  accentColor={accentColor}
+                  showPresetMillions={false}
                 />
                 {formAmount && (
                   <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800" aria-live="polite">
@@ -1230,7 +1254,14 @@ export const TuitionScreen: React.FC = () => {
               />
 
               <div>
-                <label className="block text-xs font-bold text-[#341648] mb-1.5">توضیحات و مصوبه تخفیف</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-[#341648]">توضیحات و مصوبه تخفیف</label>
+                  <PersianVoiceTypingButton
+                    onTranscript={(text) =>
+                      setFormDesc((prev) => (prev ? `${prev} ${text}` : text))
+                    }
+                  />
+                </div>
                 <input
                   type="text"
                   value={formDesc}
@@ -1289,6 +1320,8 @@ export const TuitionScreen: React.FC = () => {
                   <input
                     type="tel"
                     inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="off"
                     value={bulkAmount}
                     onChange={(e) => {
                       const raw = latinDigits(e.target.value).replace(/\D/g, '');
@@ -1297,6 +1330,11 @@ export const TuitionScreen: React.FC = () => {
                     placeholder="مثال: ۱۸۰,۰۰۰,۰۰۰"
                     className="w-full px-4 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left focus:outline-hidden"
                     dir="ltr"
+                  />
+                  <QuickAmountPad
+                    value={bulkAmount}
+                    onChange={setBulkAmount}
+                    accentColor={accentColor}
                   />
                   {bulkAmount && <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800" aria-live="polite">معادل به حروف (تومان): {amountInTomanWords(bulkAmount)}</div>}
                 </div>

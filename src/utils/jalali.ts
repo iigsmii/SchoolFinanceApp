@@ -186,6 +186,12 @@ export function formatNumberLatin(n: number | string): string {
   return num.toLocaleString('en-US');
 }
 
+export function toPersianDigits(n: number | string): string {
+  if (n === undefined || n === null || n === '') return '';
+  const farsiDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+  return String(n).replace(/\d/g, (d) => farsiDigits[parseInt(d, 10)]);
+}
+
 export const JALALI_MONTH_NAMES = [
   'فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور',
   'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'

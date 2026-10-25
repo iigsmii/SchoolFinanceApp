@@ -4,6 +4,7 @@ import { Header } from '../Header';
 import { Cheque } from '../../types';
 import { formatRial, jalaliFromGregorian, todayJalali, jalaliToIso, latinDigits } from '../../utils/jalali';
 import { JalaliDatePicker } from '../JalaliDatePicker';
+import { QuickAmountPad } from '../QuickAmountPad';
 import { ReceiptImageUploader } from '../ReceiptImageUploader';
 import {
   FileCheck,
@@ -587,8 +588,10 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                   مبلغ چک (ریال) <span className="text-rose-500">*</span>
                 </label>
                 <input
-                  type="text"
+                  type="tel"
                   inputMode="numeric"
+                  pattern="[0-9]*"
+                  autoComplete="off"
                   value={amountStr}
                   onChange={(e) => {
                     const raw = latinDigits(e.target.value).replace(/\D/g, '');
@@ -597,6 +600,11 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                   placeholder="مثال: ۷۵,۰۰۰,۰۰۰"
                   className="w-full px-4 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left focus:outline-hidden"
                   dir="ltr"
+                />
+                <QuickAmountPad
+                  value={amountStr}
+                  onChange={setAmountStr}
+                  accentColor={accentColor}
                 />
               </div>
 
