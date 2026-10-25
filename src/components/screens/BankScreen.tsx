@@ -171,7 +171,7 @@ export const BankScreen: React.FC = () => {
           pettyCashCards: Array.isArray(result.rules.pettyCashCards) ? result.rules.pettyCashCards : [],
           posTerminals: (() => {
             const saved = Array.isArray(result.rules.posTerminals) ? result.rules.posTerminals : [];
-            const known = new Set(saved.map((x: { terminal?: string }) => String(x?.terminal || '').replace(/\\D/g, '').replace(/^0+/, '')));
+            const known = new Set(saved.map((x: { terminal?: string }) => String(x?.terminal || '').replace(/\D/g, '').replace(/^0+/, '')));
             return [...saved, ...defaultBankRules.posTerminals.filter((x) => !known.has(x.terminal))];
           })(),
           excludedAccountSuffixes: Array.isArray(result.rules.excludedAccountSuffixes) ? result.rules.excludedAccountSuffixes : ['009'],
