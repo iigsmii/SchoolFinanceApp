@@ -1489,17 +1489,16 @@ function defaultBankRules_(){
       {suffix:'002',purpose:'pos_aggregate_and_petty_cash'}
     ],
     pettyCashCards:[
-      {card:'6037691263360788',managerName:'محمد عربی',active:true},
-      {card:'6037691263360796',managerName:'آرزو میرزایی',active:true},
-      {card:'6037691263360804',managerName:'فریبا سبزواری',active:true},
-      {card:'6037691263360812',managerName:'علی هاشمیان',active:true},
-      {card:'6037691263360770',managerName:'محمدرضا آقاسی',active:true},
-      {card:'6037691263360762',managerName:'مدیر - غیرفعال',active:false},
-      {card:'6037691261822597',managerName:'سید محمدرضا گلزاری',active:true},
-      {card:'6037691261822589',managerName:'سید محمدرضا گلزاری - غیرفعال',active:false},
-      {card:'6037691263357097',managerName:'سید محمدرضا گلزاری',active:true},
-      {card:'6037691263357089',managerName:'کارت غیرفعال',active:false},
-      {card:'6037691263357071',managerName:'علی هاشمیان',active:true}
+      {card:'6037691263357071',managerName:'علی هاشمیان',accountSuffix:'002',active:true},
+      {card:'6037691263260770',managerName:'محمدرضا آقاسی',accountSuffix:'002',active:true},
+      {card:'6037691263260788',managerName:'محمد عربی',accountSuffix:'002',active:true},
+      {card:'6037691263260796',managerName:'آرزو میرزایی',accountSuffix:'002',active:true},
+      {card:'6037691263260804',managerName:'فریبا سبزواری',accountSuffix:'002',active:true},
+      {card:'603769190633877',managerName:'نامشخص - کارت متصل به حساب ۰۰۲',accountSuffix:'002',active:true},
+      {card:'6037691261822589',managerName:'مجید آقابزرگی',accountSuffix:'001',active:true},
+      {card:'6037691263357089',managerName:'سید محمدرضا گلزاری',accountSuffix:'001',active:true},
+      {card:'6037691263357097',managerName:'مجید آقابزرگی',accountSuffix:'001',active:true},
+      {card:'6037697090013308',managerName:'نامشخص - کارت متصل به حساب ۰۰۱',accountSuffix:'001',active:true}
     ],
     posTerminals:[],
     matching:{dateWindowDays:3,requireExactAmount:true,requireSourceCardWhenKnown:true}
