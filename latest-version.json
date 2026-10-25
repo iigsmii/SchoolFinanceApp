@@ -1,7 +1,7 @@
 {
-  "version": "2.16.257",
+  "version": "2.16.258",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Fix cheque saving and persist cheque photos",
-  "build": 257,
-  "published_at": "2026-10-25T17:03:16Z"
+  "notes": "Move tuition collection trend into financial overview",
+  "build": 258,
+  "published_at": "2026-10-25T17:15:33Z"
 }
