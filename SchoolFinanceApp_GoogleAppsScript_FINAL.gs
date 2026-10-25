@@ -1500,7 +1500,15 @@ function defaultBankRules_(){
       {card:'6037691263357097',managerName:'مجید آقابزرگی',accountSuffix:'001',active:true},
       {card:'6037697090013308',managerName:'نامشخص - کارت متصل به حساب ۰۰۱',accountSuffix:'001',active:true}
     ],
-    posTerminals:[],
+    posTerminals:[
+      {terminal:'21435312',schoolId:0},
+      {terminal:'91370748',schoolId:0},
+      {terminal:'21435311',schoolId:0},
+      {terminal:'21435313',schoolId:0},
+      {terminal:'99213505',schoolId:0},
+      {terminal:'91370739',schoolId:0},
+      {terminal:'91370741',schoolId:0}
+    ],
     matching:{dateWindowDays:3,requireExactAmount:true,requireSourceCardWhenKnown:true}
   };
 }
