@@ -1,7 +1,7 @@
 {
-  "version": "2.16.260",
+  "version": "2.16.262",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Align petty cash card matching with uploaded bank roster",
-  "build": 260,
-  "published_at": "2026-10-25T18:20:35Z"
+  "notes": "Add verified POS terminal IDs to bank reconciliation defaults",
+  "build": 262,
+  "published_at": "2026-10-25T18:23:07Z"
 }
