@@ -1,7 +1,7 @@
 {
-  "version": "2.16.263",
+  "version": "2.16.264",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Show newest bank reconciliation transactions first",
-  "build": 263,
-  "published_at": "2026-10-25T18:25:21Z"
+  "notes": "Filter activity logs by manager and hide noisy cloud sync logs",
+  "build": 264,
+  "published_at": "2026-10-25T18:28:32Z"
 }
