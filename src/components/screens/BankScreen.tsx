@@ -1111,7 +1111,7 @@ export const BankScreen: React.FC = () => {
 
         // Stable duplicate detection against existing bank rows and within this workbook.
         const fingerprint = (item: any) => {
-          const digits = (v: unknown) => toDigits(v).replace(/\\D/g, '');
+          const digits = (v: unknown) => toDigits(v).replace(/\D/g, '');
           const dateKey = String(item.date || '');
           const amountKey = String(Number(item.amount || 0));
           const accountKey = digits(item.account_suffix || item.bank_account || '');
