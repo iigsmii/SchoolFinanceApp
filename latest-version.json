@@ -1,7 +1,7 @@
 {
-  "version": "2.16.245",
+  "version": "2.16.246",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "feat: enhance UI and UX for financial input",
-  "build": 245,
-  "published_at": "2026-10-25T00:36:57Z"
+  "notes": "feat: add feedback and messaging system",
+  "build": 246,
+  "published_at": "2026-10-25T00:59:06Z"
 }
