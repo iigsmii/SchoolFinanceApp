@@ -1,7 +1,7 @@
 {
-  "version": "2.16.254",
+  "version": "2.16.255",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Apply verified bank accounts and petty cash cards over stale defaults",
-  "build": 254,
-  "published_at": "2026-10-25T16:47:22Z"
+  "notes": "Register seven POS terminals without school assignments",
+  "build": 255,
+  "published_at": "2026-10-25T16:58:01Z"
 }
