@@ -17,17 +17,17 @@ import {
 } from '../types';
 
 export const INITIAL_SCHOOLS: School[] = [
-  { id: 1, name: 'دبستان غیر دولتی نور ۱', code: 'NOOR1', type: 'دبستان غیر دولتی پسرانه', active: true, moeen_code: 3, tafsili_code: '101', petty_cash_card: '۶۰۳۷-۹۹۷۵-۱۱۲۲-۳۳۴۴' },
-  { id: 2, name: 'دبستان غیر دولتی نور ۲', code: 'NOOR2', type: 'دبستان غیر دولتی پسرانه', active: true, moeen_code: 4, tafsili_code: '102', petty_cash_card: '۶۰۳۷-۹۹۷۵-۵۵۶۶-۷۷۸۸' },
-  { id: 3, name: 'دبستان غیر دولتی تبیان ۱', code: 'TEBYAN1', type: 'دبستان غیر دولتی دخترانه', active: true, moeen_code: 1, tafsili_code: '103', petty_cash_card: '۵۸۹۲-۱۰۱۲-۴۴۵۵-۶۶۷۷' },
-  { id: 4, name: 'دبستان غیر دولتی تبیان ۲', code: 'TEBYAN2', type: 'دبستان غیر دولتی دخترانه', active: true, moeen_code: 2, tafsili_code: '104', petty_cash_card: '۵۸۹۲-۱۰۱۲-۸۸۹۹-۱۱۲۲' },
-  { id: 5, name: 'مهدالرضا(علیه‌السلام) شعبه‌ی مرکزی صبح', code: 'MAHD_S', type: 'مهدالرضا(ع) و پیش‌دبستانی', active: true, moeen_code: 10, tafsili_code: '105', petty_cash_card: '۶۲۷۳-۸۱۱۱-۵۵۶۶-۷۷۸۸' },
-  { id: 6, name: 'مهدالرضا(علیه‌السلام) شعبه‌ی مرکزی عصر', code: 'MAHD_E', type: 'مهدالرضا(ع) و پیش‌دبستانی', active: true, moeen_code: 11, tafsili_code: '106', petty_cash_card: '۶۲۷۳-۸۱۱۱-۹۹۰۰-۱۱۲۲' },
-  { id: 7, name: 'مهدالرضا(علیه‌السلام) شعبه‌ی ابراهیم خلیل', code: 'MAHD_IK', type: 'مهدالرضا(ع) و پیش‌دبستانی', active: true, moeen_code: 12, tafsili_code: '107', petty_cash_card: '۶۰۳۷-۶۹۱۹-۳۳۴۴-۵۵۶۶' },
-  { id: 8, name: 'مهدالرضا(علیه‌السلام) شعبه‌ی منظریه', code: 'MAHD_MN', type: 'مهدالرضا(ع) و پیش‌دبستانی', active: true, moeen_code: 14, tafsili_code: '108', petty_cash_card: '۶۰۳۷-۶۹۱۹-۷۷۸۸-۹۹۰۰' },
-  { id: 9, name: 'مهدالرضا(علیه‌السلام) شعبه‌ی سروستان', code: 'MAHD_SR', type: 'مهدالرضا(ع) و پیش‌دبستانی', active: true, moeen_code: 9, tafsili_code: '109', petty_cash_card: '۵۰۲۲-۲۹۱۰-۲۲۳۳-۴۴۵۵' },
-  { id: 10, name: 'مهدالرضا(علیه‌السلام) شعبه‌ی تبیان ۲', code: 'MAHD_T2', type: 'مهدالرضا(ع) و پیش‌دبستانی', active: true, moeen_code: 15, tafsili_code: '110', petty_cash_card: '۵۰۲۲-۲۹۱۰-۳۳۴۴-۵۵۶۶' },
-  { id: 11, name: 'مهدالرضا(علیه‌السلام) شعبه‌ی برهان', code: 'MAHD6', type: 'مهدالرضا(ع) و پیش‌دبستانی', active: true, moeen_code: 13, tafsili_code: '111', petty_cash_card: '۵۰۲۲-۲۹۱۰-۶۶۷۷-۸۸۹۹' },
+  { id: 1, name: 'دبستان غیر دولتی نور ۱', code: 'NOOR1', type: 'دبستان غیر دولتی پسرانه', active: true, moeen_code: 3, expense_kol_code: 68, income_moeen_code: 1, tafsili_code: '101', petty_cash_card: '۶۰۳۷-۹۹۷۵-۱۱۲۲-۳۳۴۴' },
+  { id: 2, name: 'دبستان غیر دولتی نور ۲', code: 'NOOR2', type: 'دبستان غیر دولتی پسرانه', active: true, moeen_code: 4, expense_kol_code: 69, income_moeen_code: 2, tafsili_code: '102', petty_cash_card: '۶۰۳۷-۹۹۷۵-۵۵۶۶-۷۷۸۸' },
+  { id: 3, name: 'دبستان غیر دولتی تبیان ۱', code: 'TEBYAN1', type: 'دبستان غیر دولتی دخترانه', active: true, moeen_code: 1, expense_kol_code: 70, income_moeen_code: 3, tafsili_code: '103', petty_cash_card: '۵۸۹۲-۱۰۱۲-۴۴۵۵-۶۶۷۷' },
+  { id: 4, name: 'دبستان غیر دولتی تبیان ۲', code: 'TEBYAN2', type: 'دبستان غیر دولتی دخترانه', active: true, moeen_code: 2, expense_kol_code: 71, income_moeen_code: 4, tafsili_code: '104', petty_cash_card: '۵۸۹۲-۱۰۱۲-۸۸۹۹-۱۱۲۲' },
+  { id: 5, name: 'مهدالرضا(علیه‌السلام) شعبه‌ی مرکزی صبح', code: 'MAHD_S', type: 'مهدالرضا(ع) و پیش‌دبستانی', active: true, moeen_code: 10, expense_kol_code: 73, income_moeen_code: 10, tafsili_code: '105', petty_cash_card: '۶۲۷۳-۸۱۱۱-۵۵۶۶-۷۷۸۸' },
+  { id: 6, name: 'مهدالرضا(علیه‌السلام) شعبه‌ی مرکزی عصر', code: 'MAHD_E', type: 'مهدالرضا(ع) و پیش‌دبستانی', active: true, moeen_code: 11, expense_kol_code: 75, income_moeen_code: 8, tafsili_code: '106', petty_cash_card: '۶۲۷۳-۸۱۱۱-۹۹۰۰-۱۱۲۲' },
+  { id: 7, name: 'مهدالرضا(علیه‌السلام) شعبه‌ی ابراهیم خلیل', code: 'MAHD_IK', type: 'مهدالرضا(ع) و پیش‌دبستانی', active: true, moeen_code: 12, expense_kol_code: 76, income_moeen_code: 5, tafsili_code: '107', petty_cash_card: '۶۰۳۷-۶۹۱۹-۳۳۴۴-۵۵۶۶' },
+  { id: 8, name: 'مهدالرضا(علیه‌السلام) شعبه‌ی منظریه', code: 'MAHD_MN', type: 'مهدالرضا(ع) و پیش‌دبستانی', active: true, moeen_code: 9, expense_kol_code: 74, income_moeen_code: 9, tafsili_code: '108', petty_cash_card: '۶۰۳۷-۶۹۱۹-۷۷۸۸-۹۹۰۰' },
+  { id: 9, name: 'مهدالرضا(علیه‌السلام) شعبه‌ی سروستان', code: 'MAHD_SR', type: 'مهدالرضا(ع) و پیش‌دبستانی', active: true, moeen_code: 14, expense_kol_code: 78, income_moeen_code: 7, tafsili_code: '109', petty_cash_card: '۵۰۲۲-۲۹۱۰-۲۲۳۳-۴۴۵۵' },
+  { id: 10, name: 'مهدالرضا(علیه‌السلام) شعبه‌ی تبیان ۲', code: 'MAHD_T2', type: 'مهدالرضا(ع) و پیش‌دبستانی', active: true, moeen_code: 2, expense_kol_code: 81, income_moeen_code: 4, tafsili_code: '110', petty_cash_card: '۵۰۲۲-۲۹۱۰-۳۳۴۴-۵۵۶۶' },
+  { id: 11, name: 'مهدالرضا(علیه‌السلام) شعبه‌ی برهان', code: 'MAHD6', type: 'مهدالرضا(ع) و پیش‌دبستانی', active: true, moeen_code: 13, expense_kol_code: 77, income_moeen_code: 6, tafsili_code: '111', petty_cash_card: '۵۰۲۲-۲۹۱۰-۶۶۷۷-۸۸۹۹' },
 ];
 
 export const INITIAL_USERS: User[] = [

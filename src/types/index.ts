@@ -21,7 +21,9 @@ export interface School {
   code: string;
   type?: string;
   active: boolean;
-  moeen_code?: number;
+  moeen_code?: number; // کد معین در حساب کل ۶۷ (گردش حساب شهریه دانش‌آموزان)
+  expense_kol_code?: number; // کد کل اختصاصی هزینه‌های مدرسه (۶۸، ۶۹، ۷۰، ۷۱ و...)
+  income_moeen_code?: number; // کد معین در حساب کل ۴۰ (درآمدهای مردمی و شهریه)
   tafsili_code?: string; // کد تفصیلی در حسابداری پارسیان
   petty_cash_card?: string;
   pos_terminal_number?: string;

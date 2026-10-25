@@ -3,29 +3,73 @@ import { Transaction, Student, School, ExpenseCategory, Cheque, ParsianJournalEn
 import { jalaliFromGregorian } from './jalali';
 
 export const DEFAULT_PARSIAN_CODING: ParsianCodingConfig = {
-  kol_receivable: '11', // حساب‌های دریافتنی (دانش‌آموزان)
-  kol_bank: '10',       // موجودی نقد و بانک
-  kol_cheques: '12',    // اسناد دریافتنی (چک‌های صیادی)
-  kol_income: '70',     // درآمد شهریه و آموزش
-  kol_discount: '71',   // تخفیفات و بورسیه شهریه
-  kol_expense: '60',    // هزینه‌های اداری، جاری و آموزشی
-  kol_petty_cash: '20', // تنخواه گردان مدیران
-  kol_payable: '21',    // حساب‌های پرداختنی
+  kol_receivable: '67', // گردش حساب شهریه دانش آموزان
+  kol_bank: '11',       // بانک ها
+  kol_cheques: '13',    // اسناد دریافتنی
+  kol_income: '40',     // درآمدهای مردمی وخیرین (شهریه)
+  kol_discount: '3',    // تخفیفات شهریه
+  kol_expense: '68',    // هزینه‌های تفکیک‌شده مدارس (۶۸ تا ۸۱)
+  kol_petty_cash: '10', // صندوق و تنخواه گردانها
+  kol_payable: '22',    // اسناد پرداختنی
 };
 
+/**
+ * Returns Moeen account number under Kol 67 (گردش حساب شهریه دانش آموزان)
+ */
 export function getSchoolMoeen(schoolId: number): number {
   switch (schoolId) {
-    case 1: return 3; // دبستان نور ۱
-    case 2: return 4; // دبستان نور ۲
-    case 3: return 1; // دبستان تبیان ۱
-    case 4: return 2; // دبستان تبیان ۲
-    case 5: return 10; // مهد مرکزی صبح
-    case 6: return 11; // مهد مرکزی عصر
-    case 7: return 12; // مهد ابراهیم خلیل
-    case 8: return 14; // مهد منظریه
-    case 9: return 9; // مهد سروستان
-    case 10: return 13; // مرکز قرآنی
-    default: return (schoolId % 20) || 1;
+    case 1: return 3;  // دبستان نور ۱ (Moeen 3)
+    case 2: return 4;  // دبستان نور ۲ (Moeen 4)
+    case 3: return 1;  // دبستان تبیان ۱ (Moeen 1)
+    case 4: return 2;  // دبستان تبیان ۲ (Moeen 2)
+    case 5: return 10; // مهد مرکزی صبح (Moeen 10)
+    case 6: return 11; // مهد مرکزی عصر (Moeen 11)
+    case 7: return 12; // مهد ابراهیم خلیل (Moeen 12)
+    case 8: return 9;  // مهد منظریه (Moeen 9)
+    case 9: return 14; // مهد سروستان (Moeen 14)
+    case 10: return 2; // مهد تبیان ۲ (مشترک / Moeen 2)
+    case 11: return 13;// مهد کوچه برهان (Moeen 13)
+    default: return (schoolId % 14) || 1;
+  }
+}
+
+/**
+ * Returns exact Kol account number for a school's separate expenses (هزینه‌های تفکیک‌شده هر واحد آموزشی)
+ */
+export function getSchoolExpenseKol(schoolId: number): number {
+  switch (schoolId) {
+    case 1: return 68; // هزینه‌های دبستان نور ۱
+    case 2: return 69; // هزینه‌های دبستان نور ۲
+    case 3: return 70; // هزینه‌های دبستان تبیان ۱
+    case 4: return 71; // هزینه‌های دبستان تبیان ۲
+    case 5: return 73; // هزینه‌های پیش دبستانی نوبت صبح مدرسه القران
+    case 6: return 75; // هزینه‌های پیش دبستانی نوبت عصر مدرسه القران
+    case 7: return 76; // هزینه‌های پیش دبستانی ابراهیم خلیل
+    case 8: return 74; // هزینه‌های پیش دبستانی منظریه
+    case 9: return 78; // هزینه‌های پیش دبستانی سروستان
+    case 10: return 81;// هزینه‌های مهدالرضا
+    case 11: return 77;// هزینه‌های پیش دبستانی کوچه برهان
+    default: return 50;// هزینه‌های عمومی کل مجموعه
+  }
+}
+
+/**
+ * Returns Moeen account number under Kol 40 (درآمدهای مردمی وخیرین)
+ */
+export function getSchoolIncomeMoeen(schoolId: number): number {
+  switch (schoolId) {
+    case 1: return 1;  // درآمد شهریه دبستان نور 1
+    case 2: return 2;  // درآمد شهریه دبستان نور 2
+    case 3: return 3;  // درآمد شهریه دبستان تبیان 1
+    case 4: return 4;  // درآمد شهریه دبستان تبیان 2
+    case 5: return 10; // درآمد شهریه پیش دبستانی صبح مدرسه القران
+    case 6: return 8;  // درآمد شهریه پیش دبستانی نوبت عصر مدرسه القران
+    case 7: return 5;  // درآمد شهریه پیش دبستانی ابراهیم خلیل
+    case 8: return 9;  // درآمد شهریه پیش دبستانی منظریه
+    case 9: return 7;  // درآمد شهریه پیش دبستانی سروستان
+    case 10: return 4; // درآمد شعب تبیان
+    case 11: return 6; // درآمد شهریه پیش دبستانی کوچه برهان
+    default: return (schoolId % 14) || 1;
   }
 }
 
@@ -38,10 +82,10 @@ export function buildParsianCode(nationalId: string, schoolId: number): {
   const cleanId = (nationalId || '').trim();
   const moeen = getSchoolMoeen(schoolId);
   return {
-    generalCode: '11',
+    generalCode: '67',
     moeenCode: String(moeen),
     tafsiliCode: cleanId || '—',
-    fullCode: cleanId ? `${cleanId}-${moeen}-11` : '—',
+    fullCode: cleanId ? `${cleanId}-${moeen}-67` : '—',
   };
 }
 
@@ -84,20 +128,21 @@ export function generateParsianJournalEntries(
 
     if (t.kind === 'شهریه_بدهی') {
       // بدهی شهریه:
-      // بدهکار: حساب‌های دریافتنی (تفصیلی: دانش‌آموز)
-      // بستانکار: درآمد شهریه (معین: مدرسه مربوطه)
+      // بدهکار: گردش حساب شهریه دانش‌آموزان (کل ۶۷، معین مدرسه مربوطه، تفصیلی: کدملی/دانش‌آموز)
+      // بستانکار: درآمدهای مردمی و شهریه (کل ۴۰، معین درآمد مدرسه مربوطه)
       const amount = t.debit || t.amount || 0;
       if (amount <= 0) continue;
 
       const descItem = t.description || 'شهریه تحصیلی مصوب';
+      const incomeMoeen = String(school?.income_moeen_code || getSchoolIncomeMoeen(t.school_id));
 
-      // ردیف ۱: بدهکار (حساب‌های دریافتنی)
+      // ردیف ۱: بدهکار (گردش حساب شهریه دانش آموزان)
       rows.push({
         row_number: 1,
         doc_number: docNumberCounter,
         date_jalali: jalaliDate,
         kol_code: codingConfig.kol_receivable,
-        kol_name: 'حساب‌های دریافتنی',
+        kol_name: 'گردش حساب شهریه دانش آموزان',
         moeen_code: schoolMoeen,
         moeen_name: `شهریه دانش‌آموزان ${schoolName}`,
         tafsili_code: studentNid || String(student?.id || t.student_id || '0'),
@@ -118,10 +163,10 @@ export function generateParsianJournalEntries(
         doc_number: docNumberCounter,
         date_jalali: jalaliDate,
         kol_code: codingConfig.kol_income,
-        kol_name: 'درآمدهای آموزشی و شهریه',
-        moeen_code: schoolMoeen,
+        kol_name: 'درآمدهای مردمی وخیرین',
+        moeen_code: incomeMoeen,
         moeen_name: `درآمد شهریه ${schoolName}`,
-        tafsili_code: String(t.school_id),
+        tafsili_code: school?.tafsili_code || String(t.school_id),
         tafsili_name: schoolName,
         description: `شناسایی درآمد ${descItem} - ${studentName}`,
         debit: 0,
@@ -160,32 +205,37 @@ export function generateParsianJournalEntries(
         ? codingConfig.kol_discount
         : isCheque
         ? codingConfig.kol_cheques
+        : isCash
+        ? codingConfig.kol_petty_cash
         : codingConfig.kol_bank;
 
       const debitKolName = isDiscount
         ? 'تخفیفات و بورسیه شهریه'
         : isCheque
-        ? 'اسناد دریافتنی (چک‌های صیادی)'
+        ? 'اسناد دریافتنی'
         : isCash
-        ? 'موجودی نقد و صندوق'
-        : 'موجودی نقد و بانک';
+        ? 'صندوق و تنخواه گردانها'
+        : 'بانک ها';
 
+      const debitMoeenCode = isCash ? '1' : isCheque ? '1' : isBank ? '1' : '1';
       const debitMoeenName = isDiscount
         ? `تخفیف مصوب ${schoolName}`
         : isCash
         ? `صندوق مرکزی ${schoolName}`
-        : `حساب بانکی ${schoolName} (کارتخوان/کارت)`;
+        : isCheque
+        ? `اسناد دریافتنی چک‌های شهریه ${schoolName}`
+        : `بانک اصلی ${schoolName} (کارتخوان/کارت)`;
 
-      // ردیف ۱: بدهکار (بانک/صندوق/تخفیف)
+      // ردیف ۱: بدهکار (بانک/صندوق/اسناد دریافتنی)
       rows.push({
         row_number: 1,
         doc_number: docNumberCounter,
         date_jalali: jalaliDate,
         kol_code: debitKol,
         kol_name: debitKolName,
-        moeen_code: schoolMoeen,
+        moeen_code: debitMoeenCode,
         moeen_name: debitMoeenName,
-        tafsili_code: t.pos_terminal_number || t.tracking_code || String(t.school_id),
+        tafsili_code: t.pos_terminal_number || t.tracking_code || school?.tafsili_code || String(t.school_id),
         tafsili_name: isCash ? `صندوق ${schoolName}` : `بانک ${schoolName}`,
         description: `${t.payment_method || 'دریافت شهریه'} بابت ${studentName} ${t.tracking_code ? `(پیگیری: ${t.tracking_code})` : ''}`.trim(),
         debit: amount,
@@ -197,13 +247,13 @@ export function generateParsianJournalEntries(
         source_id: t.id,
       });
 
-      // ردیف ۲: بستانکار (حساب دریافتنی دانش‌آموز)
+      // ردیف ۲: بستانکار (گردش حساب شهریه دانش آموزان)
       rows.push({
         row_number: 2,
         doc_number: docNumberCounter,
         date_jalali: jalaliDate,
         kol_code: codingConfig.kol_receivable,
-        kol_name: 'حساب‌های دریافتنی',
+        kol_name: 'گردش حساب شهریه دانش آموزان',
         moeen_code: schoolMoeen,
         moeen_name: `شهریه دانش‌آموزان ${schoolName}`,
         tafsili_code: studentNid || String(student?.id || t.student_id || '0'),
@@ -243,9 +293,9 @@ export function generateParsianJournalEntries(
         date_jalali: jalaliDate,
         kol_code: codingConfig.kol_discount,
         kol_name: 'تخفیفات و بورسیه شهریه',
-        moeen_code: schoolMoeen,
+        moeen_code: '3',
         moeen_name: `تخفیفات ${schoolName}`,
-        tafsili_code: String(t.school_id),
+        tafsili_code: school?.tafsili_code || String(t.school_id),
         tafsili_name: schoolName,
         description: `تخفیف شهریه ${studentName} - ${t.discount_reason || t.description || 'مصوب هیئت امنا'}`,
         debit: amount,
@@ -257,13 +307,13 @@ export function generateParsianJournalEntries(
         source_id: t.id,
       });
 
-      // ردیف ۲: بستانکار (حساب دریافتنی دانش‌آموز)
+      // ردیف ۲: بستانکار (گردش حساب شهریه دانش آموزان)
       rows.push({
         row_number: 2,
         doc_number: docNumberCounter,
         date_jalali: jalaliDate,
         kol_code: codingConfig.kol_receivable,
-        kol_name: 'حساب‌های دریافتنی',
+        kol_name: 'گردش حساب شهریه دانش آموزان',
         moeen_code: schoolMoeen,
         moeen_name: `شهریه دانش‌آموزان ${schoolName}`,
         tafsili_code: studentNid || String(student?.id || t.student_id || '0'),
@@ -297,24 +347,31 @@ export function generateParsianJournalEntries(
       if (amount <= 0) continue;
 
       const catName = t.expense_category_name || (t.expense_category_id ? categoryMap.get(String(t.expense_category_id))?.name : undefined) || 'هزینه‌های جاری و عمومی';
-      const catMoeenCode = String(t.expense_category_id || '10');
+      const catMoeenCode = String(t.expense_category_id || '2'); // ۲ = متفرقه در کدینگ پارسیان مدارس
       const isPettyCash = t.payment_source === 'petty_cash';
 
-      const creditKol = isPettyCash ? codingConfig.kol_petty_cash : codingConfig.kol_bank;
-      const creditKolName = isPettyCash ? 'حساب تنخواه گردان' : 'موجودی نقد و بانک';
-      const creditMoeenName = isPettyCash ? `تنخواه مدیر ${schoolName}` : `بانک اصلی ${schoolName}`;
+      // در پارسیان این مجموعه، هر مدرسه حساب کل هزینه اختصاصی دارد (کل ۶۸ تا ۸۱)
+      const expenseKol = school?.expense_kol_code ? String(school.expense_kol_code) : String(getSchoolExpenseKol(t.school_id));
+      const expenseKolName = `هزینه‌های ${schoolName}`;
 
-      // ردیف ۱: بدهکار (سرفصل هزینه)
+      const creditKol = isPettyCash ? codingConfig.kol_petty_cash : codingConfig.kol_bank; // ۱۰ یا ۱۱
+      const creditKolName = isPettyCash ? 'صندوق و تنخواه گردانها' : 'بانک ها';
+      const creditMoeenCode = isPettyCash ? '2' : '1'; // ۲ = تنخواه گردانها در کل ۱۰
+      const creditMoeenName = isPettyCash ? `تنخواه گردان - ${schoolName}` : `بانک اصلی - ${schoolName}`;
+
+      const tafsiliCode = school?.tafsili_code || t.tafsili_code || String(t.school_id);
+
+      // ردیف ۱: بدهکار (سرفصل هزینه اختصاصی مدرسه در حساب کل مربوطه)
       rows.push({
         row_number: 1,
         doc_number: docNumberCounter,
         date_jalali: jalaliDate,
-        kol_code: codingConfig.kol_expense,
-        kol_name: 'هزینه‌های اداری، آموزشی و عمومی',
+        kol_code: expenseKol,
+        kol_name: expenseKolName,
         moeen_code: catMoeenCode,
         moeen_name: catName,
-        tafsili_code: school?.tafsili_code || t.tafsili_code || String(t.school_id),
-        tafsili_name: `${schoolName} (کد تفصیلی: ${school?.tafsili_code || t.tafsili_code || t.school_id})`,
+        tafsili_code: tafsiliCode,
+        tafsili_name: `${schoolName} (کد تفصیلی: ${tafsiliCode})`,
         description: `${catName} - ${t.comment || t.description || 'هزینه جاری'} - ${schoolName}`,
         debit: amount,
         credit: 0,
@@ -332,10 +389,10 @@ export function generateParsianJournalEntries(
         date_jalali: jalaliDate,
         kol_code: creditKol,
         kol_name: creditKolName,
-        moeen_code: schoolMoeen,
+        moeen_code: creditMoeenCode,
         moeen_name: creditMoeenName,
-        tafsili_code: isPettyCash ? (t.petty_cash_card || school?.tafsili_code || String(t.school_id)) : (school?.tafsili_code || t.tracking_code || String(t.school_id)),
-        tafsili_name: isPettyCash ? `کارت تنخواه (${t.petty_cash_card || schoolName})` : `حساب بانک ${schoolName} (تفصیلی: ${school?.tafsili_code || t.school_id})`,
+        tafsili_code: isPettyCash ? (t.petty_cash_card || tafsiliCode) : (t.tracking_code || tafsiliCode),
+        tafsili_name: isPettyCash ? `کارت تنخواه (${t.petty_cash_card || schoolName})` : `حساب بانک ${schoolName} (تفصیلی: ${tafsiliCode})`,
         description: `پرداخت بابت ${catName} ${t.tracking_code ? `(پیگیری: ${t.tracking_code})` : ''}`.trim(),
         debit: 0,
         credit: amount,
@@ -354,7 +411,7 @@ export function generateParsianJournalEntries(
         school_name: schoolName,
         source_type: 'expense',
         source_id: t.id,
-        description: `ثبت سند هزینه: ${catName} (${amount.toLocaleString('fa-IR')} ریال)`,
+        description: `ثبت سند هزینه ${schoolName}: ${catName} (${amount.toLocaleString('fa-IR')} ریال)`,
         rows,
         total_debit: amount,
         total_credit: amount,
@@ -520,3 +577,103 @@ export function calculateTrialBalance(journalEntries: ParsianJournalEntry[]): Ar
       };
     });
 }
+
+/**
+ * Export complete Parsian Chart of Accounts and School Mappings to Excel
+ */
+export function exportParsianTreeExcel(
+  accounts: Array<{
+    code: string;
+    name: string;
+    category: string;
+    total_tafsilis: number;
+    moeens: Array<{
+      code: string;
+      name: string;
+      tafsilis_count: number;
+      sample_tafsilis: string[];
+    }>;
+  }>,
+  mappings: Array<{
+    school_id: number;
+    school_name: string;
+    tuition_kol: string;
+    tuition_moeen: string;
+    tuition_moeen_name: string;
+    income_kol: string;
+    income_moeen: string;
+    income_moeen_name: string;
+    expense_kol: string;
+    expense_kol_name: string;
+    tafsili_code: string;
+  }>
+) {
+  const rows: any[] = [];
+  let rowIdx = 1;
+
+  accounts.forEach((k) => {
+    k.moeens.forEach((m) => {
+      rows.push({
+        'ردیف': rowIdx++,
+        'طبقه سرفصل': k.category,
+        'کد کل': k.code,
+        'نام حساب کل': k.name,
+        'کد معین': m.code,
+        'نام حساب معین': m.name,
+        'تعداد حساب تفصیلی': m.tafsilis_count || 0,
+        'نمونه حساب‌های تفصیلی': (m.sample_tafsilis || []).join('، '),
+      });
+    });
+  });
+
+  const wsAccounts = XLSX.utils.json_to_sheet(rows);
+  wsAccounts['!cols'] = [
+    { wch: 6 },
+    { wch: 32 },
+    { wch: 10 },
+    { wch: 32 },
+    { wch: 10 },
+    { wch: 38 },
+    { wch: 18 },
+    { wch: 48 },
+  ];
+
+  const mapRows = mappings.map((m, idx) => ({
+    'ردیف': idx + 1,
+    'کد مرکز': m.school_id,
+    'نام واحد آموزشی / مدرسه': m.school_name,
+    'کد تفصیلی در سیستم': m.tafsili_code,
+    'کد کل شهریه': m.tuition_kol,
+    'کد معین شهریه (کل ۶۷)': m.tuition_moeen,
+    'عنوان حساب شهریه': m.tuition_moeen_name,
+    'کد کل درآمد': m.income_kol,
+    'کد معین درآمد (کل ۴۰)': m.income_moeen,
+    'عنوان معین درآمد': m.income_moeen_name,
+    'کد کل هزینه اختصاصی': m.expense_kol,
+    'سرفصل هزینه واحد': m.expense_kol_name,
+  }));
+
+  const wsMappings = XLSX.utils.json_to_sheet(mapRows);
+  wsMappings['!cols'] = [
+    { wch: 6 },
+    { wch: 10 },
+    { wch: 32 },
+    { wch: 16 },
+    { wch: 12 },
+    { wch: 16 },
+    { wch: 36 },
+    { wch: 12 },
+    { wch: 16 },
+    { wch: 36 },
+    { wch: 16 },
+    { wch: 36 },
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, wsAccounts, 'درخت‌واره حساب‌های پارسیان');
+  XLSX.utils.book_append_sheet(workbook, wsMappings, 'نگاشت مدارس مجموعه');
+
+  const dateStr = jalaliFromGregorian(new Date().toISOString()).replace(/\//g, '-');
+  XLSX.writeFile(workbook, `Parsian_Chart_Of_Accounts_${dateStr}.xlsx`);
+}
+
