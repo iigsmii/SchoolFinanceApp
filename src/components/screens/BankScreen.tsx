@@ -139,7 +139,16 @@ export const BankScreen: React.FC = () => {
       { suffix: '002', purpose: 'pos_aggregate_and_petty_cash' },
     ],
     pettyCashCards: [{"card":"6037691263357071","managerName":"علی هاشمیان","accountSuffix":"002","active":true},{"card":"6037691263260770","managerName":"محمدرضا آقاسی","accountSuffix":"002","active":true},{"card":"6037691263260788","managerName":"محمد عربی","accountSuffix":"002","active":true},{"card":"6037691263260796","managerName":"آرزو میرزایی","accountSuffix":"002","active":true},{"card":"6037691263260804","managerName":"فریبا سبزواری","accountSuffix":"002","active":true},{"card":"6037691990633877","managerName":"نامشخص - کارت متصل به حساب ۰۰۲","accountSuffix":"002","active":true},{"card":"6037691261822589","managerName":"مجید آقابزرگی","accountSuffix":"001","active":true},{"card":"6037691263357089","managerName":"سید محمدرضا گلزاری","accountSuffix":"001","active":true},{"card":"6037691263357097","managerName":"مجید آقابزرگی","accountSuffix":"001","active":true},{"card":"6037697090013308","managerName":"نامشخص - کارت متصل به حساب ۰۰۱","accountSuffix":"001","active":true}] as Array<{ card: string; managerName: string; accountSuffix?: string; schoolId?: number; active: boolean }>,
-    posTerminals: [] as Array<{ terminal: string; schoolId: number; schoolName?: string }>,
+    // Registered POS terminals; schoolId=0 means not assigned yet.
+    posTerminals: [
+      { terminal: '21435312', schoolId: 0 },
+      { terminal: '91370748', schoolId: 0 },
+      { terminal: '21435311', schoolId: 0 },
+      { terminal: '21435313', schoolId: 0 },
+      { terminal: '99213505', schoolId: 0 },
+      { terminal: '91370739', schoolId: 0 },
+      { terminal: '91370741', schoolId: 0 },
+    ] as Array<{ terminal: string; schoolId: number; schoolName?: string }>,
     matching: { dateWindowDays: 3, requireExactAmount: true, requireSourceCardWhenKnown: true },
   };
   const [bankRules, setBankRules] = useState(defaultBankRules);
@@ -160,7 +169,11 @@ export const BankScreen: React.FC = () => {
           ...result.rules,
           matching: { ...defaultBankRules.matching, ...(result.rules.matching || {}) },
           pettyCashCards: Array.isArray(result.rules.pettyCashCards) ? result.rules.pettyCashCards : [],
-          posTerminals: Array.isArray(result.rules.posTerminals) ? result.rules.posTerminals : [],
+          posTerminals: (() => {
+            const saved = Array.isArray(result.rules.posTerminals) ? result.rules.posTerminals : [];
+            const known = new Set(saved.map((x: { terminal?: string }) => String(x?.terminal || '').replace(/\\D/g, '').replace(/^0+/, '')));
+            return [...saved, ...defaultBankRules.posTerminals.filter((x) => !known.has(x.terminal))];
+          })(),
           excludedAccountSuffixes: Array.isArray(result.rules.excludedAccountSuffixes) ? result.rules.excludedAccountSuffixes : ['009'],
           schoolAccounts: Array.isArray(result.rules.schoolAccounts) ? result.rules.schoolAccounts : defaultBankRules.schoolAccounts,
         };
