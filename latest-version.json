@@ -1,7 +1,7 @@
 {
-  "version": "2.16.259",
+  "version": "2.16.260",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Separate POS and bank statement Excel imports; skip duplicate transactions",
-  "build": 259,
-  "published_at": "2026-10-25T18:18:24Z"
+  "notes": "Align petty cash card matching with uploaded bank roster",
+  "build": 260,
+  "published_at": "2026-10-25T18:20:35Z"
 }
