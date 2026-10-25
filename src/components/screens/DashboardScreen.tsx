@@ -701,6 +701,9 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
 
       {overviewOnly && (
       <>
+      {/* Tuition collection trend belongs with financial reports and debtors */}
+      <TuitionMonthlyChart transactions={financialTxs} accentColor={accentColor} />
+
       {/* 6. Sortable Full Debtors List Section */}
       <div className="bg-white rounded-3xl p-4 sm:p-5 border border-[#e5dde8] shadow-xs space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 border-b border-[#f2eaf3] gap-2">
@@ -846,9 +849,6 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
             <Sparkles className="w-3.5 h-3.5" />
             <span>بخش ویژه مدیریت ارشد مجموعه (سیدمهدی گلزاری)</span>
           </div>
-
-          {/* Tuition Trend Bar Chart moved to Senior Only feature */}
-          <TuitionMonthlyChart transactions={financialTxs} accentColor={accentColor} />
 
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-2">
             {seniorExtraItems.map((item) => {
