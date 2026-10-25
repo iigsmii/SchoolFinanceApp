@@ -1,7 +1,7 @@
 {
-  "version": "2.16.244",
+  "version": "2.16.245",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Merge pull request #13 from iigsmii/fix/full-sheets-sync",
-  "build": 244,
-  "published_at": "2026-10-24T22:05:12Z"
+  "notes": "feat: enhance UI and UX for financial input",
+  "build": 245,
+  "published_at": "2026-10-25T00:36:57Z"
 }
