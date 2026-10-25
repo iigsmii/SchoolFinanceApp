@@ -1,7 +1,7 @@
 {
-  "version": "2.16.256",
+  "version": "2.16.257",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Fix POS terminal normalization in defaults merge",
-  "build": 256,
-  "published_at": "2026-10-25T17:00:15Z"
+  "notes": "Fix cheque saving and persist cheque photos",
+  "build": 257,
+  "published_at": "2026-10-25T17:03:16Z"
 }
