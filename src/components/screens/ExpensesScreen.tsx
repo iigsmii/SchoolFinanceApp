@@ -6,6 +6,7 @@ import { JalaliDatePicker } from '../JalaliDatePicker';
 import { QuickAmountPad } from '../QuickAmountPad';
 import { PersianVoiceTypingButton } from '../PersianVoiceTypingButton';
 import { jalaliToIso, jalaliFromGregorian, todayJalali, formatRial, latinDigits } from '../../utils/jalali';
+import { getSchoolMoeen } from '../../utils/parsian';
 import {
   Receipt,
   PlusCircle,
@@ -24,6 +25,9 @@ import {
   AlertTriangle,
   Download,
   Filter,
+  Building2,
+  BarChart3,
+  Layers,
 } from 'lucide-react';
 import { ReceiptImageUploader } from '../ReceiptImageUploader';
 import { AttachmentImg } from '../AttachmentImg';
@@ -109,6 +113,10 @@ export const ExpensesScreen: React.FC = () => {
   // New Category State
   const [newCatName, setNewCatName] = useState('');
 
+  // View Mode: 'vouchers' (فهرست اسناد) | 'school_breakdown' (محاسبه به تفکیک مدارس و کد تفصیلی)
+  const [activeView, setActiveView] = useState<'vouchers' | 'school_breakdown'>('vouchers');
+  const [selectedSchoolFilter, setSelectedSchoolFilter] = useState<number | 'all'>('all');
+
   const schoolExpenses = useMemo(() => {
     return transactions.filter((t) => {
       if (t.kind !== 'هزینه') return false;
@@ -130,13 +138,65 @@ export const ExpensesScreen: React.FC = () => {
     return { pending, approved, rejected, total: schoolExpenses.length };
   }, [schoolExpenses]);
 
+  // Separate expenses calculation per school (Standard Categories calculated independently for each school)
+  const schoolBreakdowns = useMemo(() => {
+    const targetSchools = isSenior
+      ? schools
+      : schools.filter((s) => s.id === currentUser?.school_id);
+
+    return targetSchools.map((sc) => {
+      const scTxs = schoolExpenses.filter((t) => t.school_id === sc.id);
+      const activeTxs = scTxs.filter((t) => t.review_status !== 'rejected');
+      const totalAmount = activeTxs.reduce((sum, t) => sum + (t.amount || t.debit || 0), 0);
+      const approvedAmount = activeTxs
+        .filter((t) => (t.review_status || 'approved') === 'approved')
+        .reduce((sum, t) => sum + (t.amount || t.debit || 0), 0);
+      const pendingAmount = activeTxs
+        .filter((t) => t.review_status === 'pending')
+        .reduce((sum, t) => sum + (t.amount || t.debit || 0), 0);
+
+      // Separate breakdown of uniform categories for this specific school
+      const categoryRows = categories
+        .map((cat) => {
+          const catTxs = activeTxs.filter(
+            (t) => String(t.expense_category_id) === String(cat.id) || t.expense_category_name === cat.name
+          );
+          const catSum = catTxs.reduce((sum, t) => sum + (t.amount || t.debit || 0), 0);
+          const percent = totalAmount > 0 ? Math.round((catSum / totalAmount) * 100) : 0;
+          return {
+            category: cat,
+            amount: catSum,
+            count: catTxs.length,
+            percent,
+          };
+        })
+        .filter((r) => r.amount > 0 || r.category.active);
+
+      return {
+        school: sc,
+        tafsili_code: sc.tafsili_code || String(sc.id),
+        moeen_code: getSchoolMoeen(sc.id),
+        totalAmount,
+        approvedAmount,
+        pendingAmount,
+        txCount: activeTxs.length,
+        categoryRows,
+      };
+    });
+  }, [schools, schoolExpenses, categories, isSenior, currentUser]);
+
+  const totalAllSchoolsExpense = useMemo(() => {
+    return schoolBreakdowns.reduce((sum, b) => sum + b.totalAmount, 0);
+  }, [schoolBreakdowns]);
+
   const filteredExpenses = useMemo(() => {
     return schoolExpenses.filter((t) => {
       const st = t.review_status || 'approved';
       if (filterStatus !== 'all' && st !== filterStatus) return false;
+      if (selectedSchoolFilter !== 'all' && t.school_id !== selectedSchoolFilter) return false;
       return true;
     });
-  }, [schoolExpenses, filterStatus]);
+  }, [schoolExpenses, filterStatus, selectedSchoolFilter]);
 
   const openAddModal = () => {
     setEditingExpense(null);
@@ -202,6 +262,9 @@ export const ExpensesScreen: React.FC = () => {
 
     try {
       const isoDate = jalaliToIso(formJalaliDate);
+      const targetSchoolObj = schools.find((s) => s.id === formSchoolId);
+      const schoolTafsili = targetSchoolObj?.tafsili_code || String(formSchoolId);
+
       if (editingExpense) {
         const cat = categories.find((c) => c.id === formCategoryId);
         updateExpense(editingExpense.id, {
@@ -215,6 +278,7 @@ export const ExpensesScreen: React.FC = () => {
           description: formComment.trim(),
           comment: formComment.trim(),
           school_id: formSchoolId,
+          tafsili_code: schoolTafsili,
           attachment_url: formAttachment,
         });
       } else {
@@ -310,226 +374,428 @@ export const ExpensesScreen: React.FC = () => {
           )}
         </div>
 
-        {/* Approval Status Tabs */}
-        <div className="bg-white rounded-3xl p-3.5 border border-[#e5dde8] shadow-xs space-y-2">
-          <div className="flex items-center justify-between pb-1.5 border-b border-gray-100">
-            <span className="text-xs font-bold text-[#341648] flex items-center gap-1.5">
-              <Filter className="w-4 h-4 text-purple-700" />
-              وضعیت تأیید هزینه‌ها:
-            </span>
-            {isSenior && counts.pending > 0 && (
-              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
-                {counts.pending} هزینه جدید در انتظار بررسی شما
-              </span>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {[
-              { id: 'all', label: 'همه هزینه‌ها', count: counts.total },
-              { id: 'pending', label: 'در انتظار تأیید', count: counts.pending },
-              { id: 'approved', label: 'تأیید شده (سبز)', count: counts.approved },
-              { id: 'rejected', label: 'رد شده (قرمز)', count: counts.rejected },
-            ].map((st) => {
-              const active = filterStatus === st.id;
-              return (
-                <button
-                  key={st.id}
-                  type="button"
-                  onClick={() => setFilterStatus(st.id as typeof filterStatus)}
-                  className={`py-2 px-3 rounded-2xl text-xs font-bold flex items-center justify-between gap-1.5 transition-all ${
-                    active
-                      ? st.id === 'approved'
-                        ? 'bg-emerald-600 text-white shadow-xs'
-                        : st.id === 'rejected'
-                        ? 'bg-rose-600 text-white shadow-xs'
-                        : st.id === 'pending'
-                        ? 'bg-amber-500 text-white shadow-xs'
-                        : 'bg-[#341648] text-white shadow-xs'
-                      : 'bg-[#fcfaff] text-gray-700 border border-[#e5dde8] hover:bg-gray-50'
-                  }`}
-                >
-                  <span>{st.label}</span>
-                  <span
-                    className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
-                      active ? 'bg-white/25 text-white' : 'bg-gray-100 text-gray-700'
-                    }`}
-                  >
-                    {st.count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+        {/* View Switcher: Vouchers List vs School Breakdown */}
+        <div className="bg-white rounded-3xl p-1.5 border border-[#e5dde8] shadow-xs flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setActiveView('vouchers')}
+            className={`flex-1 py-2.5 px-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 ${
+              activeView === 'vouchers'
+                ? 'bg-[#341648] text-white shadow-xs'
+                : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <Receipt className="w-4 h-4" />
+            <span>فهرست اسناد هزینه ({filteredExpenses.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView('school_breakdown')}
+            className={`flex-1 py-2.5 px-3 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 ${
+              activeView === 'school_breakdown'
+                ? 'bg-[#62205f] text-white shadow-xs'
+                : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <Building2 className="w-4 h-4" />
+            <span>محاسبه به تفکیک مدارس (کد تفصیلی)</span>
+          </button>
         </div>
 
-        {/* Expenses List */}
-        <div className="space-y-3">
-          <div className="text-xs text-gray-500 font-semibold flex items-center justify-between">
-            <span>فهرست هزینه‌های ثبت‌شده ({filteredExpenses.length} مورد):</span>
+        {/* School Filter Selector (Available for Senior) */}
+        {isSenior && (
+          <div className="bg-white rounded-2xl p-3 border border-[#e5dde8] shadow-2xs flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span className="font-bold text-[#341648] flex items-center gap-1.5">
+              <Building2 className="w-4 h-4 text-purple-700" />
+              <span>فیلتر مدرسه / واحد آموزشی:</span>
+            </span>
+            <select
+              value={selectedSchoolFilter}
+              onChange={(e) => setSelectedSchoolFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+              className="px-3 py-1.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735] focus:outline-hidden"
+            >
+              <option value="all">همه واحدهای آموزشی ({schools.length} مرکز)</option>
+              {schools.map((sc) => (
+                <option key={sc.id} value={sc.id}>
+                  {sc.name} (کد تفصیلی: {sc.tafsili_code || sc.id})
+                </option>
+              ))}
+            </select>
           </div>
+        )}
 
-          {filteredExpenses.length === 0 ? (
-            <div className="bg-white rounded-3xl p-8 text-center text-gray-400 border border-[#e5dde8]">
-              هزینه‌ای با این وضعیت پیدا نشد.
+        {/* VIEW 1: SEPARATE SCHOOL EXPENSES BREAKDOWN */}
+        {activeView === 'school_breakdown' && (
+          <div className="space-y-4">
+            {/* Top Aggregate Summary Banner */}
+            <div className="bg-gradient-to-l from-purple-900 via-[#4a1550] to-[#2a0b33] text-white rounded-3xl p-4 sm:p-5 shadow-md flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <span className="text-xs text-purple-200 font-semibold block">مجموع هزینه‌های کل شعب و مدارس</span>
+                <div className="text-xl sm:text-2xl font-black font-mono text-amber-300 mt-1">
+                  {formatRial(totalAllSchoolsExpense)} ریال
+                </div>
+                <div className="text-xs text-purple-200 mt-1">
+                  محاسبه جداگانه هر مدرسه با سرفصل‌های مشترک و کد تفصیلی حسابداری
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1.5 rounded-xl bg-white/15 border border-white/20 text-xs font-bold text-amber-100 flex items-center gap-1.5">
+                  <BarChart3 className="w-4 h-4" />
+                  <span>تفکیک دقیق حسابداری پارسیان</span>
+                </span>
+              </div>
             </div>
-          ) : (
-            filteredExpenses.map((t) => {
-              const status = t.review_status || 'approved';
-              const isApproved = status === 'approved';
-              const isRejected = status === 'rejected';
-              const isPending = status === 'pending';
 
-              const cardBorderClass = isApproved
-                ? 'border-emerald-300 bg-emerald-50/15'
-                : isRejected
-                ? 'border-rose-300 bg-rose-50/25'
-                : 'border-amber-300 bg-amber-50/20';
+            {/* Individual School Cards */}
+            <div className="space-y-4">
+              {schoolBreakdowns
+                .filter((b) => selectedSchoolFilter === 'all' || b.school.id === selectedSchoolFilter)
+                .map((b) => (
+                  <div
+                    key={b.school.id}
+                    className="bg-white rounded-3xl p-5 border-2 border-[#e5dde8] hover:border-purple-300 transition-all shadow-xs space-y-4"
+                  >
+                    {/* School Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-black text-base text-[#341648]">{b.school.name}</h3>
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-purple-100 text-purple-900 border border-purple-200 font-mono">
+                            کد تفصیلی: {b.tafsili_code}
+                          </span>
+                          <span className="text-[11px] text-gray-500 font-mono bg-gray-100 px-2 py-0.5 rounded-md">
+                            کد معین: {b.moeen_code}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          نوع مرکز: {b.school.type || 'آموزشی'} | کد سیستم: <span className="font-mono font-bold">{b.school.code}</span>
+                        </div>
+                      </div>
 
-              return (
-                <div
-                  key={t.id}
-                  className={`bg-white rounded-3xl p-5 border-2 shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition-all ${cardBorderClass}`}
-                >
-                  <div className="space-y-2 flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-sm sm:text-base text-[#341648]">
-                        {t.expense_category_name || t.description || 'هزینه جاری'}
-                      </span>
+                      <div className="text-left sm:text-right">
+                        <div className="text-xs text-gray-500">کل هزینه این مدرسه:</div>
+                        <div className="text-lg font-black font-mono text-purple-950 mt-0.5">
+                          {formatRial(b.totalAmount)} ریال
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Breakdown by standard uniform categories for this specific school */}
+                    <div>
+                      <div className="text-xs font-bold text-[#341648] mb-2 flex items-center justify-between">
+                        <span>محاسبه هزینه‌ها به تفکیک سرفصل ({b.categoryRows.length} سرفصل هزینه):</span>
+                        <span className="text-[11px] text-gray-400 font-normal">کل اسناد: {b.txCount} مورد</span>
+                      </div>
+
+                      {b.categoryRows.length === 0 ? (
+                        <div className="p-4 rounded-2xl bg-gray-50 text-center text-xs text-gray-400 border border-dashed border-gray-200">
+                          هنوز سندی برای این مرکز ثبت نشده است.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto rounded-2xl border border-gray-100">
+                          <table className="w-full text-right text-xs">
+                            <thead className="bg-[#fcfaff] text-gray-600 border-b border-gray-100">
+                              <tr>
+                                <th className="p-2.5 font-bold">سرفصل هزینه</th>
+                                <th className="p-2.5 font-bold">مبلغ (ریال)</th>
+                                <th className="p-2.5 font-bold text-center">سهم از کل هزینه مدرسه</th>
+                                <th className="p-2.5 font-bold text-center">تعداد اسناد</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {b.categoryRows.map((catRow) => (
+                                <tr key={catRow.category.id} className="hover:bg-purple-50/30 transition-colors">
+                                  <td className="p-2.5 font-bold text-[#341648] flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-purple-600 shrink-0" />
+                                    <span>{catRow.category.name}</span>
+                                  </td>
+                                  <td className="p-2.5 font-mono font-bold text-gray-800">
+                                    {formatRial(catRow.amount)}
+                                  </td>
+                                  <td className="p-2.5 text-center">
+                                    <div className="flex items-center justify-center gap-1.5">
+                                      <div className="w-14 bg-gray-100 rounded-full h-2 overflow-hidden">
+                                        <div
+                                          className="bg-purple-600 h-2 rounded-full"
+                                          style={{ width: `${Math.min(100, catRow.percent)}%` }}
+                                        />
+                                      </div>
+                                      <span className="font-mono text-[10px] text-gray-500">%{catRow.percent}</span>
+                                    </div>
+                                  </td>
+                                  <td className="p-2.5 text-center font-mono text-gray-600">
+                                    {catRow.count}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Bottom Actions */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-100 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md">
+                          تأییدشده: {formatRial(b.approvedAmount)}
+                        </span>
+                        {b.pendingAmount > 0 && (
+                          <span className="text-[11px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md">
+                            در انتظار تأیید: {formatRial(b.pendingAmount)}
+                          </span>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedSchoolFilter(b.school.id);
+                          setActiveView('vouchers');
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-[#62205f] font-bold text-xs transition-colors flex items-center gap-1"
+                      >
+                        <Receipt className="w-3.5 h-3.5" />
+                        <span>مشاهده اسناد این مرکز</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {/* VIEW 2: VOUCHERS LIST */}
+        {activeView === 'vouchers' && (
+          <div className="space-y-4">
+            {/* Approval Status Tabs */}
+            <div className="bg-white rounded-3xl p-3.5 border border-[#e5dde8] shadow-xs space-y-2">
+              <div className="flex items-center justify-between pb-1.5 border-b border-gray-100">
+                <span className="text-xs font-bold text-[#341648] flex items-center gap-1.5">
+                  <Filter className="w-4 h-4 text-purple-700" />
+                  وضعیت تأیید هزینه‌ها:
+                </span>
+                {isSenior && counts.pending > 0 && (
+                  <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+                    {counts.pending} هزینه جدید در انتظار بررسی شما
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { id: 'all', label: 'همه هزینه‌ها', count: counts.total },
+                  { id: 'pending', label: 'در انتظار تأیید', count: counts.pending },
+                  { id: 'approved', label: 'تأیید شده (سبز)', count: counts.approved },
+                  { id: 'rejected', label: 'رد شده (قرمز)', count: counts.rejected },
+                ].map((st) => {
+                  const active = filterStatus === st.id;
+                  return (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => setFilterStatus(st.id as typeof filterStatus)}
+                      className={`py-2 px-3 rounded-2xl text-xs font-bold flex items-center justify-between gap-1.5 transition-all ${
+                        active
+                          ? st.id === 'approved'
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : st.id === 'rejected'
+                            ? 'bg-rose-600 text-white shadow-xs'
+                            : st.id === 'pending'
+                            ? 'bg-amber-500 text-white shadow-xs'
+                            : 'bg-[#341648] text-white shadow-xs'
+                          : 'bg-[#fcfaff] text-gray-700 border border-[#e5dde8] hover:bg-gray-50'
+                      }`}
+                    >
+                      <span>{st.label}</span>
                       <span
-                        className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
-                          t.payment_source === 'own'
-                            ? 'bg-rose-100 text-rose-800'
-                            : 'bg-blue-100 text-blue-800'
+                        className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
+                          active ? 'bg-white/25 text-white' : 'bg-gray-100 text-gray-700'
                         }`}
                       >
-                        {t.payment_source === 'own' ? 'از حساب شخصی مدیر' : 'حساب بانکی مدرسه'}
+                        {st.count}
                       </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
-                      {/* Approval Status Badge */}
-                      {isApproved && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
-                          تأیید شده
-                        </span>
-                      )}
-                      {isRejected && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
-                          <XCircle className="w-3.5 h-3.5 text-rose-700" />
-                          رد شده توسط ارشد
-                        </span>
-                      )}
-                      {isPending && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                          <Clock className="w-3.5 h-3.5 text-amber-700" />
-                          در انتظار تأیید مدیر ارشد
-                        </span>
-                      )}
-                    </div>
+            {/* Expenses List */}
+            <div className="space-y-3">
+              <div className="text-xs text-gray-500 font-semibold flex items-center justify-between">
+                <span>فهرست هزینه‌های ثبت‌شده ({filteredExpenses.length} مورد):</span>
+              </div>
 
-                    <div className="text-xs text-gray-500 flex flex-wrap gap-x-4 gap-y-1">
-                      <span>تاریخ: {jalaliFromGregorian(t.date)}</span>
-                      <span>مدرسه: {t.school_name || 'مدرسه'}</span>
-                      <span>
-                        شماره پیگیری: <span className="font-mono font-bold text-gray-700">{t.tracking_code || '—'}</span>
-                      </span>
-                    </div>
-
-                    {t.description && (
-                      <div className="text-xs text-gray-600 bg-white/70 p-2 rounded-xl border border-[#ede5ef]">
-                        شرح: {t.description}
-                      </div>
-                    )}
-
-                    {isRejected && t.rejection_reason && (
-                      <div className="p-2 bg-rose-50 rounded-xl border border-rose-200 text-xs text-rose-900 flex items-start gap-1.5">
-                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                        <div>
-                          <span className="font-bold">علت رد هزینه: </span>
-                          <span>{t.rejection_reason}</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Receipt Attachment Thumbnail */}
-                    {t.attachment_url && (
-                      <div className="flex items-center gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setSelectedAttachment({
-                              url: t.attachment_url!,
-                              title: `فاکتور هزینه: ${t.expense_category_name || t.description || ''}`,
-                            })
-                          }
-                          className="px-2.5 py-1 rounded-xl bg-purple-50 hover:bg-purple-100 border border-purple-200 text-[#62205f] text-xs font-bold flex items-center gap-1.5 transition-all"
-                        >
-                          <ImageIcon className="w-3.5 h-3.5" />
-                          <span>مشاهده عکس فاکتور / رسید</span>
-                          <Eye className="w-3 h-3 text-purple-700" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex sm:flex-col items-end justify-between w-full sm:w-auto gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
-                    <div className="text-base sm:text-lg font-black font-mono text-purple-900">
-                      {formatRial(t.amount)} ریال
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {/* Senior Approval Actions */}
-                      {isSenior && (
-                        <div className="flex items-center gap-1">
-                          {!isApproved && (
-                            <button
-                              type="button"
-                              onClick={() => handleApprove(t.id)}
-                              disabled={isSubmittingReview}
-                              className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition-all disabled:opacity-50"
-                              title="تأیید هزینه توسط مدیر ارشد"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                              <span>تأیید</span>
-                            </button>
-                          )}
-
-                          {!isRejected && (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenReject(t)}
-                              disabled={isSubmittingReview}
-                              className="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition-all disabled:opacity-50"
-                              title="رد هزینه و ثبت علت"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                              <span>رد</span>
-                            </button>
-                          )}
-                        </div>
-                      )}
-
-                      <button
-                        onClick={() => openEditModal(t)}
-                        className="p-2 text-[#62205f] hover:bg-purple-50 rounded-xl transition-colors"
-                        title="ویرایش هزینه"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(t.id)}
-                        className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors"
-                        title="حذف هزینه"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
+              {filteredExpenses.length === 0 ? (
+                <div className="bg-white rounded-3xl p-8 text-center text-gray-400 border border-[#e5dde8]">
+                  هزینه‌ای با این وضعیت پیدا نشد.
                 </div>
-              );
-            })
-          )}
-        </div>
+              ) : (
+                filteredExpenses.map((t) => {
+                  const status = t.review_status || 'approved';
+                  const isApproved = status === 'approved';
+                  const isRejected = status === 'rejected';
+                  const isPending = status === 'pending';
+
+                  const cardBorderClass = isApproved
+                    ? 'border-emerald-300 bg-emerald-50/15'
+                    : isRejected
+                    ? 'border-rose-300 bg-rose-50/25'
+                    : 'border-amber-300 bg-amber-50/20';
+
+                  const schoolObj = schools.find((s) => s.id === t.school_id);
+                  const tafsiliCode = t.tafsili_code || schoolObj?.tafsili_code || '—';
+
+                  return (
+                    <div
+                      key={t.id}
+                      className={`bg-white rounded-3xl p-5 border-2 shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition-all ${cardBorderClass}`}
+                    >
+                      <div className="space-y-2 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-sm sm:text-base text-[#341648]">
+                            {t.expense_category_name || t.description || 'هزینه جاری'}
+                          </span>
+                          <span
+                            className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
+                              t.payment_source === 'own'
+                                ? 'bg-rose-100 text-rose-800'
+                                : 'bg-blue-100 text-blue-800'
+                            }`}
+                          >
+                            {t.payment_source === 'own' ? 'از حساب شخصی مدیر' : 'حساب بانکی مدرسه'}
+                          </span>
+
+                          {/* Approval Status Badge */}
+                          {isApproved && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+                              تأیید شده
+                            </span>
+                          )}
+                          {isRejected && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                              <XCircle className="w-3.5 h-3.5 text-rose-700" />
+                              رد شده توسط ارشد
+                            </span>
+                          )}
+                          {isPending && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                              <Clock className="w-3.5 h-3.5 text-amber-700" />
+                              در انتظار تأیید مدیر ارشد
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="text-xs text-gray-500 flex flex-wrap items-center gap-x-4 gap-y-1">
+                          <span>تاریخ: {jalaliFromGregorian(t.date)}</span>
+                          <span>مدرسه: <b>{t.school_name || 'مدرسه'}</b></span>
+                          <span className="font-mono text-purple-900 font-bold bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200">
+                            کد تفصیلی: {tafsiliCode}
+                          </span>
+                          <span>
+                            شماره پیگیری: <span className="font-mono font-bold text-gray-700">{t.tracking_code || '—'}</span>
+                          </span>
+                        </div>
+
+                        {t.description && (
+                          <div className="text-xs text-gray-600 bg-white/70 p-2 rounded-xl border border-[#ede5ef]">
+                            شرح: {t.description}
+                          </div>
+                        )}
+
+                        {isRejected && t.rejection_reason && (
+                          <div className="p-2 bg-rose-50 rounded-xl border border-rose-200 text-xs text-rose-900 flex items-start gap-1.5">
+                            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-bold">علت رد هزینه: </span>
+                              <span>{t.rejection_reason}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Receipt Attachment Thumbnail */}
+                        {t.attachment_url && (
+                          <div className="flex items-center gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSelectedAttachment({
+                                  url: t.attachment_url!,
+                                  title: `فاکتور هزینه: ${t.expense_category_name || t.description || ''}`,
+                                })
+                              }
+                              className="px-2.5 py-1 rounded-xl bg-purple-50 hover:bg-purple-100 border border-purple-200 text-[#62205f] text-xs font-bold flex items-center gap-1.5 transition-all"
+                            >
+                              <ImageIcon className="w-3.5 h-3.5" />
+                              <span>مشاهده عکس فاکتور / رسید</span>
+                              <Eye className="w-3 h-3 text-purple-700" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex sm:flex-col items-end justify-between w-full sm:w-auto gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
+                        <div className="text-base sm:text-lg font-black font-mono text-purple-900">
+                          {formatRial(t.amount)} ریال
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {/* Senior Approval Actions */}
+                          {isSenior && (
+                            <div className="flex items-center gap-1">
+                              {!isApproved && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleApprove(t.id)}
+                                  disabled={isSubmittingReview}
+                                  className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition-all disabled:opacity-50"
+                                  title="تأیید هزینه توسط مدیر ارشد"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>تأیید</span>
+                                </button>
+                              )}
+
+                              {!isRejected && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenReject(t)}
+                                  disabled={isSubmittingReview}
+                                  className="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition-all disabled:opacity-50"
+                                  title="رد هزینه و ثبت علت"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  <span>رد</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          <button
+                            onClick={() => openEditModal(t)}
+                            className="p-2 text-[#62205f] hover:bg-purple-50 rounded-xl transition-colors"
+                            title="ویرایش هزینه"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(t.id)}
+                            className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors"
+                            title="حذف هزینه"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Add / Edit Expense Modal */}
@@ -660,9 +926,9 @@ export const ExpensesScreen: React.FC = () => {
                 </div>
               </div>
 
-              {isSenior && (
-                <div>
-                  <label className="block text-xs font-bold text-[#341648] mb-1.5">مدرسه مربوطه</label>
+              <div>
+                <label className="block text-xs font-bold text-[#341648] mb-1.5">مدرسه و واحد آموزشی</label>
+                {isSenior ? (
                   <select
                     value={formSchoolId}
                     onChange={(e) => setFormSchoolId(Number(e.target.value))}
@@ -670,12 +936,22 @@ export const ExpensesScreen: React.FC = () => {
                   >
                     {schools.map((sc) => (
                       <option key={sc.id} value={sc.id}>
-                        {sc.name}
+                        {sc.name} (کد تفصیلی: {sc.tafsili_code || sc.id})
                       </option>
                     ))}
                   </select>
+                ) : (
+                  <div className="text-xs font-bold text-gray-700 bg-gray-50 px-3 py-2.5 rounded-xl border border-gray-200">
+                    {schools.find((s) => s.id === formSchoolId)?.name || currentUser?.school_name}
+                  </div>
+                )}
+                <div className="mt-1.5 flex items-center justify-between text-[11px] text-[#62205f] bg-purple-50/70 px-3 py-1.5 rounded-xl border border-purple-200 font-semibold">
+                  <span>کد تفصیلی حسابداری در پارسیان:</span>
+                  <span className="font-mono font-black text-purple-900 bg-white px-2 py-0.5 rounded-md border border-purple-200">
+                    {schools.find((s) => s.id === formSchoolId)?.tafsili_code || 'تعریف‌نشده'}
+                  </span>
                 </div>
-              )}
+              </div>
 
               <div>
                 <div className="flex items-center justify-between mb-1.5">

@@ -15,6 +15,7 @@ export const SchoolsScreen: React.FC = () => {
   const [formType, setFormType] = useState('دبستان پسرانه');
   const [formActive, setFormActive] = useState(true);
   const [formPosTerminal, setFormPosTerminal] = useState('');
+  const [formTafsiliCode, setFormTafsiliCode] = useState('');
   const [formError, setFormError] = useState('');
 
   const openAddModal = () => {
@@ -24,6 +25,7 @@ export const SchoolsScreen: React.FC = () => {
     setFormType('دبستان پسرانه');
     setFormActive(true);
     setFormPosTerminal('');
+    setFormTafsiliCode('');
     setFormError('');
     setIsModalOpen(true);
   };
@@ -35,6 +37,7 @@ export const SchoolsScreen: React.FC = () => {
     setFormType(sc.type || 'دبستان');
     setFormActive(sc.active);
     setFormPosTerminal(sc.pos_terminal_number || '');
+    setFormTafsiliCode(sc.tafsili_code || '');
     setFormError('');
     setIsModalOpen(true);
   };
@@ -59,6 +62,7 @@ export const SchoolsScreen: React.FC = () => {
         type: formType,
         active: formActive,
         pos_terminal_number: formPosTerminal.trim(),
+        tafsili_code: formTafsiliCode.trim(),
       });
     } else {
       addSchool({
@@ -66,6 +70,8 @@ export const SchoolsScreen: React.FC = () => {
         code: formCode.trim().toUpperCase(),
         type: formType,
         active: formActive,
+        pos_terminal_number: formPosTerminal.trim(),
+        tafsili_code: formTafsiliCode.trim(),
       });
     }
     setIsModalOpen(false);
@@ -112,8 +118,11 @@ export const SchoolsScreen: React.FC = () => {
                   <div className="text-xs text-gray-500 mt-1">
                     نوع مرکز: {sc.type || 'آموزشی'} | کد سیستم: <span className="font-mono font-bold text-gray-700">{sc.code}</span>
                   </div>
-                  <div className="text-[11px] font-mono text-[#62205f] font-semibold mt-2 bg-[#fcfaff] p-2 rounded-xl border border-[#ede5ef]">
-                    کد معین پارسیان: {moeen} | کد کل: 67
+                  <div className="text-[11px] font-mono text-[#62205f] font-semibold mt-2 bg-[#fcfaff] p-2.5 rounded-xl border border-[#ede5ef] flex flex-wrap items-center justify-between gap-1.5">
+                    <span>کد معین پارسیان: <b>{moeen}</b> | کل: 67</span>
+                    <span className="bg-purple-100 text-purple-900 px-2 py-0.5 rounded-md font-bold">
+                      کد تفصیلی: <b className="font-mono">{sc.tafsili_code || 'تعریف‌نشده'}</b>
+                    </span>
                   </div>
                   <div className="text-xs text-gray-600 mt-2">شماره پایانه پوز: <span className="font-mono font-bold">{sc.pos_terminal_number || 'ثبت نشده'}</span></div>
                 </div>
@@ -147,7 +156,7 @@ export const SchoolsScreen: React.FC = () => {
       {/* Add / Edit School Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-[#e5dde8]">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-[#e5dde8] max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-[#e5dde8] mb-4">
               <h3 className="text-base font-bold text-[#341648]">
                 {editingSchool ? 'ویرایش اطلاعات مدرسه' : 'افزودن مرکز جدید'}
@@ -177,18 +186,37 @@ export const SchoolsScreen: React.FC = () => {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-[#341648] mb-1.5">
-                  کد یکتای سیستم <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formCode}
-                  onChange={(e) => setFormCode(e.target.value)}
-                  placeholder="مثال: NOOR3"
-                  className="w-full px-4 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left focus:outline-hidden"
-                  dir="ltr"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-[#341648] mb-1.5">
+                    کد یکتای سیستم <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formCode}
+                    onChange={(e) => setFormCode(e.target.value)}
+                    placeholder="مثال: NOOR3"
+                    className="w-full px-4 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left focus:outline-hidden"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#341648] mb-1.5">
+                    کد تفصیلی حسابداری (پارسیان)
+                  </label>
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="off"
+                    value={formTafsiliCode}
+                    onChange={(e) => setFormTafsiliCode(e.target.value.replace(/[^0-9۰-۹٠-٩]/g, ''))}
+                    placeholder="مثال: 101"
+                    className="w-full px-4 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left focus:outline-hidden"
+                    dir="ltr"
+                  />
+                </div>
               </div>
 
               <div>

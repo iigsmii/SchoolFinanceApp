@@ -193,7 +193,7 @@ export const ManagerFeedbackModal: React.FC<ManagerFeedbackModalProps> = ({
       case 'in_progress':
         return <span className="text-xs font-bold text-blue-700">🛠️ در حال رسیدگی</span>;
       case 'acknowledged':
-        return <span className="text-xs font-semibold text-purple-700">👁️ مشاهده توسط مدیر ارشد</span>;
+        return <span className="text-xs font-semibold text-purple-700">👁️ مشاهده توسط مدیریت</span>;
       default:
         return <span className="text-xs text-amber-700">⏳ در انتظار بررسی</span>;
     }
@@ -212,9 +212,9 @@ export const ManagerFeedbackModal: React.FC<ManagerFeedbackModalProps> = ({
               <MessageSquare className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-[#341648]">ارتباط مستقیم با مدیر ارشد</h2>
+              <h2 className="text-base font-bold text-[#341648]">ارسال انتقادات و پیشنهادات</h2>
               <p className="text-xs text-gray-500 mt-0.5">
-                ارسال باگ‌ها، پیشنهادات و انتقادات به مدیریت ارشد مجموعه (سیدمهدی گلزاری)
+                ارسال باگ‌ها، پیشنهادات و انتقادات به مدیریت مجموعه جهت ارتقای عملکرد
               </p>
             </div>
           </div>
@@ -278,7 +278,7 @@ export const ManagerFeedbackModal: React.FC<ManagerFeedbackModalProps> = ({
                     همکار گرامی جناب {submittedFeedback.user_name}؛ با تشکر از همراهی شما!
                   </div>
                   <p className="text-xs leading-relaxed text-emerald-800">
-                    پیام شما در قالب <b>{CATEGORIES.find((c) => c.type === submittedFeedback.type)?.label}</b> با موفقیت دریافت و در کارتابل بررسی جناب آقای سیدمهدی گلزاری قرار گرفت. از دقت نظر، مسئولیت‌پذیری و پیشنهادات سازنده شما در پیشرفت و رفع باگ‌های سیستم صمیمانه سپاسگزاریم.
+                    پیام شما در قالب <b>{CATEGORIES.find((c) => c.type === submittedFeedback.type)?.label}</b> با موفقیت دریافت و در کارتابل بررسی مدیریت مجموعه قرار گرفت. از دقت نظر، مسئولیت‌پذیری و پیشنهادات سازنده شما در پیشرفت سیستم و بهبود امور صمیمانه سپاسگزاریم.
                   </p>
                 </div>
               </div>
@@ -513,7 +513,7 @@ export const ManagerFeedbackModal: React.FC<ManagerFeedbackModalProps> = ({
                   style={{ backgroundColor: accentColor }}
                 >
                   <Send className="w-4 h-4" />
-                  <span>ارسال قطعی برای مدیر ارشد</span>
+                  <span>ارسال قطعی پیام</span>
                 </button>
                 <button
                   type="button"
@@ -533,7 +533,7 @@ export const ManagerFeedbackModal: React.FC<ManagerFeedbackModalProps> = ({
                   <MessageSquare className="w-8 h-8 text-gray-300 mx-auto" />
                   <div className="text-xs font-bold text-gray-600">هنوز پیامی ارسال نکرده‌اید</div>
                   <p className="text-[11px] text-gray-400 max-w-sm mx-auto">
-                    می‌توانید با استفاده از زبانه «ثبت پیام جدید»، باگ‌ها یا ایده‌های خود را برای مدیر ارشد بفرستید.
+                    می‌توانید با استفاده از زبانه «ثبت پیام جدید»، باگ‌ها یا ایده‌های خود را برای مدیریت ارسال فرمایید.
                   </p>
                   <button
                     type="button"
@@ -587,11 +587,11 @@ export const ManagerFeedbackModal: React.FC<ManagerFeedbackModalProps> = ({
                         <span>{item.school_name}</span>
                       </div>
 
-                      {/* Senior Manager Reply Box */}
+                      {/* Management Reply Box */}
                       {item.senior_reply && (
                         <div className="mt-2 p-3 rounded-xl bg-purple-50/80 border border-purple-200 text-xs space-y-1">
                           <div className="font-bold text-purple-950 flex items-center justify-between">
-                            <span>✍️ پاسخ مدیر ارشد مجموعه (سیدمهدی گلزاری):</span>
+                            <span>✍️ پاسخ مدیریت مجموعه:</span>
                             {item.senior_reply_at && (
                               <span className="text-[10px] font-normal text-purple-700">{item.senior_reply_at}</span>
                             )}

@@ -95,7 +95,7 @@ export const FeedbackScreen: React.FC = () => {
             <div>
               <h2 className="text-base font-bold text-[#341648]">صندوق پیشنهادات و گزارش باگ مدیران مدارس</h2>
               <p className="text-xs text-gray-500 mt-0.5">
-                نظرات و پیام‌های ارسالی همکاران برای مدیریت ارشد مجموعه (سیدمهدی گلزاری)
+                نظرات، باگ‌ها و پیام‌های ارسالی همکاران برای مدیریت مجموعه
               </p>
             </div>
           </div>
@@ -304,7 +304,7 @@ export const FeedbackScreen: React.FC = () => {
                   {item.senior_reply && !isReplying && (
                     <div className="p-3 bg-purple-50/70 border border-purple-200 rounded-2xl text-xs space-y-1">
                       <div className="font-bold text-purple-950 flex items-center justify-between">
-                        <span>✍️ پاسخ مکتوب شما (مدیر ارشد):</span>
+                        <span>✍️ پاسخ مکتوب مدیریت مجموعه:</span>
                         {item.senior_reply_at && (
                           <span className="text-[10px] text-purple-700 font-normal">{item.senior_reply_at}</span>
                         )}

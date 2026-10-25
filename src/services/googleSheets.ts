@@ -210,6 +210,7 @@ export const buildExpensePayload = (exp: Partial<Transaction> & { amount: number
   action: 'expense_add',
   date: exp.date || todayGregorian(),
   school_id: exp.school_id || 1,
+  tafsili_code: exp.tafsili_code || '',
   category: exp.expense_category_name || exp.category_name || 'هزینه‌های متفرقه',
   category_id: exp.expense_category_id !== undefined ? String(exp.expense_category_id) : '',
   amount: exp.amount,
@@ -301,7 +302,7 @@ export const apiSaveManager = async (manager: Partial<User> & { id?: number }, a
 export const buildSchoolPayload = (school: Partial<School> & { id?: number }, action: 'add' | 'update' | 'delete' = 'update') => ({
     action: action === 'add' ? 'school_add' : action === 'delete' ? 'school_delete' : 'school_update',
     id: school.id, name: school.name, code: school.code, type: school.type,
-    moeen_code: school.moeen_code, petty_cash_card: school.petty_cash_card, pos_terminal_number: school.pos_terminal_number, active: school.active,
+    moeen_code: school.moeen_code, tafsili_code: school.tafsili_code, petty_cash_card: school.petty_cash_card, pos_terminal_number: school.pos_terminal_number, active: school.active,
 });
 export const apiSaveSchool = async (school: Partial<School> & { id?: number }, action: 'add' | 'update' | 'delete' = 'update') =>
   postToAppsScript(buildSchoolPayload(school, action));

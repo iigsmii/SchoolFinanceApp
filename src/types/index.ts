@@ -22,6 +22,7 @@ export interface School {
   type?: string;
   active: boolean;
   moeen_code?: number;
+  tafsili_code?: string; // کد تفصیلی در حسابداری پارسیان
   petty_cash_card?: string;
   pos_terminal_number?: string;
 }
@@ -48,6 +49,7 @@ export interface Transaction {
   jalali_date?: string;
   school_id: number;
   school_name?: string;
+  tafsili_code?: string; // کد تفصیلی مدرسه در سند هزینه/تراکنش
   student_id?: number;
   student_name?: string;
   student_grade?: string;

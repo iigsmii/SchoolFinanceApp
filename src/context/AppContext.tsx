@@ -1523,6 +1523,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       jalali_date: jalaliFromGregorian(data.date),
       school_id: schoolId,
       school_name: schoolObj?.name,
+      tafsili_code: schoolObj?.tafsili_code || String(schoolId),
       kind: 'هزینه',
       amount: data.amount,
       debit: data.amount,
