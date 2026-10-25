@@ -13,6 +13,7 @@ import {
   StaffWorkLog,
   PayrollPayment,
   BankAccount,
+  ManagerFeedback,
 } from '../types';
 
 export const INITIAL_SCHOOLS: School[] = [
@@ -343,3 +344,43 @@ export const INITIAL_BANK_ACCOUNTS: BankAccount[] = [
     notes: 'حساب تجمیع و تنخواه کل مدرسة القرآن',
   },
 ];
+
+export const INITIAL_FEEDBACKS: ManagerFeedback[] = [
+  {
+    id: 'FB-173000101',
+    tracking_code: 'MQ-5120',
+    type: 'suggestion',
+    title: 'امکان چاپ سریع لیست بدهکاران به تفکیک پایه',
+    description: 'سلام و احترام خدمت جناب گلزاری بزرگوار، اگر در بخش بدهکاران امکان چاپ لیست کامل کلاس همراه با شماره تماس اولیا باشد برای تماس‌های هفتگی بسیار کاربردی خواهد بود.',
+    priority: 'normal',
+    status: 'resolved',
+    user_id: 2,
+    user_name: 'مدیر دبستان نور ۱',
+    school_id: 1,
+    school_name: 'دبستان غیر دولتی نور ۱',
+    created_at: '2026-10-20T08:30:00.000Z',
+    created_at_jalali: '1403/07/29',
+    device_info: 'نسخه اندروید APK v2.16.0',
+    senior_reply: 'سلام و خداقوت. پیشنهاد بسیار عالی بود، دکمه چاپ و خروجی لیست بدهکاران با سربرگ رسمی افزوده شد.',
+    senior_reply_at: '1403/07/30',
+  },
+  {
+    id: 'FB-173000102',
+    tracking_code: 'MQ-5121',
+    type: 'bug',
+    title: 'عدم ثبت سه رقم صفر در بخش مبلغ روی برخی گوشی‌ها',
+    description: 'در قسمت مبلغ شهریه موقع زدن مبالغ در گوشی، کیبورد حروفی باز می‌شد و صفرهای آخر گاهی ثبت نمی‌شد.',
+    priority: 'important',
+    status: 'in_progress',
+    user_id: 3,
+    user_name: 'مدیر مهدالرضا ابراهیم خلیل',
+    school_id: 7,
+    school_name: 'مهدالرضا(علیه‌السلام) شعبه‌ی ابراهیم خلیل',
+    created_at: '2026-10-23T10:15:00.000Z',
+    created_at_jalali: '1403/08/02',
+    device_info: 'اندروید Samsung A54',
+    senior_reply: 'با سلام، فیلدهای مبلغ به صفحه کلید اعداد اختصاصی و دکمه‌های سریع ۳ صفر مجهز شدند و مشکل برطرف گردید.',
+    senior_reply_at: '1403/08/03',
+  },
+];
+

@@ -16,6 +16,7 @@ import {
   StaffWorkLog,
   PayrollPayment,
   BankAccount,
+  ManagerFeedback,
 } from '../types';
 import {
   INITIAL_SCHOOLS,
@@ -32,9 +33,10 @@ import {
   INITIAL_WORK_LOGS,
   INITIAL_PAYROLL,
   INITIAL_BANK_ACCOUNTS,
+  INITIAL_FEEDBACKS,
 } from '../data/initialData';
 import { buildParsianCode } from '../utils/parsian';
-import { jalaliFromGregorian, todayGregorian } from '../utils/jalali';
+import { jalaliFromGregorian, todayGregorian, todayJalali } from '../utils/jalali';
 import { calculateStudentOverdue, DEFAULT_SMS_TEMPLATE, formatSmsTemplate } from '../utils/debt';
 import {
   DEFAULT_SPREADSHEET_ID,
@@ -108,6 +110,10 @@ interface AppContextType {
   bankTransactions: BankTransaction[];
   seniorMessages: SeniorMessage[];
   activityLogs: ActivityLog[];
+  feedbacks: ManagerFeedback[];
+  addFeedback: (fb: Omit<ManagerFeedback, 'id' | 'tracking_code' | 'created_at' | 'created_at_jalali' | 'status'>) => ManagerFeedback;
+  updateFeedbackStatus: (id: string, status: ManagerFeedback['status'], reply?: string) => void;
+  deleteFeedback: (id: string) => void;
   smsLogs: SmsLog[];
   smsConfig: SmsConfig;
   setSmsConfig: (cfg: Partial<SmsConfig>) => void;
@@ -496,6 +502,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [bankTransactions, setBankTransactions] = useState<BankTransaction[]>(() => loadFromStorage('bank_txs', INITIAL_BANK_TRANSACTIONS));
   const [seniorMessages, setSeniorMessages] = useState<SeniorMessage[]>(() => loadFromStorage('senior_msgs', INITIAL_MESSAGES));
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(() => loadFromStorage('activity_logs', INITIAL_ACTIVITY_LOGS));
+  const [feedbacks, setFeedbacks] = useState<ManagerFeedback[]>(() => loadFromStorage('manager_feedbacks', INITIAL_FEEDBACKS));
   const [smsLogs, setSmsLogs] = useState<SmsLog[]>(() => loadFromStorage('sms_logs', INITIAL_SMS_LOGS));
   const [autoSmsEnabled, setAutoSmsEnabledState] = useState<boolean>(() => loadFromStorage('auto_sms_enabled', true));
   const [smsTemplate, setSmsTemplateState] = useState<string>(() => loadFromStorage('sms_template', DEFAULT_SMS_TEMPLATE));
@@ -546,6 +553,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => saveToStorage('bank_txs', bankTransactions), [bankTransactions]);
   useEffect(() => saveToStorage('senior_msgs', seniorMessages), [seniorMessages]);
   useEffect(() => saveToStorage('activity_logs', activityLogs), [activityLogs]);
+  useEffect(() => saveToStorage('manager_feedbacks', stripInlineImages(feedbacks)), [feedbacks]);
   useEffect(() => saveToStorage('sms_logs', smsLogs), [smsLogs]);
   useEffect(() => saveToStorage('auto_sms_enabled', autoSmsEnabled), [autoSmsEnabled]);
   useEffect(() => saveToStorage('sms_template', smsTemplate), [smsTemplate]);
@@ -1961,6 +1969,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     })();
   };
 
+  const addFeedback = (fb: Omit<ManagerFeedback, 'id' | 'tracking_code' | 'created_at' | 'created_at_jalali' | 'status'>): ManagerFeedback => {
+    const randomCode = Math.floor(1000 + Math.random() * 9000);
+    const tracking_code = `MQ-${randomCode}`;
+    const newFeedback: ManagerFeedback = {
+      ...fb,
+      id: `FB-${Date.now()}`,
+      tracking_code,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+      created_at_jalali: todayJalali(),
+    };
+    setFeedbacks((prev) => [newFeedback, ...prev]);
+    logActivity(
+      'ارسال پیام به مدیر ارشد',
+      `ثبت ${fb.type === 'bug' ? 'گزارش باگ' : fb.type === 'suggestion' ? 'پیشنهاد' : fb.type === 'criticism' ? 'انتقاد' : 'سوال'}: ${fb.title} با کد پیگیری ${tracking_code}`,
+      'feedback',
+      newFeedback.id
+    );
+    return newFeedback;
+  };
+
+  const updateFeedbackStatus = (id: string, status: ManagerFeedback['status'], reply?: string) => {
+    setFeedbacks((prev) =>
+      prev.map((f) => {
+        if (f.id === id) {
+          return {
+            ...f,
+            status,
+            ...(reply !== undefined ? { senior_reply: reply, senior_reply_at: todayJalali() } : {}),
+          };
+        }
+        return f;
+      })
+    );
+    logActivity('پاسخ و بررسی بازخورد', `بروزرسانی وضعیت بازخورد ${id} به ${status}`, 'feedback', id);
+  };
+
+  const deleteFeedback = (id: string) => {
+    setFeedbacks((prev) => prev.filter((f) => f.id !== id));
+    logActivity('حذف بازخورد', `حذف بازخورد ${id}`, 'feedback', id);
+  };
+
   const getStudentBalance = (studentId: number) => {
     const studentTxs = transactions.filter((t) => t.student_id === studentId);
     let totalDebit = 0;
@@ -2320,6 +2370,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         bankTransactions,
         seniorMessages,
         activityLogs,
+        feedbacks,
+        addFeedback,
+        updateFeedbackStatus,
+        deleteFeedback,
         smsLogs,
         smsConfig,
         setSmsConfig,

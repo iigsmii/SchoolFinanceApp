@@ -143,6 +143,30 @@ export interface SeniorMessage {
   author_name: string;
 }
 
+export type FeedbackType = 'bug' | 'suggestion' | 'criticism' | 'question';
+export type FeedbackPriority = 'normal' | 'important' | 'urgent';
+export type FeedbackStatus = 'pending' | 'in_progress' | 'resolved' | 'acknowledged';
+
+export interface ManagerFeedback {
+  id: string; // e.g. "FB-1742081234"
+  tracking_code: string; // e.g. "PR-4892"
+  type: FeedbackType;
+  title: string;
+  description: string;
+  priority: FeedbackPriority;
+  status: FeedbackStatus;
+  user_id: number;
+  user_name: string;
+  school_id: number;
+  school_name: string;
+  created_at: string; // ISO date
+  created_at_jalali: string; // e.g. "1403/08/04"
+  attachment_url?: string; // Optional screenshot or photo
+  device_info?: string; // e.g. "اندروید APK (v2.16.0)"
+  senior_reply?: string; // پاسخ مدیر ارشد
+  senior_reply_at?: string; // تاریخ پاسخ
+}
+
 export interface ActivityLog {
   id: string;
   user_id: number;
@@ -261,7 +285,8 @@ export type ScreenType =
   | 'export'
   | 'messages'
   | 'sms_reminders'
-  | 'staff';
+  | 'staff'
+  | 'feedback';
 
 export interface BankAccount {
   id: number;

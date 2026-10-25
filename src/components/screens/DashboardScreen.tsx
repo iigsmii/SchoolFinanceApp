@@ -3,9 +3,11 @@ import { useApp } from '../../context/AppContext';
 import { matchesStudentSearch } from '../../utils/studentSearch';
 import { DashboardClock } from '../DashboardClock';
 import { TuitionMonthlyChart } from '../TuitionMonthlyChart';
+import { ManagerFeedbackModal } from '../ManagerFeedbackModal';
 import {
   Users,
   CreditCard,
+  MessageSquarePlus,
   FileCheck,
   Receipt,
   ArrowLeftRight,
@@ -77,6 +79,7 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
     syncWithGoogleSheets,
     connectWithGoogle,
     loadOfflineExcel,
+    feedbacks,
   } = useApp();
 
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
@@ -84,6 +87,22 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
   // State for offline excel feedback
   const [offlineSuccessNotice, setOfflineSuccessNotice] = useState<string | null>(null);
 
+  // Manager Feedback modal state
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+  const [feedbackModalDefaultTab, setFeedbackModalDefaultTab] = useState<'new' | 'history'>('new');
+
+  // Feedback calculations
+  const userRepliedFeedbacksCount = useMemo(() => {
+    return feedbacks.filter((f) => f.user_id === currentUser?.id && f.senior_reply).length;
+  }, [feedbacks, currentUser]);
+
+  const myFeedbacksCount = useMemo(() => {
+    return feedbacks.filter((f) => isSenior || f.user_id === currentUser?.id).length;
+  }, [feedbacks, currentUser, isSenior]);
+
+  const pendingFeedbackCount = useMemo(() => {
+    return feedbacks.filter((f) => f.status === 'pending').length;
+  }, [feedbacks]);
 
   // Financial Status Box School Filter
   // Senior can select 0 (all schools) or any specific school. Manager is restricted to their own school.
@@ -231,6 +250,7 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
   const menuItems = [
     { id: 'students', label: 'دانش‌آموزان', icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
     { id: 'tuition', label: 'دریافت شهریه', icon: CreditCard, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { id: 'feedback_modal', label: 'ارتباط با مدیر ارشد', icon: MessageSquarePlus, color: 'text-purple-700', bg: 'bg-purple-50' },
     { id: 'staff', label: 'معلمان و پرسنل', icon: GraduationCap, color: 'text-amber-600', bg: 'bg-amber-50' },
     { id: 'sms_reminders', label: 'سامانه پیامک', icon: MessageSquare, color: 'text-purple-600', bg: 'bg-purple-50' },
     { id: 'cheque_list', label: 'لیست چک‌ها', icon: FileCheck, color: 'text-amber-600', bg: 'bg-amber-50' },
@@ -243,6 +263,7 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
   ];
 
   const seniorExtraItems = [
+    { id: 'feedback', label: 'صندوق پیشنهادات', icon: MessageSquare, color: 'text-rose-600', bg: 'bg-rose-50' },
     { id: 'staff', label: 'حقوق و بیمه', icon: GraduationCap, color: 'text-purple-600', bg: 'bg-purple-50' },
     { id: 'cheques', label: 'تأیید چک صیادی', icon: FileCheck, color: 'text-rose-600', bg: 'bg-rose-50' },
     { id: 'bank', label: 'تطبیق بانک', icon: Landmark, color: 'text-emerald-600', bg: 'bg-emerald-50' },
@@ -443,6 +464,38 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
         </div>
       )}
 
+      {/* Pending Manager Feedbacks for Senior Manager */}
+      {isSenior && pendingFeedbackCount > 0 && (
+        <div className="p-3 bg-gradient-to-r from-purple-50 via-indigo-50 to-purple-50 border-2 border-purple-300 rounded-2xl text-purple-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <MessageSquare className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-xs sm:text-sm font-black flex items-center gap-1.5 text-purple-950">
+                <span>{pendingFeedbackCount.toLocaleString('fa-IR')} باگ و پیشنهاد جدید از مدیران مدارس</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-700 text-white">
+                  صندوق نظرات
+                </span>
+              </div>
+              <p className="text-[11px] text-purple-800 mt-0.5">
+                همکاران مدارس گزارش‌ها، انتقادات یا پیشنهادات جدیدی ارسال کرده‌اند که نیاز به بررسی و پاسخ دارد.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              playClickSound();
+              setCurrentScreen('feedback');
+            }}
+            className="w-full sm:w-auto px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-black shadow-sm active:scale-95 transition-all flex items-center justify-center gap-1.5 shrink-0"
+          >
+            <MessageSquare className="w-4 h-4" />
+            <span>مشاهده صندوق بازخوردها</span>
+          </button>
+        </div>
+      )}
+
       {/* 4. Compact Quick Access Menu Grid (Less Scrolling) */}
       <div>
         <div className="text-xs font-bold text-[#341648] mb-2 flex items-center justify-between">
@@ -457,7 +510,12 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
                 key={item.id}
                 onClick={() => {
                   playClickSound();
-                  setCurrentScreen(item.id as ScreenType);
+                  if (item.id === 'feedback_modal') {
+                    setFeedbackModalDefaultTab('new');
+                    setIsFeedbackModalOpen(true);
+                  } else {
+                    setCurrentScreen(item.id as ScreenType);
+                  }
                 }}
                 className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white border border-[#e5dde8] hover:border-[#62205f] hover:shadow-xs active:scale-95 transition-all text-center min-h-[78px] group"
               >
@@ -472,6 +530,57 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
           })}
         </div>
       </div>
+
+      {/* Communication Card with Senior Manager (for all managers) */}
+      {!overviewOnly && (
+        <div className="bg-gradient-to-l from-purple-50 via-white to-amber-50/40 rounded-2xl border border-purple-200/80 p-3.5 sm:p-4 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-start sm:items-center gap-3 text-right">
+            <div className="w-10 h-10 rounded-xl bg-[#62205f] text-white flex items-center justify-center shrink-0 shadow-2xs">
+              <MessageSquarePlus className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="font-black text-sm text-[#341648] flex items-center gap-2">
+                <span>ارتباط مستقیم با مدیر ارشد (باگ، پیشنهاد و انتقاد)</span>
+                {userRepliedFeedbacksCount > 0 && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold animate-pulse">
+                    {userRepliedFeedbacksCount.toLocaleString('fa-IR')} پاسخ جدید دریافت شد
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+                صدای شما مستقیماً به گوش مدیر ارشد مجموعه (سیدمهدی گلزاری) می‌رسد. هرگونه باگ، مشکل، انتقاد یا ایده جدید را ارسال فرمایید.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                playClickSound();
+                setFeedbackModalDefaultTab('history');
+                setIsFeedbackModalOpen(true);
+              }}
+              className="px-3 py-2 rounded-xl bg-white hover:bg-gray-50 border border-gray-200 text-xs font-bold text-gray-700 shadow-2xs transition-colors"
+            >
+              پیام‌های من ({myFeedbacksCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                playClickSound();
+                setFeedbackModalDefaultTab('new');
+                setIsFeedbackModalOpen(true);
+              }}
+              className="px-3.5 py-2 rounded-xl text-white text-xs font-bold shadow-xs active:scale-95 transition-all flex items-center gap-1.5"
+              style={{ backgroundColor: accentColor }}
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>ارسال پیام</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {!overviewOnly && (
         <button onClick={() => { playClickSound(); setCurrentScreen('finance_overview'); }} className="w-full flex items-center justify-between gap-3 p-4 rounded-2xl bg-white border border-[#e5dde8] hover:border-[#62205f] shadow-xs transition-all active:scale-[0.99]">
@@ -825,6 +934,12 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
       </>
       )}
 
+      {/* Direct Communication Modal with Senior Manager */}
+      <ManagerFeedbackModal
+        isOpen={isFeedbackModalOpen}
+        onClose={() => setIsFeedbackModalOpen(false)}
+        defaultTab={feedbackModalDefaultTab}
+      />
     </div>
   );
 };
