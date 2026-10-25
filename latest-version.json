@@ -1,7 +1,7 @@
 {
-  "version": "2.16.258",
+  "version": "2.16.259",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Move tuition collection trend into financial overview",
-  "build": 258,
-  "published_at": "2026-10-25T17:15:33Z"
+  "notes": "Separate POS and bank statement Excel imports; skip duplicate transactions",
+  "build": 259,
+  "published_at": "2026-10-25T18:18:24Z"
 }
