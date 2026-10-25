@@ -1,7 +1,7 @@
 {
-  "version": "2.16.247",
+  "version": "2.16.248",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "refactor: rebrand feedback system and update dashboard",
-  "build": 247,
-  "published_at": "2026-10-25T13:02:41Z"
+  "notes": "build: cleanup dependencies and add accounting data",
+  "build": 248,
+  "published_at": "2026-10-25T14:48:00Z"
 }
