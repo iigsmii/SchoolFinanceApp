@@ -1376,6 +1376,14 @@ export const BankScreen: React.FC = () => {
       const amountStr = String(b.amount || '');
       const student = (b.assigned_student_name || '').toLowerCase();
       return desc.includes(q) || track.includes(q) || card.includes(q) || amountStr.includes(q) || student.includes(q);
+    }).sort((a, b) => {
+      // Show the most recent bank activity first; use transaction time to order rows on the same date.
+      const dateA = new Date(a.date || '').getTime();
+      const dateB = new Date(b.date || '').getTime();
+      const safeDateA = Number.isFinite(dateA) ? dateA : 0;
+      const safeDateB = Number.isFinite(dateB) ? dateB : 0;
+      if (safeDateA !== safeDateB) return safeDateB - safeDateA;
+      return String(b.transaction_time || '').localeCompare(String(a.transaction_time || ''), undefined, { numeric: true });
     });
   }, [currentBankRows, statusFilter, directionFilter, searchQuery]);
 
