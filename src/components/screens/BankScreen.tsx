@@ -722,7 +722,7 @@ export const BankScreen: React.FC = () => {
   };
 
   // File Upload Handler with specialized POS & Bank Account differentiation
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, importMode: 'pos' | 'account' | 'auto' = 'auto') => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -903,9 +903,11 @@ export const BankScreen: React.FC = () => {
             const fileNameNorm = normalize(file.name);
             const sheetNameNorm = normalize(sheetName);
 
-            isPosReport = (!hasDualDebitCredit && (hasTerminal || hasMerchant || hasRrn)) ||
+            const detectedPosReport = (!hasDualDebitCredit && (hasTerminal || hasMerchant || hasRrn)) ||
                           fileNameNorm.includes('pos') || fileNameNorm.includes('پوز') || fileNameNorm.includes('کارتخوان') ||
                           sheetNameNorm.includes('pos') || sheetNameNorm.includes('پوز');
+            // The dedicated buttons take priority over heuristics; auto is retained only as a fallback.
+            isPosReport = importMode === 'pos' ? true : importMode === 'account' ? false : detectedPosReport;
 
             const rows = matrix.slice(headerRowIndex).map((r) => r as unknown[]);
             const headers = (rows.shift() || []).map((x) => String(x ?? '').trim());
@@ -1107,11 +1109,46 @@ export const BankScreen: React.FC = () => {
           };
         });
 
-        const count = importBankTransactions(assignedItems);
-        const matchedCount = assignedItems.filter((item) => item.reconciled).length;
-        const unmatchedCount = assignedItems.length - matchedCount;
+        // Stable duplicate detection against existing bank rows and within this workbook.
+        const fingerprint = (item: any) => {
+          const digits = (v: unknown) => toDigits(v).replace(/\\D/g, '');
+          const dateKey = String(item.date || '');
+          const amountKey = String(Number(item.amount || 0));
+          const accountKey = digits(item.account_suffix || item.bank_account || '');
+          const terminalKey = digits(item.terminal_number || '');
+          const sourceKey = digits(item.source_card_number || '');
+          const destinationKey = digits(item.destination_card_number || '');
+          const trackingKey = String(item.tracking_code || item.reference_number || item.pos_reference_code || '').trim().toLowerCase();
+          if (trackingKey) return ['id', dateKey, amountKey, trackingKey, accountKey, terminalKey].join('|');
+          return [
+            'row', dateKey, amountKey, accountKey, terminalKey, sourceKey, destinationKey,
+            String(item.transaction_time || '').trim(),
+            String(item.description || '').trim().toLowerCase(),
+            String(item.balance ?? '')
+          ].join('|');
+        };
+        const existingFingerprints = new Set((bankTransactions || []).map((item) => fingerprint(item)));
+        const seenFingerprints = new Set<string>();
+        let duplicateCount = 0;
+        const uniqueItems = assignedItems.filter((item) => {
+          const key = fingerprint(item);
+          if (existingFingerprints.has(key) || seenFingerprints.has(key)) {
+            duplicateCount++;
+            return false;
+          }
+          seenFingerprints.add(key);
+          return true;
+        });
+        if (!uniqueItems.length) {
+          alert(`هیچ تراکنش جدیدی یافت نشد؛ ${duplicateCount} ردیف تکراری بود و وارد نشد.`);
+          return;
+        }
 
-        let reportMsg = `فایل «${sourceName}» (${isPosReport ? 'گزارش پایانه پوز شاپرک' : 'صورتحساب بانکی'}) با موفقیت خوانده شد: ${count} تراکنش بارگذاری گردید (${matchedCount} مورد تطبیق خودکار و ${unmatchedCount} مورد در صف بررسی).`;
+        const count = importBankTransactions(uniqueItems);
+        const matchedCount = uniqueItems.filter((item) => item.reconciled).length;
+        const unmatchedCount = uniqueItems.length - matchedCount;
+
+        let reportMsg = `فایل «${sourceName}» (${isPosReport ? 'گزارش پایانه پوز شاپرک' : 'صورتحساب بانکی'}) پردازش شد: ${count} تراکنش جدید بارگذاری گردید؛ ${duplicateCount} ردیف تکراری نادیده گرفته شد (${matchedCount} مورد تطبیق خودکار و ${unmatchedCount} مورد در صف بررسی).`;
         if (failedPosSkipped > 0) {
           reportMsg += `\n(تعداد ${failedPosSkipped} تراکنش ناموفق/خطای پوز نادیده گرفته شد)`;
         }
@@ -1575,13 +1612,13 @@ export const BankScreen: React.FC = () => {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           <label className="flex items-center justify-center gap-2 py-3 px-3.5 rounded-2xl bg-white border border-[#e5dde8] hover:border-[#62205f] text-[#341648] font-bold text-xs shadow-xs cursor-pointer active:scale-95 transition-all text-center">
             <Upload className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>ورود فایل اکسل بانک</span>
-            <input
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
+            <span>ورود اکسل تراکنش‌های پوز</span>
+            <input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => handleFileUpload(e, 'pos')} className="hidden" />
+          </label>
+          <label className="flex items-center justify-center gap-2 py-3 px-3.5 rounded-2xl bg-white border border-[#e5dde8] hover:border-[#62205f] text-[#341648] font-bold text-xs shadow-xs cursor-pointer active:scale-95 transition-all text-center">
+            <FileSpreadsheet className="w-4 h-4 text-purple-600 shrink-0" />
+            <span>ورود اکسل گردش حساب بانکی</span>
+            <input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => handleFileUpload(e, 'account')} className="hidden" />
           </label>
 
           <button
