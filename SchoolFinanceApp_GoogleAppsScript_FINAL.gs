@@ -1508,7 +1508,17 @@ function bankRulesGet_(b){
   auth_(b,['senior','admin']);
   const hit=rows_('Settings').find(x=>String(x.obj.key||'')==='bank_reconciliation_rules');
   if(!hit)return {success:true,rules:defaultBankRules_(),configured:false};
-  try{return {success:true,rules:Object.assign(defaultBankRules_(),JSON.parse(String(hit.obj.value||'{}'))),configured:true};}
+  try{
+    const defaults=defaultBankRules_();
+    const saved=JSON.parse(String(hit.obj.value||'{}'));
+    const rules=Object.assign({},defaults,saved,{
+      pettyCashCards:defaults.pettyCashCards,
+      excludedAccountSuffixes:defaults.excludedAccountSuffixes,
+      schoolAccounts:defaults.schoolAccounts,
+      matching:Object.assign({},defaults.matching,saved.matching||{})
+    });
+    return {success:true,rules:rules,configured:true};
+  }
   catch(e){return {success:false,error:'قواعد تطبیق ذخیره‌شده قابل خواندن نیست؛ مدیر ارشد باید آن را اصلاح کند.'};}
 }
 function bankRulesSave_(b){
