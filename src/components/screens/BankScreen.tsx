@@ -200,17 +200,17 @@ export const BankScreen: React.FC = () => {
     .replace(/\s+/g, ' ')
     .trim();
 
+  // Verified against the uploaded banks.xlsx roster. Do not add guessed/legacy card numbers here.
   const knownManagerCardRoster = [
-    { card: '6037691263360788', managerName: 'محمد عربی' },
-    { card: '6037691263360796', managerName: 'آرزو میرزایی' },
-    { card: '6037691263360804', managerName: 'فریبا سبزواری' },
-    { card: '6037691263360812', managerName: 'علی هاشمیان' },
-    { card: '6037691263360770', managerName: 'محمدرضا آقاسی' },
-    { card: '6037691261822597', managerName: 'سید محمدرضا گلزاری' },
-    { card: '6037691263357097', managerName: 'سید محمدرضا گلزاری' },
+    { card: '6037691263260788', managerName: 'محمد عربی' },
+    { card: '6037691263260796', managerName: 'آرزو میرزایی' },
+    { card: '6037691263260804', managerName: 'فریبا سبزواری' },
     { card: '6037691263357071', managerName: 'علی هاشمیان' },
+    { card: '6037691263260770', managerName: 'محمدرضا آقاسی' },
+    { card: '6037691261822589', managerName: 'مجید آقابزرگی' },
+    { card: '6037691263357089', managerName: 'سید محمدرضا گلزاری' },
+    { card: '6037691263357097', managerName: 'مجید آقابزرگی' },
   ];
-
   const managerIdentity = normalizeManagerIdentity(currentUser?.name);
   const managerCards = Array.from(new Set([
     normalizeCardNumber(currentUser?.petty_cash_card),
@@ -1863,10 +1863,16 @@ export const BankScreen: React.FC = () => {
                 <div className="bg-white rounded-3xl p-8 text-center text-gray-400 border border-[#e5dde8] space-y-2">
                   <FileSpreadsheet className="w-8 h-8 mx-auto text-gray-300" />
                   <p>تراکنشی متناسب با فیلترهای انتخابی در صورتحساب بانک یافت نشد.</p>
-                  <label className="inline-block mt-2 px-4 py-2 bg-purple-100 hover:bg-purple-200 text-purple-900 rounded-xl font-bold text-xs cursor-pointer">
-                    آپلود فایل اکسل صورتحساب بانک
-                    <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} className="hidden" />
-                  </label>
+                  <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+                    <label className="inline-block px-4 py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-xl font-bold text-xs cursor-pointer">
+                      ورود اکسل تراکنش‌های پوز
+                      <input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => handleFileUpload(e, 'pos')} className="hidden" />
+                    </label>
+                    <label className="inline-block px-4 py-2 bg-purple-100 hover:bg-purple-200 text-purple-900 rounded-xl font-bold text-xs cursor-pointer">
+                      ورود اکسل گردش حساب بانکی
+                      <input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => handleFileUpload(e, 'account')} className="hidden" />
+                    </label>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-2.5">
