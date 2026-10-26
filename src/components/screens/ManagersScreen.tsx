@@ -14,6 +14,9 @@ export const ManagersScreen: React.FC = () => {
   const [formUsername, setFormUsername] = useState('');
   const [formPassword, setFormPassword] = useState('');
   const [formSchoolId, setFormSchoolId] = useState<number>(schools[0]?.id || 1);
+  const [formPettyCashCard, setFormPettyCashCard] = useState('');
+  const [formPettyCashBank, setFormPettyCashBank] = useState('');
+  const [formPettyCashShaba, setFormPettyCashShaba] = useState('');
   const [formRole, setFormRole] = useState<'manager' | 'senior'>('manager');
   const [formError, setFormError] = useState('');
 
@@ -24,6 +27,9 @@ export const ManagersScreen: React.FC = () => {
     setFormUsername('');
     setFormPassword('');
     setFormSchoolId(schools[0]?.id || 1);
+    setFormPettyCashCard('');
+    setFormPettyCashBank('');
+    setFormPettyCashShaba('');
     setFormRole('manager');
     setFormError('');
     setIsModalOpen(true);
@@ -36,6 +42,9 @@ export const ManagersScreen: React.FC = () => {
     setFormUsername(m.username);
     setFormPassword('');
     setFormSchoolId(m.school_id || schools[0]?.id || 1);
+    setFormPettyCashCard(m.petty_cash_card || '');
+    setFormPettyCashBank(m.petty_cash_bank || '');
+    setFormPettyCashShaba(m.petty_cash_shaba || '');
     setFormRole(m.role === 'senior' ? 'senior' : 'manager');
     setFormError('');
     setIsModalOpen(true);
@@ -69,6 +78,9 @@ export const ManagersScreen: React.FC = () => {
         username: formUsername.trim().toLowerCase(),
         school_id: formRole === 'senior' ? undefined : formSchoolId,
         role: formRole,
+        petty_cash_card: formPettyCashCard.replace(/[^0-9۰-۹٠-٩]/g, ''),
+        petty_cash_bank: formPettyCashBank.trim(),
+        petty_cash_shaba: formPettyCashShaba.replace(/[^0-9۰-۹٠-٩]/g, ''),
         ...(formPassword.trim() ? { password: formPassword.trim() } : {}),
       });
     } else {
@@ -78,6 +90,9 @@ export const ManagersScreen: React.FC = () => {
         username: formUsername.trim().toLowerCase(),
         school_id: formRole === 'senior' ? undefined : formSchoolId,
         role: formRole,
+        petty_cash_card: formPettyCashCard.replace(/[^0-9۰-۹٠-٩]/g, ''),
+        petty_cash_bank: formPettyCashBank.trim(),
+        petty_cash_shaba: formPettyCashShaba.replace(/[^0-9۰-۹٠-٩]/g, ''),
         active: true,
         password: formPassword.trim(),
       });
@@ -266,6 +281,27 @@ export const ManagersScreen: React.FC = () => {
                   </select>
                 </div>
               )}
+
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-3 space-y-3">
+                <h4 className="text-xs font-bold text-amber-900">اطلاعات کارت تن‌خواه مدیر</h4>
+                <div>
+                  <label className="block text-xs font-bold text-[#341648] mb-1.5">شماره کارت تن‌خواه</label>
+                  <input type="tel" inputMode="numeric" autoComplete="off" value={formPettyCashCard}
+                    onChange={(e) => setFormPettyCashCard(e.target.value.replace(/[^0-9۰-۹٠-٩]/g, ''))}
+                    placeholder="شماره کارت ۱۶ رقمی" className="w-full px-4 py-2.5 bg-white rounded-xl border border-[#e5dde8] text-sm font-mono text-left" dir="ltr" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#341648] mb-1.5">بانک صادرکننده کارت</label>
+                  <input type="text" value={formPettyCashBank} onChange={(e) => setFormPettyCashBank(e.target.value)}
+                    placeholder="نام بانک" className="w-full px-4 py-2.5 bg-white rounded-xl border border-[#e5dde8] text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#341648] mb-1.5">شماره شبا (اختیاری)</label>
+                  <input type="tel" inputMode="numeric" autoComplete="off" value={formPettyCashShaba}
+                    onChange={(e) => setFormPettyCashShaba(e.target.value.replace(/[^a-zA-Z0-9۰-۹٠-٩]/g, ''))}
+                    placeholder="IR..." className="w-full px-4 py-2.5 bg-white rounded-xl border border-[#e5dde8] text-sm font-mono text-left" dir="ltr" />
+                </div>
+              </div>
 
               <div className="flex items-center gap-3 pt-3">
                 <button
