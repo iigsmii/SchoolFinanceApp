@@ -163,7 +163,7 @@ export const StudentsScreen: React.FC = () => {
     setIsModalOpen(false);
   };
 
-  const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleExcelImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -267,7 +267,8 @@ export const StudentsScreen: React.FC = () => {
         });
 
         if (newStudents.length > 0) {
-          const res = importStudents(newStudents);
+          setImportSummary(`در حال ارسال یک‌جای ${newStudents.length} دانش‌آموز به سرور؛ لطفاً صفحه را باز نگه دارید تا نتیجه تأیید شود...`);
+          const res = await importStudents(newStudents);
           playSuccessSound();
           setImportSummary(
             `ورود موفق: ${res.added} دانش‌آموز افزوده شد. (${res.skipped} مورد تکراری، ${res.invalid} ناقص، ${rejectedRows} ردیف خراب/ناقص رد شد)`
@@ -276,7 +277,7 @@ export const StudentsScreen: React.FC = () => {
           setImportSummary(`هیچ دانش‌آموز قابل ورود پیدا نشد. ${rejectedRows} ردیف به‌دلیل نام یا کد ملی نامعتبر رد شد.`);
         }
       } catch (err: any) {
-        setImportSummary('خطا در پردازش فایل اکسل: ' + err.message);
+        setImportSummary('ورود اکسل کامل نشد: ' + (err?.message || String(err)));
       }
     };
     reader.readAsBinaryString(file);
