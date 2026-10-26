@@ -1114,7 +1114,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const importStudents = async (newStudents: Array<Omit<Student, 'id' | 'parsian_code'>>) => {
     if (!newStudents.length) return { added: 0, skipped: 0, invalid: 0 };
     // One authenticated request for the whole import; Apps Script validates and batch-writes.
-    const response = await postToAppsScript({
+    const response: any = await postToAppsScript({
       action: 'students_import',
       school_id: String(newStudents[0]?.school_id || currentUser?.school_id || schools[0]?.id || 1),
       students: newStudents.map((st) => ({
