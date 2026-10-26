@@ -672,7 +672,17 @@ function studentsImport_(b) {
     const existing=rows_('Students').map(x=>x.obj);
     const studentsSheet=sheet_('Students');
     try { studentsSheet.getRange(2,4,Math.max(1,studentsSheet.getMaxRows()-1),2).setNumberFormat('@'); } catch(ignoreFormat) {}
-    const seen={};
+    const seen=Object.create(null);
+    const existingByNid=Object.create(null), existingByInvalidKey=Object.create(null);
+    const invalidKeyOf=(name,nid,phone,grade,school)=>(String(name||'').trim()+'|'+digits_(nid||'')+'|'+digits_(phone||'')+'|'+normalizeGrade_(grade||'')+'|'+String(school||'')).toLowerCase();
+    existing.forEach(x=>{
+      const n=normalizeNationalId_(x.national_id||'');
+      if(/^\d{10}$/.test(n) && !existingByNid[n]) existingByNid[n]=x;
+      const k=invalidKeyOf(x.name,x.national_id,x.phone,x.grade,x.school_id);
+      if(!existingByInvalidKey[k]) existingByInvalidKey[k]=x;
+    });
+    const rowsToAppend=[];
+    let nextStudentId=nextId_('Students');
 
     imported.forEach((r,idx)=>{
       const rowNo=Number(r.row_number||idx+1);
@@ -696,16 +706,16 @@ function studentsImport_(b) {
       if(!/^\d{10}$/.test(nid)) {
         invalidNid++;
         rowErrors.push('کد ملی نامعتبر ('+(nid ? nid.length+' رقمی' : 'خالی')+')');
-        if(seen['bad:'+invalidKey] || existing.some(x=>(String(x.name||'').trim()+'|'+digits_(x.national_id||'')+'|'+digits_(x.phone||'')+'|'+normalizeGrade_(x.grade||'')+'|'+String(x.school_id||'')).toLowerCase()===invalidKey)){
+        if(seen['bad:'+invalidKey] || existingByInvalidKey[invalidKey]){
           skipped++; reasons.push('ردیف '+rowNo+' — '+name+' — رکورد نامعتبر تکراری'); return;
         }
         seen['bad:'+invalidKey]=true;
-      } else if(seen[nid] || existing.some(x=>normalizeNationalId_(x.national_id||'')===nid)) {
+      } else if(seen[nid] || existingByNid[nid]) {
         // Repair missing mobile numbers on previously imported students when the same
         // student is imported again with a valid phone number.
         const importedPhone=normalizeImportedPhone_(r.phone||'');
         if(importedPhone && /^0\d{10}$/.test(importedPhone)){
-          const match=existing.find(x=>normalizeNationalId_(x.national_id||'')===nid && !digits_(x.phone||''));
+          const match=existingByNid[nid] && !digits_(existingByNid[nid].phone||'') ? existingByNid[nid] : null;
           if(match){
             const hit=findRow_('Students',match.id);
             if(hit){
@@ -728,13 +738,15 @@ function studentsImport_(b) {
       // Keep a row even when its national ID or grade needs correction.
       // The result reports the exact problem so the manager can edit it afterwards.
       const storedGrade=grade || String(r.grade||'').trim() || 'نیازمند اصلاح';
-      const id=nextId_('Students');
+      const id=nextStudentId++;
       const codes=studentAccountCodes_(id,storedGrade,schoolId,nid);
-      sheet_('Students').appendRow([
+      rowsToAppend.push([
         id,name,storedGrade,normalizeImportedPhone_(r.phone||''),nid,schoolId,
         codes.kol,codes.moeen,codes.tafsili,true,now_()
       ]);
-      existing.push({name:name,national_id:nid,school_id:schoolId});
+      const newRecord={id:id,name:name,grade:storedGrade,phone:normalizeImportedPhone_(r.phone||''),national_id:nid,school_id:schoolId};
+      if(/^\d{10}$/.test(nid)) existingByNid[nid]=newRecord;
+      else existingByInvalidKey[invalidKey]=newRecord;
       if(/^\d{10}$/.test(nid)) seen[nid]=true;
       added++;
 
@@ -753,6 +765,12 @@ function studentsImport_(b) {
       }
     });
 
+    const writeStartedAt=Date.now();
+    if(rowsToAppend.length){
+      const firstRow=studentsSheet.getLastRow()+1;
+      studentsSheet.getRange(firstRow,1,rowsToAppend.length,11).setValues(rowsToAppend);
+    }
+    const writeMs=Date.now()-writeStartedAt;
     return {
       success:true,
       added:added,
@@ -763,7 +781,7 @@ function studentsImport_(b) {
       message:'ورود Excel انجام شد. موارد نامعتبر نیز ساخته شدند تا بعداً قابل اصلاح باشند.',
       details:reasons.slice(0,20),
       invalid_students:invalidStudents,
-      diagnostics:{parsed:imported.length,valid_nid:validNid,invalid_nid:invalidNid,valid_grade:validGrade,invalid_grade:invalidGrade,missing_name:missingName,grade_counts:gradeCounts,grade_samples:gradeSamples,backend_version:'2.10-invalid-student-details'}
+      diagnostics:{parsed:imported.length,valid_nid:validNid,invalid_nid:invalidNid,valid_grade:validGrade,invalid_grade:invalidGrade,missing_name:missingName,grade_counts:gradeCounts,grade_samples:gradeSamples,backend_version:'2026.10.26-student-import-batch1',write_mode:'setValues-batch',write_ms:writeMs}
     };
   } finally {
     lock.releaseLock();
