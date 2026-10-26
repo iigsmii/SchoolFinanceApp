@@ -1,7 +1,7 @@
 {
-  "version": "2.16.270",
+  "version": "2.16.271",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Type batch import response",
-  "build": 270,
-  "published_at": "2026-10-26T15:39:06Z"
+  "notes": "Preserve POS terminal numbers when syncing schools",
+  "build": 271,
+  "published_at": "2026-10-26T16:02:38Z"
 }
