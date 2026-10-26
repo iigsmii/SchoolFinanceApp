@@ -205,7 +205,7 @@ function doGet(e) {
     if(action==='my_claim') return json_(myClaim_(b));
     if(action==='app_version') return json_(appVersion_(b));
     if(action==='activity_logs')return json_(activityLogs_(b));
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.15.0',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.19.0',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
@@ -658,9 +658,9 @@ function studentsImport_(b) {
     ensureCoreData_();
     const schoolId=(u.role==='senior' || u.role==='admin') ? String(b.school_id||'') : String(u.school_id||'');
     if(!schoolId) throw new Error('مدرسه برای ورود دانش‌آموزان مشخص نشده است.');
-    if(!b.base64) throw new Error('فایل Excel ارسال نشده است.');
+    if(!b.base64 && !Array.isArray(b.students)) throw new Error('اطلاعات دانش‌آموزان ارسال نشده است.');
 
-    const imported=readStudentXlsx_(b.base64);
+    const imported=Array.isArray(b.students) ? b.students.map((s,i)=>({row_number:i+1,name:s.name,first_name:'',last_name:'',national_id:s.national_id,grade:s.grade,phone:s.phone,father_phone:s.father_phone,mother_phone:s.mother_phone,school_id:s.school_id})) : readStudentXlsx_(b.base64);
     if(!imported.length) throw new Error('هیچ دانش‌آموز قابل خواندن از فایل Excel پیدا نشد.');
 
     let added=0, skipped=0, invalid=0, updatedPhones=0;
@@ -702,7 +702,8 @@ function studentsImport_(b) {
 
       // National ID is checked globally only when it is a complete 10-digit ID.
       // Invalid IDs are STILL imported so the manager can open/edit the student later.
-      const invalidKey=(name+'|'+nid+'|'+digits_(r.phone||'')+'|'+grade+'|'+schoolId).toLowerCase();
+      const rowSchoolId=(u.role==='senior' || u.role==='admin') ? String(r.school_id||schoolId) : String(u.school_id||'');
+      const invalidKey=(name+'|'+nid+'|'+digits_(r.phone||'')+'|'+grade+'|'+rowSchoolId).toLowerCase();
       if(!/^\d{10}$/.test(nid)) {
         invalidNid++;
         rowErrors.push('کد ملی نامعتبر ('+(nid ? nid.length+' رقمی' : 'خالی')+')');
@@ -739,12 +740,12 @@ function studentsImport_(b) {
       // The result reports the exact problem so the manager can edit it afterwards.
       const storedGrade=grade || String(r.grade||'').trim() || 'نیازمند اصلاح';
       const id=nextStudentId++;
-      const codes=studentAccountCodes_(id,storedGrade,schoolId,nid);
+      const codes=studentAccountCodes_(id,storedGrade,rowSchoolId,nid);
       rowsToAppend.push([
-        id,name,storedGrade,normalizeImportedPhone_(r.phone||''),nid,schoolId,
-        codes.kol,codes.moeen,codes.tafsili,true,now_()
+        id,name,storedGrade,normalizeImportedPhone_(r.phone||''),nid,rowSchoolId,
+        codes.kol,codes.moeen,codes.tafsili,true,now_(),String(r.father_phone||''),String(r.mother_phone||'')
       ]);
-      const newRecord={id:id,name:name,grade:storedGrade,phone:normalizeImportedPhone_(r.phone||''),national_id:nid,school_id:schoolId};
+      const newRecord={id:id,name:name,grade:storedGrade,phone:normalizeImportedPhone_(r.phone||''),national_id:nid,school_id:rowSchoolId};
       if(/^\d{10}$/.test(nid)) existingByNid[nid]=newRecord;
       else existingByInvalidKey[invalidKey]=newRecord;
       if(/^\d{10}$/.test(nid)) seen[nid]=true;
@@ -768,7 +769,7 @@ function studentsImport_(b) {
     const writeStartedAt=Date.now();
     if(rowsToAppend.length){
       const firstRow=studentsSheet.getLastRow()+1;
-      studentsSheet.getRange(firstRow,1,rowsToAppend.length,11).setValues(rowsToAppend);
+      studentsSheet.getRange(firstRow,1,rowsToAppend.length,13).setValues(rowsToAppend);
     }
     const writeMs=Date.now()-writeStartedAt;
     return {
@@ -781,7 +782,7 @@ function studentsImport_(b) {
       message:'ورود Excel انجام شد. موارد نامعتبر نیز ساخته شدند تا بعداً قابل اصلاح باشند.',
       details:reasons.slice(0,20),
       invalid_students:invalidStudents,
-      diagnostics:{parsed:imported.length,valid_nid:validNid,invalid_nid:invalidNid,valid_grade:validGrade,invalid_grade:invalidGrade,missing_name:missingName,grade_counts:gradeCounts,grade_samples:gradeSamples,backend_version:'2026.10.26-student-import-batch1',write_mode:'setValues-batch',write_ms:writeMs}
+      diagnostics:{parsed:imported.length,valid_nid:validNid,invalid_nid:invalidNid,valid_grade:validGrade,invalid_grade:invalidGrade,missing_name:missingName,grade_counts:gradeCounts,grade_samples:gradeSamples,backend_version:'2026.10.26-student-import-batch2',write_mode:'setValues-batch',write_ms:writeMs}
     };
   } finally {
     lock.releaseLock();
@@ -1787,7 +1788,7 @@ function syncPayload_(b){
   const bankData=(bank_(b)||{}).data||[];
   return {
     success:true,
-    backend_version:'2.18.0',
+    backend_version:'2.19.0',
     students:(students_(b)||{}).data||[],
     schools:(schools_(b)||{}).data||[],
     staff:(staff_(b)||{}).data||[],
@@ -2275,7 +2276,7 @@ function appVersion_(b){
     apk_url:settings['android_apk_url']||'',
     notes:settings['android_update_notes']||'',
     force_update:String(settings['android_force_update']||'false').toLowerCase()==='true',
-    backend_version:'2.16.0'
+    backend_version:'2.19.0'
   };
 }
 
