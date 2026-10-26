@@ -806,6 +806,8 @@ export const loadDataFromAppsScript = async (
     petty_cash_card: sc.petty_cash_card || '',
     type: sc.type || '',
     moeen_code: sc.moeen_code || '',
+    pos_terminal_number: String(sc.pos_terminal_number || ''),
+    tafsili_code: String(sc.tafsili_code || ''),
   }));
 
   const schoolMap = new Map<number, string>();
