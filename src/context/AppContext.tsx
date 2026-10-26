@@ -47,6 +47,7 @@ import {
   loadDataFromPublicGoogleSheet,
   extractSpreadsheetId,
   apiLogin,
+  postToAppsScript,
   buildStudentPayload,
   buildTuitionPayload,
   buildExpensePayload,
@@ -152,7 +153,7 @@ interface AppContextType {
   updateStudent: (id: number, data: Partial<Student>) => void;
   deleteStudent: (id: number) => void;
   withdrawStudent: (id: number) => void;
-  importStudents: (newStudents: Array<Omit<Student, 'id' | 'parsian_code'>>) => { added: number; skipped: number; invalid: number };
+  importStudents: (newStudents: Array<Omit<Student, 'id' | 'parsian_code'>>) => Promise<{ added: number; skipped: number; invalid: number }>;
 
   // Tuition & Transactions ops
   addTuitionDebt: (data: { student_id: number; amount: number; date: string; description: string; school_id?: number; debt_item_type?: Transaction['debt_item_type']; installment_index?: number; total_installments?: number }) => Transaction;
@@ -1110,43 +1111,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logActivity('انصراف از مدرسه', `دانش‌آموز ${student.name} غیرفعال شد`, 'student', id);
   };
 
-  const importStudents = (newStudents: Array<Omit<Student, 'id' | 'parsian_code'>>) => {
-    let added = 0;
-    let skipped = 0;
-    let invalid = 0;
-    const addedList: Student[] = [];
-    const seenNational = new Set<string>();
-
-    newStudents.forEach((st) => {
-      if (!st.name) {
-        invalid++;
-        return;
-      }
-      const nid = String(st.national_id || '');
-      const isDuplicate = nid !== '' && (students.some((x) => x.national_id === nid) || seenNational.has(nid));
-      if (isDuplicate) {
-        skipped++;
-        return;
-      }
-      if (nid) seenNational.add(nid);
-      const newId = nextTempId();
-      const schoolObj = schools.find((s) => s.id === st.school_id);
-      const parsian = buildParsianCode(st.national_id, st.school_id);
-      const newSt: Student = {
-        ...st,
-        name: String(st.name).trim(),
-        id: newId,
-        school_name: schoolObj?.name || 'مدرسه',
-        parsian_code: parsian.fullCode,
-        active: true,
-        created_at: new Date().toISOString(),
-      };
-      addedList.push(newSt);
-      added++;
-      queue('student_add', { ...buildStudentPayload(newSt, 'add'), id: undefined }, { type: 'student', id: newId });
+  const importStudents = async (newStudents: Array<Omit<Student, 'id' | 'parsian_code'>>) => {
+    if (!newStudents.length) return { added: 0, skipped: 0, invalid: 0 };
+    // One authenticated request for the whole import; Apps Script validates and batch-writes.
+    const response = await postToAppsScript({
+      action: 'students_import',
+      school_id: String(newStudents[0]?.school_id || currentUser?.school_id || schools[0]?.id || 1),
+      students: newStudents.map((st) => ({
+        name: String(st.name || '').trim(),
+        grade: st.grade || '',
+        phone: st.phone || st.father_phone || st.mother_phone || '',
+        father_phone: st.father_phone || '',
+        mother_phone: st.mother_phone || '',
+        national_id: String(st.national_id || ''),
+        school_id: st.school_id || currentUser?.school_id || schools[0]?.id || 1,
+        active: st.active !== false,
+      })),
     });
-
-    setStudents((prev) => [...addedList, ...prev]);
+    if (!response?.success) throw new Error(response?.error || 'ورود گروهی در سرور انجام نشد.');
+    await syncWithGoogleSheets(spreadsheetId);
+    const added = Number(response.added || 0);
+    const skipped = Number(response.skipped || 0);
+    const invalid = Number(response.invalid || 0);
     logActivity('ورود گروهی دانش‌آموزان', `افزودن ${added} دانش‌آموز، ${skipped} تکراری، ${invalid} نامعتبر`);
     return { added, skipped, invalid };
   };
