@@ -158,7 +158,7 @@ function setup() {
   const settings = sheet_('Settings');
   const settingKeys={};
   rows_('Settings').forEach(x=>settingKeys[String(x.obj.key||'').trim()]=true);
-  [['schoolfinance_version','2.18.0'],['android_version','2.15.0'],['android_apk_url',''],['bank_account_code','0-1-11'],['currency','IRR']].forEach(x=>{
+  [['schoolfinance_version','2.20.0'],['android_version','2.15.0'],['android_apk_url',''],['bank_account_code','0-1-11'],['currency','IRR']].forEach(x=>{
     if(!settingKeys[x[0]]) { settings.appendRow([x[0],x[1],now_()]); }
     else if(x[0]==='schoolfinance_version' || x[0]==='android_version') {
       const rr=rows_('Settings').find(y=>String(y.obj.key||'')===x[0]);
@@ -205,7 +205,7 @@ function doGet(e) {
     if(action==='my_claim') return json_(myClaim_(b));
     if(action==='app_version') return json_(appVersion_(b));
     if(action==='activity_logs')return json_(activityLogs_(b));
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.19.0',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.20.0',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
@@ -1788,7 +1788,7 @@ function syncPayload_(b){
   const bankData=(bank_(b)||{}).data||[];
   return {
     success:true,
-    backend_version:'2.19.0',
+    backend_version:'2.20.0',
     students:(students_(b)||{}).data||[],
     schools:(schools_(b)||{}).data||[],
     staff:(staff_(b)||{}).data||[],
