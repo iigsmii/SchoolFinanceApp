@@ -1,7 +1,7 @@
 {
-  "version": "2.16.273",
+  "version": "2.16.274",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Bump backend version for petty-cash and POS sync fixes",
-  "build": 273,
-  "published_at": "2026-10-26T16:04:55Z"
+  "notes": "feat: add bank terminal and card mappings",
+  "build": 274,
+  "published_at": "2026-10-27T13:25:56Z"
 }
