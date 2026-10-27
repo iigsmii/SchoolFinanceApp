@@ -1,7 +1,7 @@
 {
-  "version": "2.16.274",
+  "version": "2.16.276",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "feat: add bank terminal and card mappings",
-  "build": 274,
-  "published_at": "2026-10-27T13:25:56Z"
+  "notes": "Fix JSX syntax errors in student inputs",
+  "build": 276,
+  "published_at": "2026-10-27T15:26:23Z"
 }
