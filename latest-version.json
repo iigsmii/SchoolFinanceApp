@@ -1,7 +1,7 @@
 {
-  "version": "2.16.281",
+  "version": "2.16.282",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Fix update checker TypeScript errors",
-  "build": 281,
-  "published_at": "2026-10-27T16:36:53Z"
+  "notes": "Prevent Google Sheets sync from hanging on fallback requests",
+  "build": 282,
+  "published_at": "2026-10-27T16:50:49Z"
 }
