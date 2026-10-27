@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { DEFAULT_SPREADSHEET_ID, postToAppsScript } from '../../services/googleSheets';
 import { toPersianDigits } from '../../utils/jalali';
+import packageJson from '../../../package.json';
 
 const THEME_NAMES = [
   { name: 'بنفش سلطنتی (اصلی)', color: '#62205f' },
@@ -59,82 +60,51 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
 
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
   const [updateMsg, setUpdateMsg] = useState<string | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [inputSheetId, setInputSheetId] = useState(spreadsheetId);
   const [inputWebAppUrl, setInputWebAppUrl] = useState(webAppUrl);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
-  const [updateVersion, setUpdateVersion] = useState('2.17.0');
-  const [updateUrl, setUpdateUrl] = useState('');
-  const [updateNotes, setUpdateNotes] = useState('');
-  const [forceUpdate, setForceUpdate] = useState(false);
-  const [updateSaving, setUpdateSaving] = useState(false);
-
-  // Populate the manager's update form automatically from the latest successful GitHub build.
-  useEffect(() => {
-    if (!isSenior) return;
-    let cancelled = false;
-    fetch('https://raw.githubusercontent.com/iigsmii/SchoolFinanceApp/main/latest-version.json?t=' + Date.now(), { cache: 'no-store' })
-      .then(response => response.ok ? response.json() : null)
-      .then(latest => {
-        if (cancelled || !latest?.version || !latest?.apk_url) return;
-        setUpdateVersion(String(latest.version));
-        setUpdateUrl(String(latest.apk_url));
-        setUpdateNotes(String(latest.notes || ''));
-        setUpdateMsg('آخرین بیلد موفق به‌صورت خودکار بارگذاری شد؛ نسخه و لینک مستقیم آماده است.');
-      })
-      .catch(() => {
-        // The first successful signed build creates this manifest.
-      });
-    return () => { cancelled = true; };
-  }, [isSenior]);
 
   const handleCheckUpdate = async () => {
-    setUpdateMsg('در حال دریافت خودکار آخرین نسخه و لینک مستقیم...');
+    setCheckingUpdate(true);
+    setUpdateMsg(null);
     try {
-      const response = await fetch('https://raw.githubusercontent.com/iigsmii/SchoolFinanceApp/main/latest-version.json?t=' + Date.now(), { cache: 'no-store' });
-      if (response.ok) {
-        const latest = await response.json();
-        if (latest.version && latest.apk_url) {
-          setUpdateVersion(String(latest.version));
-          setUpdateUrl(String(latest.apk_url));
-          setUpdateNotes(String(latest.notes || ''));
-          setForceUpdate(false);
-          setUpdateMsg('آخرین بیلد با موفقیت دریافت شد؛ نسخه و لینک مستقیم APK به‌صورت خودکار جایگذاری شد. برای انتشار از سرور مشترک، دکمه ذخیره را بزنید.');
-          return;
-        }
+      let latest: any = null;
+      try {
+        const response = await fetch('https://raw.githubusercontent.com/iigsmii/SchoolFinanceApp/main/latest-version.json?t=' + Date.now(), { cache: 'no-store' });
+        if (response.ok) latest = await response.json();
+      } catch (_) {
+        // Fall back to the shared server if GitHub is unavailable.
+      }
+      if (!latest?.version || !latest?.apk_url) {
+        const result = await postToAppsScript({ action: 'app_version' }, webAppUrl);
+        if (result.success) latest = (result as any).data || result;
+      }
+      if (!latest?.version || !/^https:\/\//i.test(String(latest.apk_url || ''))) {
+        setUpdateMsg('بررسی بروزرسانی انجام نشد؛ اتصال اینترنت را بررسی کنید و دوباره تلاش کنید.');
+        return;
+      }
+      const currentVersion = String(packageJson.version || '0.0.0');
+      const remoteVersion = String(latest.version);
+      const currentParts = currentVersion.split('.').map(Number);
+      const remoteParts = remoteVersion.split('.').map(Number);
+      let hasUpdate = false;
+      for (let i = 0; i < Math.max(currentParts.length, remoteParts.length); i++) {
+        if ((remoteParts[i] || 0) > (currentParts[i] || 0)) { hasUpdate = true; break; }
+        if ((remoteParts[i] || 0) < (currentParts[i] || 0)) break;
+      }
+      if (!hasUpdate) {
+        setUpdateMsg('برنامه شما به‌روز است؛ نسخه فعلی ' + currentVersion);
+        return;
+      }
+      const notes = latest.notes ? '\\n\\nتغییرات: ' + String(latest.notes) : '';
+      if (window.confirm('نسخه جدید ' + remoteVersion + ' آماده دانلود است.\\nنسخه فعلی: ' + currentVersion + notes + '\\n\\nبرای دانلود نسخه جدید ادامه می‌دهید؟')) {
+        window.open(String(latest.apk_url), '_blank', 'noopener,noreferrer');
       }
     } catch (_) {
-      // If GitHub manifest is temporarily unreachable, try the configured Apps Script server.
-    }
-    const result = await postToAppsScript({ action: 'app_version' }, webAppUrl);
-    if (!result.success) {
-      setUpdateMsg('دریافت خودکار انجام نشد: ' + (result.error || 'هنوز اولین بیلد موفق منتشر نشده یا ارتباط برقرار نیست.'));
-      return;
-    }
-    const data = (result as any);
-    setUpdateVersion(String(data.version || '2.16.0'));
-    setUpdateUrl(String(data.apk_url || ''));
-    setUpdateNotes(String(data.notes || ''));
-    setForceUpdate(Boolean(data.force_update));
-    setUpdateMsg(data.apk_url
-      ? 'تنظیمات نسخه از سرور دریافت شد. نسخه منتشرشده: ' + String(data.version || 'نامشخص')
-      : 'هنوز فایل وضعیت آخرین بیلد ساخته نشده و لینک APK روی سرور هم ثبت نشده است. بعد از اولین بیلد موفق، دوباره امتحان کنید.');
-  };
-
-  const handleSaveUpdateSettings = async () => {
-    setUpdateSaving(true);
-    const result = await postToAppsScript({
-      action: 'update_settings',
-      version: updateVersion.trim(),
-      apk_url: updateUrl.trim(),
-      notes: updateNotes.trim(),
-      force_update: forceUpdate,
-    }, webAppUrl);
-    setUpdateSaving(false);
-    if (result.success) {
-      setSaveFeedback('تنظیمات به‌روزرسانی روی سرور مشترک ذخیره شد و برای همه کاربران قابل مشاهده است.');
-      setUpdateMsg('نسخه ' + updateVersion.trim() + ' برای بررسی کاربران منتشر شد.');
-    } else {
-      setSaveFeedback('ذخیره انجام نشد: ' + (result.error || 'خطای نامشخص') + ' — احتمالاً نسخه جدید Google Apps Script هنوز منتشر نشده است.');
+      setUpdateMsg('ارتباط با سرور بروزرسانی برقرار نشد؛ لطفاً بعداً دوباره امتحان کنید.');
+    } finally {
+      setCheckingUpdate(false);
     }
   };
 
