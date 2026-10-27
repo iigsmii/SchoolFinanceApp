@@ -1,7 +1,7 @@
 {
-  "version": "2.16.283",
+  "version": "2.16.284",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Fix sync applying changed fields for existing records",
-  "build": 283,
-  "published_at": "2026-10-27T17:00:16Z"
+  "notes": "Speed up Google Sheets sync by reusing sheet snapshots",
+  "build": 284,
+  "published_at": "2026-10-27T17:12:49Z"
 }
