@@ -182,10 +182,18 @@ export const BankScreen: React.FC = () => {
   // 4. other: Direct transfer, cash, etc.
   const getTransactionStream = (row: BankTransaction): 'pos' | 'petty' | 'fees' | 'other' => {
     const desc = String(row.description || '').toLowerCase();
-    const isFeeKeyword = /(کارمزد|پایا|ساتنا|شاپرک|fee|commission|آبونمان|پیامک|service charge)/i.test(desc) ||
-                         (row.assigned_purpose && row.assigned_purpose.includes('کارمزد')) ||
-                         (Number(row.fee_amount || 0) > 0 && row.direction === 'withdrawal');
-    if (isFeeKeyword && row.direction !== 'pos_sale') return 'fees';
+    const assignedPurpose = String(row.assigned_purpose || '');
+    const explicitFeeAmount = Number(row.fee_amount || 0) > 0;
+    // Transfer descriptions can mention that a fee was charged without the
+    // whole transfer amount being a fee (e.g. "انتقال از کارت + کارمزد").
+    // Never classify such a row as a fee unless the spreadsheet provides a
+    // separate, positive fee_amount column.
+    const isTransferDescription = /(انتقال|کارتs*بهs*کارت|واریزs*به|برداشتs*از|پایا|ساتنا|انتقالs*ازs*کارت)/i.test(desc);
+    const isStandaloneFeeDescription = /(کارمزد|fee|commission|آبونمان|پیامک|service charge)/i.test(desc) &&
+      !isTransferDescription;
+    const isFee = explicitFeeAmount || isStandaloneFeeDescription ||
+      (assignedPurpose.includes('کارمزد') && !isTransferDescription);
+    if (isFee && row.direction !== 'pos_sale') return 'fees';
 
     const term = normalizeTerminal(row.terminal_number);
     if (row.direction === 'pos_sale' || (term && posTerminals.some((p) => normalizeTerminal(p.terminal) === term))) {
