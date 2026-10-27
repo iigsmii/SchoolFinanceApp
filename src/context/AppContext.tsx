@@ -899,7 +899,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       const existing = loadFromStorage<T[]>(name, []);
       const merged = reconcileEntity(name, remote, existing);
-      const isDiff = merged.length !== existing.length || merged.some((item, idx) => item.id !== existing[idx]?.id);
+      // Compare complete records, not only IDs. Direct edits in Google Sheets keep the same
+      // row IDs, so an ID-only check silently left stale names and other fields on the device.
+      const isDiff = merged.length !== existing.length || merged.some((item, idx) =>
+        JSON.stringify(item) !== JSON.stringify(existing[idx])
+      );
       if (isDiff) {
         setter(merged);
       }
