@@ -1784,29 +1784,38 @@ function daysBetween_(a,b){ try{return Math.round((new Date(b+'T00:00:00').getTi
 /* ---------- SYNC PAYLOAD (shared by GET and POST) ---------- */
 function syncPayload_(b){
   const u=auth_(b);
-  const managerData=isSenior_(u)?((managers_(b)||{}).data||[]):[];
-  const bankData=(bank_(b)||{}).data||[];
-  return {
-    success:true,
-    backend_version:'2.20.0',
-    students:(students_(b)||{}).data||[],
-    schools:(schools_(b)||{}).data||[],
-    staff:(staff_(b)||{}).data||[],
-    tuition:(tuition_(b)||{}).data||[],
-    expenses:(expenses_(b)||{}).data||[],
-    // ALL cheques (every status), scoped by role. The old `cheques_` was senior-only and
-    // pending-only, which made the whole sync fail for school managers.
-    cheques:(chequesAll_(b)||{}).data||[],
-    categories:(categories_(b)||{}).data||[],
-    managers:managerData,
-    bank:bankData,
-    bankTransactions:bankData,
-    transactions:(transactions_(b)||{}).data||[],
-    messages:(messages_(b)||{}).data||[],
-    staffWorkLogs:(staffWorkLogs_(b)||{}).data||[],
-    payroll:(payroll_(b)||{}).data||[],
-    bankAccounts:isSenior_(u)?((bankAccounts_(b)||{}).data||[]):[]
-  };
+  // Run self-healing structure setup before enabling the read cache; setup may write rows.
+  ensureCoreData_();
+  syncRowsCache_ = Object.create(null);
+  syncRowsCacheEnabled_ = true;
+  try {
+    const managerData=isSenior_(u)?((managers_(b)||{}).data||[]):[];
+    const bankData=(bank_(b)||{}).data||[];
+    return {
+      success:true,
+      backend_version:'2.21.0',
+      students:(students_(b)||{}).data||[],
+      schools:(schools_(b)||{}).data||[],
+      staff:(staff_(b)||{}).data||[],
+      tuition:(tuition_(b)||{}).data||[],
+      expenses:(expenses_(b)||{}).data||[],
+      // ALL cheques (every status), scoped by role. The old `cheques_` was senior-only and
+      // pending-only, which made the whole sync fail for school managers.
+      cheques:(chequesAll_(b)||{}).data||[],
+      categories:(categories_(b)||{}).data||[],
+      managers:managerData,
+      bank:bankData,
+      bankTransactions:bankData,
+      transactions:(transactions_(b)||{}).data||[],
+      messages:(messages_(b)||{}).data||[],
+      staffWorkLogs:(staffWorkLogs_(b)||{}).data||[],
+      payroll:(payroll_(b)||{}).data||[],
+      bankAccounts:isSenior_(u)?((bankAccounts_(b)||{}).data||[]):[]
+    };
+  } finally {
+    syncRowsCacheEnabled_ = false;
+    syncRowsCache_ = Object.create(null);
+  }
 }
 
 /* ---------- CHEQUES (all types, all statuses) ---------- */
@@ -2430,17 +2439,29 @@ function sheet_(name) {
   return sh;
 }
 
+// A single sync response calls several readers that need the same sheets.
+// Reuse each sheet snapshot within that read-only sync to avoid repeated Spreadsheet
+// service round-trips. This cache is enabled only while building syncPayload_.
+var syncRowsCacheEnabled_ = false;
+var syncRowsCache_ = Object.create(null);
 function rows_(name,includeVoided) {
+  const cacheKey=String(name)+':'+(includeVoided?'1':'0');
+  if(syncRowsCacheEnabled_ && Object.prototype.hasOwnProperty.call(syncRowsCache_,cacheKey)) return syncRowsCache_[cacheKey];
   const sh=sheet_(name);
-  if(!sh || sh.getLastRow()<2) return [];
-  const lastCol=sh.getLastColumn();
+  if(!sh || sh.getLastRow()<2) {
+    if(syncRowsCacheEnabled_) syncRowsCache_[cacheKey]=[];
+    return [];
+  }
+  const lastRow=sh.getLastRow(), lastCol=sh.getLastColumn();
   const headers=sh.getRange(1,1,1,lastCol).getDisplayValues()[0].map(h=>String(h||'').trim());
-  const values=sh.getRange(2,1,sh.getLastRow()-1,lastCol).getValues();
-  return values.map((v,i)=>{
+  const values=sh.getRange(2,1,lastRow-1,lastCol).getValues();
+  const result=values.map((v,i)=>{
     const obj={};
     headers.forEach((h,j)=>{ if(h) obj[h]=v[j]; });
     return {row:i+2,obj:obj};
   }).filter(x=>Object.keys(x.obj).some(k=>x.obj[k]!==''&&x.obj[k]!==undefined)&&(includeVoided||String(x.obj.voided)!=='true'));
+  if(syncRowsCacheEnabled_) syncRowsCache_[cacheKey]=result;
+  return result;
 }
 
 function findRow_(name,id) {
