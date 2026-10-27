@@ -178,8 +178,8 @@ export const ManagersScreen: React.FC = () => {
 
       {/* Add / Edit Manager Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-[#e5dde8]">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center overflow-y-auto overscroll-contain bg-black/50 backdrop-blur-xs p-3 sm:p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-[#e5dde8] max-h-[calc(100dvh-1.5rem)] sm:max-h-[92vh] overflow-y-auto overscroll-contain my-auto">
             <div className="flex items-center justify-between pb-3 border-b border-[#e5dde8] mb-4">
               <h3 className="text-base font-bold text-[#341648]">
                 {editingManager ? 'ویرایش اطلاعات مدیر' : 'افزودن مدیر جدید'}
