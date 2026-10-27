@@ -771,21 +771,46 @@ export const loadDataFromAppsScript = async (
 
   // 3. Fallback to separate endpoints if unified sync wasn't deployed yet
   if (!rawData || (!Array.isArray(rawData.students) && !Array.isArray(rawData.tuition))) {
+    // Older deployments may not support the unified sync endpoint. Bound every
+    // fallback request so the UI can never remain stuck at 65% indefinitely.
+    const fetchFallback = async (action: string): Promise<any | null> => {
+      try {
+        const response = await fetch(`${cleanUrl}?action=${action}&token=${encodeURIComponent(authToken)}&owner=${encodeURIComponent(OWNER_EMAIL)}`, {
+          signal: AbortSignal.timeout(12000),
+        });
+        if (!response.ok) return null;
+        const json = await response.json();
+        return json && (json.success !== false) && Array.isArray(json.data) ? json : null;
+      } catch (_) {
+        return null;
+      }
+    };
     const [studentsRes, schoolsRes, tuitionRes, expensesRes, chequesRes] = await Promise.all([
-      fetch(`${cleanUrl}?action=students&token=${encodeURIComponent(authToken)}`).then((r) => r.json()).catch(() => ({ data: [] })),
-      fetch(`${cleanUrl}?action=schools&token=${encodeURIComponent(authToken)}`).then((r) => r.json()).catch(() => ({ data: [] })),
-      fetch(`${cleanUrl}?action=tuition&token=${encodeURIComponent(authToken)}`).then((r) => r.json()).catch(() => ({ data: [] })),
-      fetch(`${cleanUrl}?action=expenses&token=${encodeURIComponent(authToken)}`).then((r) => r.json()).catch(() => ({ data: [] })),
-      fetch(`${cleanUrl}?action=cheques&token=${encodeURIComponent(authToken)}`).then((r) => r.json()).catch(() => ({ data: [] })),
+      fetchFallback('students'),
+      fetchFallback('schools'),
+      fetchFallback('tuition'),
+      fetchFallback('expenses'),
+      fetchFallback('cheques'),
     ]);
+
+    // Never report an empty successful sync when the students endpoint failed:
+    // that could replace valid local data with empty arrays.
+    if (!studentsRes) {
+      return {
+        success: false, students: [], schools: [], transactions: [], cheques: [],
+        categories: [], managers: [], bankTransactions: [], staff: [],
+        stats: { studentsCount: 0, transactionsCount: 0, chequesCount: 0, expensesCount: 0 },
+        error: 'پاسخ سرور همگام‌سازی دریافت نشد؛ لطفاً دوباره تلاش کنید.',
+      };
+    }
 
     rawData = {
       success: true,
       students: studentsRes.data || [],
-      schools: schoolsRes.data || [],
-      tuition: tuitionRes.data || [],
-      expenses: expensesRes.data || [],
-      cheques: chequesRes.data || [],
+      schools: schoolsRes?.data || [],
+      tuition: tuitionRes?.data || [],
+      expenses: expensesRes?.data || [],
+      cheques: chequesRes?.data || [],
     };
   }
 
