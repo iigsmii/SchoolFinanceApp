@@ -188,7 +188,7 @@ export const BankScreen: React.FC = () => {
     // whole transfer amount being a fee (e.g. "انتقال از کارت + کارمزد").
     // Never classify such a row as a fee unless the spreadsheet provides a
     // separate, positive fee_amount column.
-    const isTransferDescription = /(انتقال|کارتs*بهs*کارت|واریز\s*به|برداشت\s*از|پایا|ساتنا|انتقال\s*از\s*کارت)/i.test(desc);
+    const isTransferDescription = /(انتقال|کارت\s*به\s*کارت|واریز\s*به|برداشت\s*از|پایا|ساتنا|انتقال\s*از\s*کارت)/i.test(desc);
     const isStandaloneFeeDescription = /(کارمزد|fee|commission|آبونمان|پیامک|service charge)/i.test(desc) &&
       !isTransferDescription;
     const isFee = explicitFeeAmount || isStandaloneFeeDescription ||
