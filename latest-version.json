@@ -1,7 +1,7 @@
 {
   "version": "2.16.277",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "اصلاح کامل و ریشه‌ای تایپ فارسی، جستجوی زنده هوشمند و جلوگیری از حذف حروف کیبورد",
+  "notes": "feat: improve Persian input and search accuracy",
   "build": 277,
-  "published_at": "2026-10-27T16:05:00Z"
+  "published_at": "2026-10-27T16:07:53Z"
 }
