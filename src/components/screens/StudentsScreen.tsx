@@ -369,7 +369,7 @@ export const StudentsScreen: React.FC = () => {
               onChange={(e) => setSearchQuery(e.currentTarget.value)}
               autoCorrect="off"
               autoCapitalize="off"
-              spellCheck={false}}
+              spellCheck={false}
               placeholder="جستجوی نام، کد ملی، شماره تماس پدر یا مادر..."
               className="w-full pr-10 pl-4 py-2.5 rounded-2xl border border-[#e5dde8] text-xs bg-[#fdfcfd] focus:border-[#62205f] outline-hidden"
             />
@@ -506,7 +506,7 @@ export const StudentsScreen: React.FC = () => {
                   autoCorrect="off"
                   autoCapitalize="off"
                   spellCheck={false}
-                  onChange={(e) => setFormName(e.currentTarget.value)}}
+                  onChange={(e) => setFormName(e.currentTarget.value)}
                   placeholder="مثال: علی‌رضا کمالی"
                   className="w-full px-3.5 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs sm:text-sm text-[#302735] focus:outline-hidden focus:border-[#62205f]"
                 />
