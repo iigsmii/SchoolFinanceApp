@@ -170,58 +170,19 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
 
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-5">
         {!googleOnly && <>
-        {/* Shared Android update management */}
+        {/* Simple update checker: no manager-only fields or duplicate version panels */}
         <section className="bg-white rounded-3xl p-5 border border-[#e5dde8] shadow-xs space-y-4">
-          <div>
-            <h3 className="text-sm font-bold text-[#341648]">به‌روزرسانی برنامه برای همه کاربران</h3>
-            <p className="text-xs text-gray-500 mt-1 leading-6">مدیر ارشد نسخه و لینک مستقیم APK را یک‌بار ثبت می‌کند؛ کاربران هنگام بررسی آنلاین، نسخه جدید را دریافت می‌کنند.</p>
-          </div>
-          {isSenior ? (
-            <div className="space-y-3">
-              <label className="block text-xs font-bold text-gray-700">شماره نسخه جدید</label>
-              <input value={updateVersion} onChange={e => setUpdateVersion(e.target.value)} placeholder="مثلاً 2.17.0" dir="ltr" className="w-full px-3 py-3 rounded-xl border border-gray-300 text-sm" />
-              <label className="block text-xs font-bold text-gray-700">لینک مستقیم دانلود فایل APK</label>
-              <input value={updateUrl} onChange={e => setUpdateUrl(e.target.value)} placeholder="https://.../SchoolFinanceApp.apk" dir="ltr" className="w-full px-3 py-3 rounded-xl border border-gray-300 text-sm" />
-              <label className="block text-xs font-bold text-gray-700">توضیحات نسخه (اختیاری)</label>
-              <textarea value={updateNotes} onChange={e => setUpdateNotes(e.target.value)} placeholder="چه چیزهایی در این نسخه اصلاح شده؟" rows={2} className="w-full px-3 py-3 rounded-xl border border-gray-300 text-sm" />
-              <label className="flex items-start gap-2 text-xs text-gray-700 leading-5">
-                <input type="checkbox" checked={forceUpdate} onChange={e => setForceUpdate(e.target.checked)} className="mt-1" />
-                <span>به‌روزرسانی ضروری است (به کاربر هشدار برجسته نشان داده شود)</span>
-              </label>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <button type="button" onClick={handleSaveUpdateSettings} disabled={updateSaving} className="flex-1 px-4 py-3 rounded-xl bg-[#62205f] text-white text-xs font-bold disabled:opacity-60">{updateSaving ? 'در حال ذخیره...' : 'ذخیره و انتشار برای همه کاربران'}</button>
-                <button type="button" onClick={handleCheckUpdate} className="px-4 py-3 rounded-xl border border-gray-300 text-xs font-bold">دریافت تنظیمات سرور</button>
-              </div>
-              <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-3 leading-5">لینک باید مستقیم به فایل APK برسد و نسخه جدید باید با همان امضای دیجیتال نسخه نصب‌شده ساخته شده باشد. اندروید ممکن است اجازه نصب یا تأیید نهایی بخواهد.</p>
-            </div>
-          ) : (
-            <button type="button" onClick={handleCheckUpdate} className="px-4 py-3 rounded-xl border border-[#e5dde8] text-xs font-bold">بررسی نسخه جدید</button>
-          )}
-          {updateMsg && <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-xs leading-5">{updateMsg}</div>}
-          {saveFeedback && <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs leading-5">{saveFeedback}</div>}
-        </section>
-
-        {/* Check for updates banner matching Android */}
-        <div className="bg-white rounded-3xl p-5 border border-[#e5dde8] shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-          <div>
-            <div className="text-sm font-bold text-[#341648]">نسخه سامانه: v2.15.0 (پایگاه داده Google Sheets)</div>
-            <div className="text-xs text-gray-400 mt-0.5">یکپارچه‌سازی شده با پایگاه داده گوگل شیت و درایو اختصاصی مدرسة القرآن</div>
-          </div>
           <button
+            type="button"
             onClick={handleCheckUpdate}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#e5dde8] hover:border-[#62205f] text-xs font-bold text-[#341648] hover:bg-gray-50 transition-all shadow-xs"
+            disabled={checkingUpdate}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-[#e5dde8] hover:border-[#62205f] text-sm font-bold text-[#341648] hover:bg-gray-50 transition-all disabled:opacity-60"
           >
-            <RefreshCw className="w-4 h-4 text-gray-500" />
-            بررسی به‌روزرسانی
+            <RefreshCw className={`w-4 h-4 text-gray-500 ${checkingUpdate ? 'animate-spin' : ''}`} />
+            {checkingUpdate ? 'در حال بررسی بروزرسانی...' : 'بررسی بروزرسانی'}
           </button>
-        </div>
-
-        {updateMsg && (
-          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-800 text-xs font-semibold flex items-center gap-2">
-            <Check className="w-4 h-4 text-emerald-600" />
-            <span>{updateMsg}</span>
-          </div>
-        )}
+          {updateMsg && <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-xs leading-6">{updateMsg}</div>}
+        </section>
 
         </>}
         {googleOnly && isSenior && <>
