@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { Student, Transaction } from '../../types';
 import { InvoicePrintModal } from '../InvoicePrintModal';
+import { PersianSearchInput } from '../PersianSearchInput';
 import { formatRial, jalaliFromGregorian } from '../../utils/jalali';
 import { matchesStudentSearch } from '../../utils/studentSearch';
 import {
@@ -33,15 +34,18 @@ export const StatementScreen: React.FC = () => {
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
 
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredQuery = useDeferredValue(searchQuery);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [showExpenseLedger, setShowExpenseLedger] = useState(false);
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [selectedAttachment, setSelectedAttachment] = useState<{ url: string; title: string } | null>(null);
 
-  const availableStudents = students.filter((s) => {
-    if (!isSenior && Number(s.school_id) !== Number(currentUser?.school_id)) return false;
-    return matchesStudentSearch(s, searchQuery);
-  });
+  const availableStudents = useMemo(() => {
+    return students.filter((s) => {
+      if (!isSenior && Number(s.school_id) !== Number(currentUser?.school_id)) return false;
+      return matchesStudentSearch(s, deferredQuery);
+    });
+  }, [students, isSenior, currentUser?.school_id, deferredQuery]);
   const visibleStudents = availableStudents.slice(0, 50);
 
   const handleSelectStudent = (st: Student) => {
@@ -70,16 +74,13 @@ export const StatementScreen: React.FC = () => {
         {/* Search Student Box */}
         <div className="bg-white rounded-3xl p-5 border border-[#e5dde8] shadow-xs space-y-3">
           <div className="flex flex-col sm:flex-row gap-3">
-            <div className="relative flex-1">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="جست‌وجوی نام یا کد ملی دانش‌آموز جهت صدور فاکتور..."
-                className="w-full pl-4 pr-11 py-3 bg-[#fdfcfd] rounded-2xl border border-[#e5dde8] text-sm text-[#302735] focus:outline-hidden focus:border-[#62205f]"
-              />
-              <Search className="w-5 h-5 text-gray-400 absolute right-3.5 top-3.5" />
-            </div>
+            <PersianSearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="جست‌وجوی نام یا کد ملی دانش‌آموز جهت صدور فاکتور..."
+              className="flex-1"
+              buttonLabel="جستجو"
+            />
 
             <button
               onClick={() => {

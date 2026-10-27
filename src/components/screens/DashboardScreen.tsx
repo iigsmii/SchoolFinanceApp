@@ -4,6 +4,7 @@ import { matchesStudentSearch } from '../../utils/studentSearch';
 import { DashboardClock } from '../DashboardClock';
 import { TuitionMonthlyChart } from '../TuitionMonthlyChart';
 import { ManagerFeedbackModal } from '../ManagerFeedbackModal';
+import { PersianSearchInput } from '../PersianSearchInput';
 import {
   Users,
   CreditCard,
@@ -752,27 +753,14 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
           </div>
         </div>
 
-        {/* Search input */}
-        <div className="relative">
-          <Search className="w-4 h-4 text-gray-400 absolute right-3 top-2.5" />
-          <input
-            type="text"
-            value={debtorSearchQuery}
-            onChange={(e) => setDebtorSearchQuery(e.target.value)}
-            placeholder="جستجوی نام دانش‌آموز، کد ملی، نام مدرسه یا شماره تماس اولیا..."
-            className="w-full pr-9 pl-8 py-1.5 rounded-xl border border-gray-200 text-xs bg-[#fdfcfd] focus:border-[#62205f] outline-hidden"
-          />
-          {debtorSearchQuery && (
-            <button
-              type="button"
-              onClick={() => setDebtorSearchQuery('')}
-              className="absolute left-2.5 top-2 text-gray-400 hover:text-gray-600 transition-colors"
-              title="پاک کردن جستجو"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
+        {/* Search input with dedicated search button */}
+        <PersianSearchInput
+          value={debtorSearchQuery}
+          onChange={setDebtorSearchQuery}
+          placeholder="جستجوی نام دانش‌آموز، کد ملی، نام مدرسه یا شماره تماس اولیا..."
+          accentColor={accentColor}
+          buttonLabel="جستجو"
+        />
 
         {displayedDebtors.length === 0 ? (
           <div className="p-5 text-center text-xs text-gray-400 bg-[#fcfaff] rounded-2xl border border-[#ede5ef]">

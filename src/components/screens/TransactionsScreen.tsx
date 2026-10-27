@@ -2,6 +2,7 @@ import React, { useState, useMemo, useDeferredValue } from 'react';
 import { useApp } from '../../context/AppContext';
 import { normalizeSearchText, matchTokens } from '../../utils/studentSearch';
 import { Header } from '../Header';
+import { PersianSearchInput } from '../PersianSearchInput';
 import { formatRial, jalaliFromGregorian } from '../../utils/jalali';
 import {
   Trash2,
@@ -183,26 +184,14 @@ export const TransactionsScreen: React.FC = () => {
             })}
           </div>
 
-          {/* Search Box */}
-          <div className="relative pt-1">
-            <input
-              type="text"
+          {/* Search Box with dedicated button */}
+          <div className="pt-1">
+            <PersianSearchInput
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={setSearchQuery}
               placeholder="جست‌وجو بر اساس شرح، نام دانش‌آموز، کد پیگیری..."
-              className="w-full pl-10 pr-11 py-3 bg-[#fdfcfd] rounded-2xl border border-[#e5dde8] text-sm text-[#302735] focus:outline-hidden focus:border-[#62205f]"
+              buttonLabel="جستجو"
             />
-            <Search className="w-5 h-5 text-gray-400 absolute right-3.5 top-4.5" />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute left-3.5 top-4.5 text-gray-400 hover:text-gray-600 transition-colors"
-                title="پاک کردن جستجو"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            )}
           </div>
 
           {linkedAccounts.length > 0 && (

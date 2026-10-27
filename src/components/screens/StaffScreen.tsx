@@ -4,6 +4,7 @@ import { Header } from '../Header';
 import { StaffMember, StaffWorkLog, PayrollPayment } from '../../types';
 import { JalaliDatePicker } from '../JalaliDatePicker';
 import { ReceiptImageUploader } from '../ReceiptImageUploader';
+import { PersianSearchInput } from '../PersianSearchInput';
 import { matchTokens } from '../../utils/studentSearch';
 import { formatRial, jalaliFromGregorian, todayJalali, jalaliToIso, latinDigits } from '../../utils/jalali';
 import {
@@ -581,26 +582,12 @@ export const StaffScreen: React.FC = () => {
           <div className="space-y-4">
             {/* Search Box */}
             <div className="bg-white rounded-3xl p-4 border border-[#e5dde8] shadow-xs">
-              <div className="relative">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="جست‌وجوی نام، سمت، کدملی یا شماره همراه معلم..."
-                  className="w-full pl-9 pr-11 py-2.5 bg-[#fdfcfd] rounded-2xl border border-[#e5dde8] text-xs font-medium focus:outline-hidden focus:border-[#62205f]"
-                />
-                <Search className="w-4 h-4 text-gray-400 absolute right-3.5 top-3" />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="absolute left-3 top-2.5 text-gray-400 hover:text-gray-600 transition-colors"
-                    title="پاک کردن جستجو"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
+              <PersianSearchInput
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="جست‌وجوی نام، سمت، کدملی یا شماره همراه معلم..."
+                buttonLabel="جستجو"
+              />
             </div>
 
             {/* Staff Grid */}

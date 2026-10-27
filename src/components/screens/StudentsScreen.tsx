@@ -4,6 +4,7 @@ import { Header } from '../Header';
 import { Student } from '../../types';
 import { buildParsianCode } from '../../utils/parsian';
 import { matchesStudentSearch } from '../../utils/studentSearch';
+import { PersianSearchInput } from '../PersianSearchInput';
 import { latinDigits } from '../../utils/jalali';
 import {
   UserPlus,
@@ -364,29 +365,13 @@ export const StudentsScreen: React.FC = () => {
 
         {/* Search & Needs Fix Filter */}
         <div className="bg-white p-4 rounded-3xl border border-[#e5dde8] shadow-xs space-y-3">
-          <div className="relative">
-            <Search className="w-4 h-4 text-gray-400 absolute right-3.5 top-3.5" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              placeholder="جستجوی نام، کد ملی، شماره تماس پدر یا مادر..."
-              className="w-full pr-10 pl-9 py-2.5 rounded-2xl border border-[#e5dde8] text-xs bg-[#fdfcfd] focus:border-[#62205f] outline-hidden"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute left-3 top-3 text-gray-400 hover:text-gray-600 transition-colors"
-                title="پاک کردن جستجو"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
+          <PersianSearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="جستجوی نام، کد ملی، شماره تماس پدر یا مادر..."
+            accentColor={accentColor}
+            buttonLabel="جستجو"
+          />
 
           <div className="flex items-center justify-between text-xs pt-1">
             <div className="text-gray-500 font-semibold">

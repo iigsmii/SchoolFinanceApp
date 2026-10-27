@@ -5,6 +5,7 @@ import { Student, Transaction } from '../../types';
 import { JalaliDatePicker } from '../JalaliDatePicker';
 import { QuickAmountPad } from '../QuickAmountPad';
 import { PersianVoiceTypingButton } from '../PersianVoiceTypingButton';
+import { PersianSearchInput } from '../PersianSearchInput';
 import { jalaliToIso, jalaliFromGregorian, todayJalali, formatRial, latinDigits } from '../../utils/jalali';
 import { handleAmountInputChange } from '../../utils/persianInput';
 import {
@@ -445,26 +446,13 @@ export const TuitionScreen: React.FC = () => {
           <label className="block text-xs font-bold text-[#341648] mb-2">
             جست‌وجوی دانش‌آموز جهت ثبت یا مشاهده سوابق شهریه:
           </label>
-          <div className="relative">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="نام، پایه یا کد ملی دانش‌آموز را وارد کنید..."
-              className="w-full pl-10 pr-11 py-3 bg-[#fdfcfd] rounded-2xl border border-[#e5dde8] text-sm text-[#302735] focus:outline-hidden focus:border-[#62205f]"
-            />
-            <Search className="w-5 h-5 text-gray-400 absolute right-3.5 top-3.5" />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute left-3.5 top-3.5 text-gray-400 hover:text-gray-600 transition-colors"
-                title="پاک کردن جستجو"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            )}
-          </div>
+          <PersianSearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="نام، پایه یا کد ملی دانش‌آموز را وارد کنید..."
+            accentColor={accentColor}
+            buttonLabel="جستجو"
+          />
 
           {searchQuery.trim() && (
             <div className="mt-3 max-h-56 overflow-y-auto rounded-2xl border border-[#e5dde8] divide-y divide-gray-100 bg-white">

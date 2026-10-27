@@ -594,30 +594,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => window.removeEventListener('online', onOnline);
   }, [currentUser, spreadsheetId]);
 
-  // High-Speed Multi-Device Auto-Sync:
-  // 1. Instant sync when app or screen becomes visible / focused (user unlocks phone or switches back)
-  // 2. High-speed periodic background sync every 20 seconds while user is logged in
+  // Safe Multi-Device Auto-Sync:
+  // - Never runs while user is actively typing in an input/textarea (prevents keyboard clearing)
+  // - Does not listen to window focus which triggers when opening virtual keyboard
+  // - Syncs when tab becomes visible or periodically every 60s when idle
   useEffect(() => {
     if (!currentUser) return;
 
-    const handleVisibilityOrFocus = () => {
+    const isUserTyping = () => {
+      if (typeof document === 'undefined') return false;
+      const el = document.activeElement;
+      if (!el) return false;
+      const tag = el.tagName?.toLowerCase();
+      return tag === 'input' || tag === 'textarea' || (el as HTMLElement).isContentEditable;
+    };
+
+    const handleVisibility = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        void syncWithGoogleSheets(spreadsheetId);
+        if (!isUserTyping()) {
+          void syncWithGoogleSheets(spreadsheetId);
+        }
       }
     };
 
-    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
-    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
 
     const intervalId = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        void syncWithGoogleSheets(spreadsheetId);
+        if (!isUserTyping()) {
+          void syncWithGoogleSheets(spreadsheetId);
+        }
       }
-    }, 20000);
+    }, 60000);
 
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
-      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
       clearInterval(intervalId);
     };
   }, [currentUser, spreadsheetId]);
@@ -886,8 +897,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // An empty answer never erases data this device still holds.
         return;
       }
-      const merged = reconcileEntity(name, remote, loadFromStorage<T[]>(name, []));
-      setter(merged);
+      const existing = loadFromStorage<T[]>(name, []);
+      const merged = reconcileEntity(name, remote, existing);
+      const isDiff = merged.length !== existing.length || merged.some((item, idx) => item.id !== existing[idx]?.id);
+      if (isDiff) {
+        setter(merged);
+      }
     };
     const remoteStudents = Array.isArray(res.students) ? res.students : [];
     const localStudents = loadFromStorage<Student[]>('students', []);
@@ -949,20 +964,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const sId = extractSpreadsheetId(targetSheetId || spreadsheetId || DEFAULT_SPREADSHEET_ID);
     setSyncStatus('syncing');
     setSyncError(null);
-    setSyncProgress(12);
+    setSyncProgress(20);
     setSyncStageText('بررسی صف تغییرات محلی...');
-
-    let currentPct = 12;
-    const progressInterval = setInterval(() => {
-      setSyncProgress((prev) => {
-        if (prev < 86) {
-          const next = prev + Math.floor(Math.random() * 5) + 3;
-          currentPct = Math.min(next, 86);
-          return currentPct;
-        }
-        return prev;
-      });
-    }, 280);
 
     // 1) Send everything the user recorded while offline (in order) BEFORE reading, so a
     //    pull can never overwrite or duplicate a change that is still waiting to be sent.
@@ -970,7 +973,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       setSyncStageText('ارسال تغییرات ذخیره‌شده به سرور ابری...');
       drain = await drainOutbox(onOutboxSuccess);
-      setSyncProgress((prev) => Math.max(prev, 35));
+      setSyncProgress(45);
     } catch (e) {
       console.warn('Outbox drain notice:', e);
     }
@@ -978,11 +981,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // 2) Google Apps Script Web App (authoritative backend)
     try {
       setSyncStageText('دریافت آخرین اطلاعات از سرور Google Sheets...');
-      setSyncProgress((prev) => Math.max(prev, 55));
+      setSyncProgress(65);
       const gasResult = await loadDataFromAppsScript(DEFAULT_WEBAPP_URL);
       if (gasResult && gasResult.success) {
-        clearInterval(progressInterval);
-        setSyncProgress(92);
+        setSyncProgress(90);
         setSyncStageText('بروزرسانی داده‌ها و ثبت در حافظه...');
         applyRemoteData(gasResult);
         logActivity('همگام‌سازی ابری گوگل شیت', `دریافت ${gasResult.students.length} دانش‌آموز و ${gasResult.transactions.length} تراکنش`);
@@ -992,7 +994,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setTimeout(() => {
           setSyncProgress(0);
           setSyncStageText('');
-        }, 1400);
+        }, 1200);
         return true;
       }
     } catch (e: any) {
@@ -1002,10 +1004,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // 3) Direct Google Sheet export / fallback (read-only snapshot)
     try {
       setSyncStageText('دریافت اطلاعات از نسخه پشتیبان شیت...');
-      setSyncProgress((prev) => Math.max(prev, 72));
+      setSyncProgress(80);
       const result = await loadDataFromPublicGoogleSheet(sId);
       if (result.success) {
-        clearInterval(progressInterval);
         setSyncProgress(95);
         setSyncStageText('تکمیل همگام‌سازی پشتیبان...');
         applyRemoteData(result);
@@ -1015,14 +1016,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setTimeout(() => {
           setSyncProgress(0);
           setSyncStageText('');
-        }, 1400);
+        }, 1200);
         return true;
       }
     } catch (err: any) {
       console.warn('Public sheet sync attempt notice:', err);
     }
-
-    clearInterval(progressInterval);
     setSyncProgress(0);
     setSyncStageText('');
     setSyncStatus('error');

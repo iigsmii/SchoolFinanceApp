@@ -5,6 +5,7 @@ import { formatRial, jalaliFromGregorian } from '../../utils/jalali';
 import { matchesStudentSearch } from '../../utils/studentSearch';
 import { calculateStudentOverdue, formatSmsTemplate } from '../../utils/debt';
 import { PersianVoiceTypingButton } from '../PersianVoiceTypingButton';
+import { PersianSearchInput } from '../PersianSearchInput';
 import { Student } from '../../types';
 import {
   MessageSquare,
@@ -318,25 +319,13 @@ export const SmsScreen: React.FC = () => {
             <div className="bg-white rounded-3xl p-5 border border-[#e5dde8] shadow-xs space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
                 {/* Search */}
-                <div className="relative">
-                  <input
-                    type="text"
+                <div className="sm:col-span-2">
+                  <PersianSearchInput
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={setSearchQuery}
                     placeholder="جستجوی نام، تلفن، کدملی..."
-                    className="w-full pl-8 pr-9 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-medium focus:outline-hidden focus:border-purple-600"
+                    buttonLabel="جستجو"
                   />
-                  <Search className="w-3.5 h-3.5 text-gray-400 absolute right-3 top-3" />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchQuery('')}
-                      className="absolute left-2.5 top-2.5 text-gray-400 hover:text-gray-600 transition-colors"
-                      title="پاک کردن جستجو"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
                 </div>
 
                 {/* Recipient Target: All, Mothers Only, Fathers Only */}

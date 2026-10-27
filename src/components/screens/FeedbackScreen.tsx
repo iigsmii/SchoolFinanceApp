@@ -4,6 +4,7 @@ import { Header } from '../Header';
 import { FeedbackType, FeedbackStatus, ManagerFeedback } from '../../types';
 import { playClickSound, playSuccessSound } from '../../utils/soundEffects';
 import { matchTokens } from '../../utils/studentSearch';
+import { PersianSearchInput } from '../PersianSearchInput';
 import {
   MessageSquare,
   Bug,
@@ -119,16 +120,12 @@ export const FeedbackScreen: React.FC = () => {
 
         {/* Filters and Search Bar */}
         <div className="bg-white rounded-2xl p-3.5 border border-[#e5dde8] shadow-2xs space-y-3">
-          <div className="relative">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="جستجو بر اساس عنوان، متن پیام، نام مدیر، نام مدرسه یا کد پیگیری..."
-              className="w-full pl-4 pr-10 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs sm:text-sm text-[#302735] focus:outline-hidden focus:border-[#62205f]"
-            />
-            <Search className="w-4 h-4 text-gray-400 absolute right-3.5 top-3.5" />
-          </div>
+          <PersianSearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="جستجو بر اساس عنوان، متن پیام، نام مدیر، نام مدرسه یا کد پیگیری..."
+            buttonLabel="جستجو"
+          />
 
           <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-gray-100 text-xs">
             <span className="text-gray-500 font-semibold ml-1 flex items-center gap-1">

@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { formatRial, jalaliFromGregorian, todayGregorian, todayJalali, jalaliToIso } from '../../utils/jalali';
 import { matchesStudentSearch, matchTokens } from '../../utils/studentSearch';
+import { PersianSearchInput } from '../PersianSearchInput';
 import {
   Landmark,
   FileSpreadsheet,
@@ -1174,25 +1175,13 @@ export const BankScreen: React.FC = () => {
         <div className="bg-white rounded-3xl p-4 border border-gray-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2.5 flex-1">
             {/* Search Input */}
-            <div className="relative min-w-[200px] flex-1 max-w-sm">
-              <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="جستجو با کد پیگیری، شماره کارت، مبلغ..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-3 pr-9 py-2 text-xs rounded-xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-400"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
+            <PersianSearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="جستجو با کد پیگیری، شماره کارت، مبلغ..."
+              className="min-w-[220px] flex-1 max-w-md"
+              buttonLabel="جستجو"
+            />
 
             {/* School Selector (for Senior) */}
             {isSenior && (
