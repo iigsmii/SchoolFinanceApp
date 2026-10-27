@@ -1,7 +1,7 @@
 {
-  "version": "2.16.285",
+  "version": "2.16.287",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Fix bank fee detection for card transfers",
-  "build": 285,
-  "published_at": "2026-10-27T17:33:58Z"
+  "notes": "Fix card transfer fee detection pattern",
+  "build": 287,
+  "published_at": "2026-10-27T17:36:27Z"
 }
