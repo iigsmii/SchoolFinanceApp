@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { formatRial, jalaliFromGregorian } from '../../utils/jalali';
@@ -24,6 +24,7 @@ import {
   Trash2,
   Eye,
   Check,
+  X,
   ShieldAlert,
   Smartphone,
   Copy,
@@ -53,6 +54,7 @@ export const SmsScreen: React.FC = () => {
     isSenior ? 0 : currentUser?.school_id || 0
   );
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredQuery = useDeferredValue(searchQuery);
   const [filterType, setFilterType] = useState<'all' | 'high_debt' | 'overdue'>('all');
   const [targetRecipient, setTargetRecipient] = useState<'all' | 'mothers' | 'fathers'>('all');
   const [targetGrade, setTargetGrade] = useState<string>('all');
@@ -81,25 +83,27 @@ export const SmsScreen: React.FC = () => {
   const [testPhone, setTestPhone] = useState('09130000000');
   const [testStatus, setTestStatus] = useState<string | null>(null);
 
-  // Filter students
-  const filteredStudents = students.filter((s) => {
-    if (s.active === false) return false;
-    if (selectedSchoolId !== 0 && s.school_id !== selectedSchoolId) return false;
-    if (targetGrade !== 'all' && s.grade !== targetGrade) return false;
-    if (targetRecipient === 'mothers' && !s.mother_phone) return false;
-    if (targetRecipient === 'fathers' && !s.father_phone) return false;
+  // Filter students with deferred query
+  const filteredStudents = useMemo(() => {
+    return students.filter((s) => {
+      if (s.active === false) return false;
+      if (selectedSchoolId !== 0 && s.school_id !== selectedSchoolId) return false;
+      if (targetGrade !== 'all' && s.grade !== targetGrade) return false;
+      if (targetRecipient === 'mothers' && !s.mother_phone) return false;
+      if (targetRecipient === 'fathers' && !s.father_phone) return false;
 
-    if (!matchesStudentSearch(s, searchQuery)) return false;
-    const { debt } = getStudentBalance(s.id);
-    if (debt <= 0) return false;
+      if (!matchesStudentSearch(s, deferredQuery)) return false;
+      const { debt } = getStudentBalance(s.id);
+      if (debt <= 0) return false;
 
-    if (filterType === 'high_debt' && debt < 50000000) return false;
-    if (filterType === 'overdue') {
-      const overdue = calculateStudentOverdue(s, transactions);
-      if (overdue.overdueDays < 15) return false;
-    }
-    return true;
-  });
+      if (filterType === 'high_debt' && debt < 50000000) return false;
+      if (filterType === 'overdue') {
+        const overdue = calculateStudentOverdue(s, transactions);
+        if (overdue.overdueDays < 15) return false;
+      }
+      return true;
+    });
+  }, [students, selectedSchoolId, targetGrade, targetRecipient, deferredQuery, getStudentBalance, filterType, transactions]);
 
   // Multi-select for Batch SMS
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
@@ -320,9 +324,19 @@ export const SmsScreen: React.FC = () => {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="جستجوی نام، تلفن، کدملی..."
-                    className="w-full pl-3 pr-9 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-medium focus:outline-hidden focus:border-purple-600"
+                    className="w-full pl-8 pr-9 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-medium focus:outline-hidden focus:border-purple-600"
                   />
                   <Search className="w-3.5 h-3.5 text-gray-400 absolute right-3 top-3" />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute left-2.5 top-2.5 text-gray-400 hover:text-gray-600 transition-colors"
+                      title="پاک کردن جستجو"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
 
                 {/* Recipient Target: All, Mothers Only, Fathers Only */}

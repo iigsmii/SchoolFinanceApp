@@ -29,7 +29,7 @@ export const toPersianDigits = (str: string | number = ''): string => {
 export const normalizePersianCleanText = (str: string = ''): string => {
   if (!str) return '';
   return String(str)
-    .replace(/[يى]/g, 'ی')
+    .replace(/[يىئ]/g, 'ی')
     .replace(/ك/g, 'ک')
     .replace(/[ةۀ]/g, 'ه')
     .replace(/ـ+/g, '') // strip tatweel
@@ -57,12 +57,59 @@ export const parseAmountValue = (val: string | number): number => {
 };
 
 /**
- * Formats an amount with standard comma separation while typing.
+ * Formats an amount with standard comma separation.
  */
 export const formatAmountString = (val: string | number): string => {
   const num = parseAmountValue(val);
   if (num === 0 && (!val || val === '0')) return val === '0' ? '0' : '';
   return num.toLocaleString('en-US');
+};
+
+/**
+ * Safe amount input change handler that preserves cursor position even when commas are added/removed.
+ * Prevents mobile keyboards from jumping to the end, dropping characters, or truncating text.
+ */
+export const handleAmountInputChange = (
+  e: React.ChangeEvent<HTMLInputElement>,
+  onChange: (formattedVal: string) => void
+) => {
+  const input = e.target;
+  const raw = input.value;
+  const latin = toLatinDigits(raw);
+  const digitsOnly = latin.replace(/\D/g, '');
+
+  if (!digitsOnly) {
+    onChange('');
+    return;
+  }
+
+  const oldCursor = input.selectionStart || 0;
+  const digitsBeforeCursor = latin.slice(0, oldCursor).replace(/\D/g, '').length;
+
+  const formatted = Number(digitsOnly).toLocaleString('en-US');
+  onChange(formatted);
+
+  // Restore cursor based on digit position rather than absolute char index
+  if (typeof requestAnimationFrame !== 'undefined') {
+    requestAnimationFrame(() => {
+      let count = 0;
+      let newPos = formatted.length;
+      for (let i = 0; i < formatted.length; i++) {
+        if (/\d/.test(formatted[i])) {
+          count++;
+          if (count === digitsBeforeCursor) {
+            newPos = i + 1;
+            break;
+          }
+        }
+      }
+      try {
+        input.setSelectionRange(newPos, newPos);
+      } catch {
+        // ignore in environments that do not support selection
+      }
+    });
+  }
 };
 
 /**

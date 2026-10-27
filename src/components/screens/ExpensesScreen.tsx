@@ -6,6 +6,7 @@ import { JalaliDatePicker } from '../JalaliDatePicker';
 import { QuickAmountPad } from '../QuickAmountPad';
 import { PersianVoiceTypingButton } from '../PersianVoiceTypingButton';
 import { jalaliToIso, jalaliFromGregorian, todayJalali, formatRial, latinDigits } from '../../utils/jalali';
+import { handleAmountInputChange } from '../../utils/persianInput';
 import { getSchoolMoeen } from '../../utils/parsian';
 import {
   Receipt,
@@ -850,11 +851,7 @@ export const ExpensesScreen: React.FC = () => {
                   pattern="[0-9]*"
                   autoComplete="off"
                   value={formAmount}
-                  onChange={(e) => {
-                    const latin = latinDigits(e.target.value);
-                    const raw = latin.replace(/\D/g, '');
-                    setFormAmount(raw ? Number(raw).toLocaleString('en-US') : '');
-                  }}
+                  onChange={(e) => handleAmountInputChange(e, setFormAmount)}
                   placeholder="مثال: ۱۴,۵۰۰,۰۰۰"
                   className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left focus:outline-hidden"
                   dir="ltr"

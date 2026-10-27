@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { FeedbackType, FeedbackStatus, ManagerFeedback } from '../../types';
 import { playClickSound, playSuccessSound } from '../../utils/soundEffects';
+import { matchTokens } from '../../utils/studentSearch';
 import {
   MessageSquare,
   Bug,
@@ -29,6 +30,7 @@ export const FeedbackScreen: React.FC = () => {
   const { feedbacks, updateFeedbackStatus, deleteFeedback, accentColor, currentUser } = useApp();
 
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredQuery = useDeferredValue(searchQuery);
   const [selectedType, setSelectedType] = useState<FeedbackType | 'all'>('all');
   const [selectedStatus, setSelectedStatus] = useState<FeedbackStatus | 'all'>('all');
 
@@ -40,18 +42,21 @@ export const FeedbackScreen: React.FC = () => {
     return feedbacks.filter((item) => {
       if (selectedType !== 'all' && item.type !== selectedType) return false;
       if (selectedStatus !== 'all' && item.status !== selectedStatus) return false;
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchesTitle = item.title.toLowerCase().includes(q);
-        const matchesDesc = item.description.toLowerCase().includes(q);
-        const matchesSender = item.user_name.toLowerCase().includes(q);
-        const matchesSchool = item.school_name.toLowerCase().includes(q);
-        const matchesCode = item.tracking_code.toLowerCase().includes(q);
-        return matchesTitle || matchesDesc || matchesSender || matchesSchool || matchesCode;
+      if (deferredQuery.trim()) {
+        const combined = [
+          item.title,
+          item.description,
+          item.user_name,
+          item.school_name,
+          item.tracking_code,
+        ]
+          .filter(Boolean)
+          .join(' ');
+        return matchTokens(combined, deferredQuery);
       }
       return true;
     });
-  }, [feedbacks, selectedType, selectedStatus, searchQuery]);
+  }, [feedbacks, selectedType, selectedStatus, deferredQuery]);
 
   const pendingCount = useMemo(() => {
     return feedbacks.filter((f) => f.status === 'pending').length;

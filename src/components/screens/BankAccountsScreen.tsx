@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { BankAccount, Transaction, BankTransaction } from '../../types';
 import { formatRial, jalaliFromGregorian, todayJalali, latinDigits } from '../../utils/jalali';
+import { matchTokens } from '../../utils/studentSearch';
 import {
   Landmark,
   PlusCircle,
@@ -71,6 +72,7 @@ export const BankAccountsScreen: React.FC = () => {
 
   // Filter & Search states
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredQuery = useDeferredValue(searchQuery);
   const [filterDirection, setFilterDirection] = useState<'all' | 'deposit' | 'withdrawal'>('all');
   const [activeTab, setActiveTab] = useState<'ledger' | 'accounts_list'>('ledger');
 
@@ -203,17 +205,21 @@ export const BankAccountsScreen: React.FC = () => {
       if (filterDirection === 'deposit' && item.direction !== 'deposit') return false;
       if (filterDirection === 'withdrawal' && item.direction !== 'withdrawal') return false;
 
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const mTitle = item.title.toLowerCase().includes(q);
-        const mParty = item.party_name.toLowerCase().includes(q);
-        const mTrack = item.tracking_code.toLowerCase().includes(q);
-        const mTerminal = (item.pos_terminal || '').includes(q);
-        return mTitle || mParty || mTrack || mTerminal;
+      if (deferredQuery.trim()) {
+        const combined = [
+          item.title,
+          item.party_name,
+          item.tracking_code,
+          item.pos_terminal,
+          item.amount,
+        ]
+          .filter(Boolean)
+          .join(' ');
+        if (!matchTokens(combined, deferredQuery)) return false;
       }
       return true;
     });
-  }, [reconciledLedger, filterDirection, searchQuery]);
+  }, [reconciledLedger, filterDirection, deferredQuery]);
 
   // Totals for Active Account
   const ledgerMetrics = useMemo(() => {

@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { StaffMember, StaffWorkLog, PayrollPayment } from '../../types';
 import { JalaliDatePicker } from '../JalaliDatePicker';
 import { ReceiptImageUploader } from '../ReceiptImageUploader';
+import { matchTokens } from '../../utils/studentSearch';
 import { formatRial, jalaliFromGregorian, todayJalali, jalaliToIso, latinDigits } from '../../utils/jalali';
 import {
   GraduationCap,
@@ -90,6 +91,7 @@ export const StaffScreen: React.FC = () => {
     isSenior ? 0 : currentUser?.school_id || 0
   );
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredQuery = useDeferredValue(searchQuery);
   const [selectedMonth, setSelectedMonth] = useState(MONTH_NAMES[0]);
 
   // Staff Modal
@@ -146,20 +148,20 @@ export const StaffScreen: React.FC = () => {
     payment?: PayrollPayment;
   } | null>(null);
 
-  // Filter staff list
-  const filteredStaff = staffMembers.filter((s) => {
-    if (!s.active) return false;
-    if (selectedSchoolId !== 0 && s.school_id !== selectedSchoolId) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      const matchName = s.name.toLowerCase().includes(q);
-      const matchRole = s.role_title.toLowerCase().includes(q);
-      const matchPhone = s.phone.includes(q);
-      const matchNid = s.national_id.includes(q);
-      if (!matchName && !matchRole && !matchPhone && !matchNid) return false;
-    }
-    return true;
-  });
+  // Filter staff list with deferred query and tokenized Persian search
+  const filteredStaff = useMemo(() => {
+    return staffMembers.filter((s) => {
+      if (!s.active) return false;
+      if (selectedSchoolId !== 0 && s.school_id !== selectedSchoolId) return false;
+      if (deferredQuery.trim()) {
+        const combined = [s.name, s.role_title, s.phone, s.national_id, s.school_name]
+          .filter(Boolean)
+          .join(' ');
+        if (!matchTokens(combined, deferredQuery)) return false;
+      }
+      return true;
+    });
+  }, [staffMembers, selectedSchoolId, deferredQuery]);
 
   // Filter work logs
   const filteredWorkLogs = staffWorkLogs.filter((l) => {
@@ -585,9 +587,19 @@ export const StaffScreen: React.FC = () => {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="جست‌وجوی نام، سمت، کدملی یا شماره همراه معلم..."
-                  className="w-full pl-4 pr-11 py-2.5 bg-[#fdfcfd] rounded-2xl border border-[#e5dde8] text-xs font-medium focus:outline-hidden focus:border-[#62205f]"
+                  className="w-full pl-9 pr-11 py-2.5 bg-[#fdfcfd] rounded-2xl border border-[#e5dde8] text-xs font-medium focus:outline-hidden focus:border-[#62205f]"
                 />
                 <Search className="w-4 h-4 text-gray-400 absolute right-3.5 top-3" />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute left-3 top-2.5 text-gray-400 hover:text-gray-600 transition-colors"
+                    title="پاک کردن جستجو"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </div>
 

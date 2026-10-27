@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { Student, Transaction } from '../../types';
@@ -6,6 +6,7 @@ import { JalaliDatePicker } from '../JalaliDatePicker';
 import { QuickAmountPad } from '../QuickAmountPad';
 import { PersianVoiceTypingButton } from '../PersianVoiceTypingButton';
 import { jalaliToIso, jalaliFromGregorian, todayJalali, formatRial, latinDigits } from '../../utils/jalali';
+import { handleAmountInputChange } from '../../utils/persianInput';
 import {
   Search,
   PlusCircle,
@@ -93,6 +94,7 @@ export const TuitionScreen: React.FC = () => {
 
   // Selected student state
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredQuery = useDeferredValue(searchQuery);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
 
   // Modals state
@@ -137,12 +139,14 @@ export const TuitionScreen: React.FC = () => {
   const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<number>>(new Set());
   const [bulkFilterQuery, setBulkFilterQuery] = useState('');
 
-  // Handle student search results
-  const availableStudents = students.filter((s) => {
-    if (s.active === false) return false;
-    if (!isSenior && Number(s.school_id) !== Number(currentUser?.school_id)) return false;
-    return matchesStudentSearch(s, searchQuery);
-  });
+  // Handle student search results with deferred query to keep Persian typing instant
+  const availableStudents = useMemo(() => {
+    return students.filter((s) => {
+      if (s.active === false) return false;
+      if (!isSenior && Number(s.school_id) !== Number(currentUser?.school_id)) return false;
+      return matchesStudentSearch(s, deferredQuery);
+    });
+  }, [students, isSenior, currentUser?.school_id, deferredQuery]);
   const visibleStudents = availableStudents.slice(0, 50);
 
   const handleSelectStudent = (st: Student) => {
@@ -447,9 +451,19 @@ export const TuitionScreen: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="نام، پایه یا کد ملی دانش‌آموز را وارد کنید..."
-              className="w-full pl-4 pr-11 py-3 bg-[#fdfcfd] rounded-2xl border border-[#e5dde8] text-sm text-[#302735] focus:outline-hidden focus:border-[#62205f]"
+              className="w-full pl-10 pr-11 py-3 bg-[#fdfcfd] rounded-2xl border border-[#e5dde8] text-sm text-[#302735] focus:outline-hidden focus:border-[#62205f]"
             />
             <Search className="w-5 h-5 text-gray-400 absolute right-3.5 top-3.5" />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute left-3.5 top-3.5 text-gray-400 hover:text-gray-600 transition-colors"
+                title="پاک کردن جستجو"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
           </div>
 
           {searchQuery.trim() && (
@@ -785,10 +799,7 @@ export const TuitionScreen: React.FC = () => {
                   pattern="[0-9]*"
                   autoComplete="off"
                   value={formAmount}
-                  onChange={(e) => {
-                    const raw = latinDigits(e.target.value).replace(/\D/g, '');
-                    setFormAmount(raw ? Number(raw).toLocaleString('en-US') : '');
-                  }}
+                  onChange={(e) => handleAmountInputChange(e, setFormAmount)}
                   placeholder="مثال: ۱۸۰,۰۰۰,۰۰۰"
                   className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm text-[#302735] font-mono text-left focus:outline-hidden focus:border-[#62205f]"
                   dir="ltr"
@@ -940,10 +951,7 @@ export const TuitionScreen: React.FC = () => {
                   pattern="[0-9]*"
                   autoComplete="off"
                   value={formAmount}
-                  onChange={(e) => {
-                    const raw = latinDigits(e.target.value).replace(/\D/g, '');
-                    setFormAmount(raw ? Number(raw).toLocaleString('en-US') : '');
-                  }}
+                  onChange={(e) => handleAmountInputChange(e, setFormAmount)}
                   placeholder="مثال: ۵۰,۰۰۰,۰۰۰"
                   className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm text-[#302735] font-mono text-left focus:outline-hidden focus:border-[#62205f]"
                   dir="ltr"
@@ -1225,10 +1233,7 @@ export const TuitionScreen: React.FC = () => {
                   pattern="[0-9]*"
                   autoComplete="off"
                   value={formAmount}
-                  onChange={(e) => {
-                    const raw = latinDigits(e.target.value).replace(/\D/g, '');
-                    setFormAmount(raw ? Number(raw).toLocaleString('en-US') : '');
-                  }}
+                  onChange={(e) => handleAmountInputChange(e, setFormAmount)}
                   placeholder="مثال: ۳۰,۰۰۰,۰۰۰"
                   className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm text-[#302735] font-mono text-left focus:outline-hidden focus:border-[#62205f]"
                   dir="ltr"

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { Student } from '../../types';
@@ -41,6 +41,7 @@ export const StudentsScreen: React.FC = () => {
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
 
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredQuery = useDeferredValue(searchQuery);
   const [filterNeedsFix, setFilterNeedsFix] = useState(false);
   const [selectedSchoolFilter, setSelectedSchoolFilter] = useState<number>(
     isSenior ? 0 : currentUser?.school_id || 1
@@ -284,14 +285,16 @@ export const StudentsScreen: React.FC = () => {
     e.target.value = '';
   };
 
-  // Filter list
-  const filteredStudents = students.filter((s) => {
-    if (s.active === false) return false;
-    if (selectedSchoolFilter !== 0 && Number(s.school_id) !== Number(selectedSchoolFilter)) return false;
-    if (filterNeedsFix && !s.needs_fix) return false;
-    if (!matchesStudentSearch(s, searchQuery)) return false;
-    return true;
-  });
+  // Filter list with deferred query to keep Persian virtual keyboard responsive
+  const filteredStudents = useMemo(() => {
+    return students.filter((s) => {
+      if (s.active === false) return false;
+      if (selectedSchoolFilter !== 0 && Number(s.school_id) !== Number(selectedSchoolFilter)) return false;
+      if (filterNeedsFix && !s.needs_fix) return false;
+      if (!matchesStudentSearch(s, deferredQuery)) return false;
+      return true;
+    });
+  }, [students, selectedSchoolFilter, filterNeedsFix, deferredQuery]);
 
   const needsFixCount = students.filter((s) => s.needs_fix).length;
 
@@ -366,13 +369,23 @@ export const StudentsScreen: React.FC = () => {
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.currentTarget.value)}
+              onChange={(e) => setSearchQuery(e.target.value)}
               autoCorrect="off"
               autoCapitalize="off"
               spellCheck={false}
               placeholder="جستجوی نام، کد ملی، شماره تماس پدر یا مادر..."
-              className="w-full pr-10 pl-4 py-2.5 rounded-2xl border border-[#e5dde8] text-xs bg-[#fdfcfd] focus:border-[#62205f] outline-hidden"
+              className="w-full pr-10 pl-9 py-2.5 rounded-2xl border border-[#e5dde8] text-xs bg-[#fdfcfd] focus:border-[#62205f] outline-hidden"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute left-3 top-3 text-gray-400 hover:text-gray-600 transition-colors"
+                title="پاک کردن جستجو"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
           <div className="flex items-center justify-between text-xs pt-1">

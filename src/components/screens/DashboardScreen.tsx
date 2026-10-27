@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import { useApp } from '../../context/AppContext';
 import { matchesStudentSearch } from '../../utils/studentSearch';
 import { DashboardClock } from '../DashboardClock';
@@ -112,6 +112,7 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
 
   // Debtors sorting & filtering state
   const [debtorSearchQuery, setDebtorSearchQuery] = useState('');
+  const deferredDebtorSearchQuery = useDeferredValue(debtorSearchQuery);
   const [debtorSortBy, setDebtorSortBy] = useState<'debt_desc' | 'debt_asc' | 'name' | 'grade' | 'school'>('debt_desc');
   const [showAllDebtors, setShowAllDebtors] = useState(false);
 
@@ -219,9 +220,9 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
       })
       .filter((item) => item.debt > 0);
 
-    // Apply search
+    // Apply search with deferred query
     const filtered = list.filter((item) =>
-      matchesStudentSearch(item.student, debtorSearchQuery)
+      matchesStudentSearch(item.student, deferredDebtorSearchQuery)
     );
 
     // Apply sort
@@ -243,7 +244,7 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
     });
 
     return filtered;
-  }, [baseStudents, getStudentBalance, debtorSearchQuery, debtorSortBy]);
+  }, [baseStudents, getStudentBalance, deferredDebtorSearchQuery, debtorSortBy]);
 
   const displayedDebtors = showAllDebtors ? debtorsList : debtorsList.slice(0, 5);
 
@@ -759,8 +760,18 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
             value={debtorSearchQuery}
             onChange={(e) => setDebtorSearchQuery(e.target.value)}
             placeholder="جستجوی نام دانش‌آموز، کد ملی، نام مدرسه یا شماره تماس اولیا..."
-            className="w-full pr-9 pl-3 py-1.5 rounded-xl border border-gray-200 text-xs bg-[#fdfcfd] focus:border-[#62205f] outline-hidden"
+            className="w-full pr-9 pl-8 py-1.5 rounded-xl border border-gray-200 text-xs bg-[#fdfcfd] focus:border-[#62205f] outline-hidden"
           />
+          {debtorSearchQuery && (
+            <button
+              type="button"
+              onClick={() => setDebtorSearchQuery('')}
+              className="absolute left-2.5 top-2 text-gray-400 hover:text-gray-600 transition-colors"
+              title="پاک کردن جستجو"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
         {displayedDebtors.length === 0 ? (

@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
+import { matchTokens } from '../../utils/studentSearch';
 import {
   generateParsianJournalEntries,
   exportParsianStandardExcel,
@@ -83,6 +84,7 @@ export const ParsianExportScreen: React.FC = () => {
   );
   const [filterSource, setFilterSource] = useState<'all' | 'tuition_debt' | 'tuition_payment' | 'expense' | 'discount'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredQuery = useDeferredValue(searchQuery);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [expandedDoc, setExpandedDoc] = useState<number | null>(null);
@@ -123,22 +125,16 @@ export const ParsianExportScreen: React.FC = () => {
         return false;
       }
 
-      // Search query (matches description, tafsili, student, tracking)
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const matchesSummary = entry.description.toLowerCase().includes(q);
-        const matchesRows = entry.rows.some((r) =>
-          r.description.toLowerCase().includes(q) ||
-          r.tafsili_name.toLowerCase().includes(q) ||
-          r.tafsili_code.includes(q) ||
-          (r.tracking_code && r.tracking_code.toLowerCase().includes(q))
-        );
-        if (!matchesSummary && !matchesRows) return false;
+      // Search query (supports Persian/English digits, tafsili, student, tracking)
+      if (deferredQuery.trim()) {
+        const rowsText = entry.rows.map((r) => `${r.description} ${r.tafsili_name} ${r.tafsili_code} ${r.tracking_code || ''}`).join(' ');
+        const combined = `${entry.description} ${rowsText}`;
+        if (!matchTokens(combined, deferredQuery)) return false;
       }
 
       return true;
     });
-  }, [allEntries, selectedSchoolId, filterSource, startDate, endDate, searchQuery]);
+  }, [allEntries, selectedSchoolId, filterSource, startDate, endDate, deferredQuery]);
 
   // Totals & Balancing metrics
   const totals = useMemo(() => {

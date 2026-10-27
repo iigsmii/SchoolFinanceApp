@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import { useApp } from '../../context/AppContext';
-import { normalizeSearchText } from '../../utils/studentSearch';
+import { normalizeSearchText, matchTokens } from '../../utils/studentSearch';
 import { Header } from '../Header';
 import { formatRial, jalaliFromGregorian } from '../../utils/jalali';
 import {
@@ -37,6 +37,7 @@ export const TransactionsScreen: React.FC = () => {
   const [filterKind, setFilterKind] = useState<'all' | 'debt' | 'payment' | 'expense'>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredQuery = useDeferredValue(searchQuery);
   const [filterAccount, setFilterAccount] = useState('all');
   const [selectedAttachment, setSelectedAttachment] = useState<{ url: string; title: string } | null>(null);
 
@@ -80,17 +81,24 @@ export const TransactionsScreen: React.FC = () => {
       const st = t.review_status || 'approved';
       if (filterStatus !== 'all' && st !== filterStatus) return false;
 
-      if (searchQuery.trim()) {
-        const q = normalizeSearchText(searchQuery);
-        const matchDesc = normalizeSearchText(t.description || t.comment || '').includes(q);
-        const matchStudent = normalizeSearchText(t.student_name || '').includes(q);
-        const matchCategory = normalizeSearchText(t.expense_category_name || '').includes(q);
-        const matchTrack = (t.tracking_code || '').toLowerCase().includes(q);
-        return matchDesc || matchStudent || matchCategory || matchTrack;
+      if (deferredQuery.trim()) {
+        const combined = [
+          t.description,
+          t.comment,
+          t.student_name,
+          t.expense_category_name,
+          t.tracking_code,
+          t.linked_account_name,
+          t.amount,
+        ]
+          .filter(Boolean)
+          .join(' ');
+
+        return matchTokens(combined, deferredQuery);
       }
       return true;
     });
-  }, [scopedTxs, filterAccount, filterKind, filterStatus, searchQuery]);
+  }, [scopedTxs, filterAccount, filterKind, filterStatus, deferredQuery]);
 
   const handleApprove = async (txId: number) => {
     setIsSubmittingReview(true);
@@ -182,9 +190,19 @@ export const TransactionsScreen: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="جست‌وجو بر اساس شرح، نام دانش‌آموز، کد پیگیری..."
-              className="w-full pl-4 pr-11 py-3 bg-[#fdfcfd] rounded-2xl border border-[#e5dde8] text-sm text-[#302735] focus:outline-hidden focus:border-[#62205f]"
+              className="w-full pl-10 pr-11 py-3 bg-[#fdfcfd] rounded-2xl border border-[#e5dde8] text-sm text-[#302735] focus:outline-hidden focus:border-[#62205f]"
             />
             <Search className="w-5 h-5 text-gray-400 absolute right-3.5 top-4.5" />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute left-3.5 top-4.5 text-gray-400 hover:text-gray-600 transition-colors"
+                title="پاک کردن جستجو"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
           </div>
 
           {linkedAccounts.length > 0 && (

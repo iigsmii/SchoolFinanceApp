@@ -1,8 +1,8 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useDeferredValue } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { formatRial, jalaliFromGregorian, todayGregorian, todayJalali, jalaliToIso } from '../../utils/jalali';
-import { matchesStudentSearch } from '../../utils/studentSearch';
+import { matchesStudentSearch, matchTokens } from '../../utils/studentSearch';
 import {
   Landmark,
   FileSpreadsheet,
@@ -110,6 +110,7 @@ export const BankScreen: React.FC = () => {
     isSenior ? 0 : currentUser?.school_id || 0
   );
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [streamFilter, setStreamFilter] = useState<'all' | 'pos' | 'petty' | 'fees' | 'other'>('all');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'yesterday' | 'week' | 'month'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'unmatched' | 'matched'>('all');
@@ -282,31 +283,27 @@ export const BankScreen: React.FC = () => {
         }
       }
 
-      // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const tracking = String(b.tracking_code || '').toLowerCase();
-        const ref = String(b.reference_number || '').toLowerCase();
-        const desc = String(b.description || '').toLowerCase();
-        const term = String(b.terminal_number || '');
-        const card = String(b.card_number || b.source_card_number || '');
-        const stName = String(b.assigned_student_name || '').toLowerCase();
-        const amountStr = String(b.amount || '');
+      // Search query (supports Persian/English digits, names, tracking, cards, terminals)
+      if (deferredSearchQuery.trim()) {
+        const combined = [
+          b.tracking_code,
+          b.reference_number,
+          b.description,
+          b.terminal_number,
+          b.card_number,
+          b.source_card_number,
+          b.assigned_student_name,
+          b.amount,
+        ]
+          .filter(Boolean)
+          .join(' ');
 
-        const hit =
-          tracking.includes(q) ||
-          ref.includes(q) ||
-          desc.includes(q) ||
-          term.includes(q) ||
-          card.includes(q) ||
-          stName.includes(q) ||
-          amountStr.includes(q);
-        if (!hit) return false;
+        if (!matchTokens(combined, deferredSearchQuery)) return false;
       }
 
       return true;
     });
-  }, [enrichedBankRows, isSenior, currentUser, selectedSchoolId, streamFilter, statusFilter, dateFilter, searchQuery]);
+  }, [enrichedBankRows, isSenior, currentUser, selectedSchoolId, streamFilter, statusFilter, dateFilter, deferredSearchQuery]);
 
   // Subsets
   const unmatchedRows = useMemo(() => visibleBankRows.filter((r) => !r.reconciled), [visibleBankRows]);

@@ -1,7 +1,7 @@
 {
-  "version": "2.16.276",
+  "version": "2.16.277",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Fix JSX syntax errors in student inputs",
-  "build": 276,
-  "published_at": "2026-10-27T15:26:23Z"
+  "notes": "اصلاح کامل و ریشه‌ای تایپ فارسی، جستجوی زنده هوشمند و جلوگیری از حذف حروف کیبورد",
+  "build": 277,
+  "published_at": "2026-10-27T16:05:00Z"
 }
