@@ -1960,7 +1960,7 @@ export const BankScreen: React.FC = () => {
                   <Tag className="w-5 h-5 text-purple-700" />
                   <h3 className="font-black text-gray-900 text-base">پایانه‌های کارتخوان پوز مدارس ({effectivePosTerminals.length})</h3>
                 </div>
-                <button type="button" onClick={() => { const v = window.prompt('شماره پایانه پوز جدید:'); if (v === null) return; const terminal = normalizeTerminal(v); if (!terminal) { setBannerNotice({text:'شماره پایانه معتبر نیست.',type:'error'}); return; } if (posTerminals.some((x) => normalizeTerminal(x.terminal) === terminal)) { setBannerNotice({text:'این شماره پایانه قبلاً ثبت شده است.',type:'error'}); return; } saveTerminalsAndCards([...posTerminals, {terminal, schoolId:0, schoolName:''}], pettyCashCards); }} className="px-3 py-2 rounded-xl bg-purple-700 text-white text-xs font-bold">+ افزودن پایانه</button>
+                <button type="button" onClick={() => { const v = window.prompt('شماره پایانه پوز جدید:'); if (v === null) return; const terminal = normalizeTerminal(v); if (!terminal) { setBannerNotice({text:'شماره پایانه معتبر نیست.',type:'error'}); return; } if (effectivePosTerminals.some((x) => normalizeTerminal(x.terminal) === terminal)) { setBannerNotice({text:'این شماره پایانه قبلاً ثبت شده است.',type:'error'}); return; } saveTerminalsAndCards([...posTerminals, {terminal, schoolId:0, schoolName:''}], pettyCashCards); }} className="px-3 py-2 rounded-xl bg-purple-700 text-white text-xs font-bold">+ افزودن پایانه</button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -1969,7 +1969,7 @@ export const BankScreen: React.FC = () => {
                     <div className="flex items-center justify-between"><span className="font-mono font-black text-purple-900 text-sm">{pos.terminal}</span><span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 text-[10px] font-bold">پوز شاپرک</span></div>
                     <div className="font-bold text-xs text-gray-800">{pos.schoolName || 'بدون انتساب به مدرسه'}</div>
                     <div className="flex gap-2">
-                      <button type="button" onClick={() => { const v = window.prompt('شماره پایانه:', pos.terminal); if (v === null) return; const terminal = normalizeTerminal(v); if (!terminal) { setBannerNotice({text:'شماره پایانه معتبر نیست.',type:'error'}); return; } if (posTerminals.some((x) => normalizeTerminal(x.terminal) === terminal && x.terminal !== pos.terminal)) { setBannerNotice({text:'شماره پایانه تکراری است.',type:'error'}); return; } saveTerminalsAndCards(posTerminals.map((x) => x.terminal === pos.terminal ? {...x, terminal} : x), pettyCashCards); }} className="flex-1 px-3 py-2 rounded-lg bg-purple-100 text-purple-800 text-xs font-bold">ویرایش شماره</button>
+                      <button type="button" onClick={() => { const v = window.prompt('شماره پایانه:', pos.terminal); if (v === null) return; const terminal = normalizeTerminal(v); if (!terminal) { setBannerNotice({text:'شماره پایانه معتبر نیست.',type:'error'}); return; } if (effectivePosTerminals.some((x) => normalizeTerminal(x.terminal) === terminal && normalizeTerminal(x.terminal) !== normalizeTerminal(pos.terminal))) { setBannerNotice({text:'شماره پایانه تکراری است.',type:'error'}); return; } saveTerminalsAndCards(posTerminals.map((x) => x.terminal === pos.terminal ? {...x, terminal} : x), pettyCashCards); }} className="flex-1 px-3 py-2 rounded-lg bg-purple-100 text-purple-800 text-xs font-bold">ویرایش شماره</button>
                       <button type="button" onClick={() => { if (window.confirm('پایانه ' + pos.terminal + ' حذف شود؟')) saveTerminalsAndCards(posTerminals.filter((x) => x.terminal !== pos.terminal), pettyCashCards); }} className="px-3 py-2 rounded-lg bg-rose-100 text-rose-700 text-xs font-bold">حذف</button>
                     </div>
                   </div>
@@ -1995,13 +1995,22 @@ export const BankScreen: React.FC = () => {
                       <span className="shrink-0 px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-bold">{group.cards.length} کارت</span>
                     </div>
                     <button type="button" onClick={() => {
+                      const newName = window.prompt('نام یکپارچه مدیر / دارنده این کارت‌ها:', group.managerName);
+                      if (newName === null || !newName.trim()) return;
+                      saveTerminalsAndCards(posTerminals, pettyCashCards.map((item) => group.cards.some((c) => c.card === item.card) ? { ...item, managerName: newName.trim() } : item));
+                    }} className="w-full px-3 py-2 rounded-lg bg-white border border-blue-200 text-blue-800 text-xs font-bold">یکپارچه‌سازی / ویرایش نام مدیر</button>
+                    <button type="button" onClick={() => {
                       const v = window.prompt('شماره کارت جدید برای «' + group.managerName + '» (۱۶ رقم):');
                       if (v === null) return;
                       const card = normalizeCard(v);
                       if (card.length !== 16) { setBannerNotice({text:'شماره کارت باید ۱۶ رقم باشد.',type:'error'}); return; }
                       if (pettyCashCards.some((x) => normalizeCard(x.card) === card)) { setBannerNotice({text:'این شماره کارت قبلاً ثبت شده است.',type:'error'}); return; }
                       const first = group.cards[0];
-                      saveTerminalsAndCards(posTerminals, [...pettyCashCards, { card, managerName: group.managerName, schoolId: first?.schoolId || 0, accountSuffix: String(first?.accountSuffix || '002'), active: true }]);
+                      const accountSuffix = window.prompt('سه رقم انتهایی حساب متصل به این کارت (۰۰۱ یا ۰۰۲):', String(first?.accountSuffix || '002'));
+                      if (accountSuffix === null) return;
+                      if (!['001', '002', '۰۰۱', '۰۰۲'].includes(accountSuffix.trim())) { setBannerNotice({text:'حساب باید ۰۰۱ یا ۰۰۲ باشد.',type:'error'}); return; }
+                      const normalizedSuffix = accountSuffix.trim().replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
+                      saveTerminalsAndCards(posTerminals, [...pettyCashCards, { card, managerName: group.managerName, schoolId: first?.schoolId || 0, accountSuffix: normalizedSuffix, active: true }]);
                     }} className="w-full px-3 py-2 rounded-lg bg-blue-700 text-white text-xs font-bold">+ افزودن کارت برای این مدیر</button>
                     <div className="space-y-2">
                       {group.cards.map((card) => (
