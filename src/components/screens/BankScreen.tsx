@@ -237,21 +237,36 @@ export const BankScreen: React.FC = () => {
       .replace(/\D/g, '')
       .replace(/^0+/, '');
 
+  // Group multiple bank cards under the same manager while retaining each card as an individual match key.
+  const groupedPettyCashCards = useMemo(() => {
+    const groups = new Map<string, { managerName: string; cards: typeof pettyCashCards }>();
+    pettyCashCards.forEach((card) => {
+      const managerName = String(card.managerName || 'مدیر بدون نام').trim() || 'مدیر بدون نام';
+      if (!groups.has(managerName)) groups.set(managerName, { managerName, cards: [] });
+      groups.get(managerName)!.cards.push(card);
+    });
+    return Array.from(groups.values());
+  }, [pettyCashCards]);
+
   // Merge POS terminals entered on each school's record into the reconciliation lookup.
   // School configuration is authoritative for the school assignment of a terminal.
   const effectivePosTerminals = useMemo(() => {
     const merged = posTerminals.map((p) => ({ ...p }));
     schools.forEach((school) => {
-      const terminal = normalizeTerminal(school.pos_terminal_number);
-      if (!terminal) return;
-      const existingIndex = merged.findIndex((p) => normalizeTerminal(p.terminal) === terminal);
-      const mapped = {
-        terminal,
-        schoolId: Number(school.id),
-        schoolName: school.name || '',
-      };
-      if (existingIndex >= 0) merged[existingIndex] = { ...merged[existingIndex], ...mapped };
-      else merged.push(mapped);
+      const terminals = String(school.pos_terminal_number || '')
+        .split(/[,،;؛\\n\\s]+/)
+        .map((value) => normalizeTerminal(value))
+        .filter(Boolean);
+      terminals.forEach((terminal) => {
+        const existingIndex = merged.findIndex((p) => normalizeTerminal(p.terminal) === terminal);
+        const mapped = {
+          terminal,
+          schoolId: Number(school.id),
+          schoolName: school.name || '',
+        };
+        if (existingIndex >= 0) merged[existingIndex] = { ...merged[existingIndex], ...mapped };
+        else merged.push(mapped);
+      });
     });
     return merged;
   }, [posTerminals, schools]);
@@ -1973,13 +1988,43 @@ export const BankScreen: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {pettyCashCards.map((card) => (
-                  <div key={card.card} className="p-3.5 rounded-2xl border border-gray-200 bg-gray-50/50 space-y-2">
-                    <div className="flex items-center justify-between"><span className="font-mono font-black text-blue-900 text-xs tracking-wider">{card.card.replace(/(\d{4})/g, '$1-').slice(0, 19)}</span><span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-bold">حساب {card.accountSuffix}</span></div>
-                    <div className="font-bold text-xs text-gray-800">{card.managerName}</div>
-                    <div className="flex gap-2">
-                      <button type="button" onClick={() => { const v = window.prompt('شماره کارت ۱۶ رقمی:', card.card); if (v === null) return; const number = normalizeCard(v); if (number.length !== 16) { setBannerNotice({text:'شماره کارت باید ۱۶ رقم باشد.',type:'error'}); return; } if (pettyCashCards.some((x) => normalizeCard(x.card) === number && x.card !== card.card)) { setBannerNotice({text:'شماره کارت تکراری است.',type:'error'}); return; } saveTerminalsAndCards(posTerminals, pettyCashCards.map((x) => x.card === card.card ? {...x, card:number} : x)); }} className="flex-1 px-3 py-2 rounded-lg bg-blue-100 text-blue-800 text-xs font-bold">ویرایش شماره</button>
-                      <button type="button" onClick={() => { if (window.confirm('کارت ' + card.card + ' حذف شود؟')) saveTerminalsAndCards(posTerminals, pettyCashCards.filter((x) => x.card !== card.card)); }} className="px-3 py-2 rounded-lg bg-rose-100 text-rose-700 text-xs font-bold">حذف</button>
+                {groupedPettyCashCards.map((group) => (
+                  <div key={group.managerName} className="p-4 rounded-2xl border border-blue-200 bg-blue-50/40 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="font-black text-sm text-gray-900">{group.managerName}</div>
+                      <span className="shrink-0 px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-bold">{group.cards.length} کارت</span>
+                    </div>
+                    <button type="button" onClick={() => {
+                      const v = window.prompt('شماره کارت جدید برای «' + group.managerName + '» (۱۶ رقم):');
+                      if (v === null) return;
+                      const card = normalizeCard(v);
+                      if (card.length !== 16) { setBannerNotice({text:'شماره کارت باید ۱۶ رقم باشد.',type:'error'}); return; }
+                      if (pettyCashCards.some((x) => normalizeCard(x.card) === card)) { setBannerNotice({text:'این شماره کارت قبلاً ثبت شده است.',type:'error'}); return; }
+                      const first = group.cards[0];
+                      saveTerminalsAndCards(posTerminals, [...pettyCashCards, { card, managerName: group.managerName, schoolId: first?.schoolId || 0, accountSuffix: String(first?.accountSuffix || '002'), active: true }]);
+                    }} className="w-full px-3 py-2 rounded-lg bg-blue-700 text-white text-xs font-bold">+ افزودن کارت برای این مدیر</button>
+                    <div className="space-y-2">
+                      {group.cards.map((card) => (
+                        <div key={card.card} className="rounded-xl border border-gray-200 bg-white p-3 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono font-black text-blue-900 text-xs tracking-wider" dir="ltr">{card.card.replace(/(\\d{4})/g, '$1-').slice(0, 19)}</span>
+                            <span className="shrink-0 px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-bold">حساب {card.accountSuffix}</span>
+                          </div>
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => {
+                              const v = window.prompt('شماره کارت ۱۶ رقمی:', card.card);
+                              if (v === null) return;
+                              const number = normalizeCard(v);
+                              if (number.length !== 16) { setBannerNotice({text:'شماره کارت باید ۱۶ رقم باشد.',type:'error'}); return; }
+                              if (pettyCashCards.some((x) => normalizeCard(x.card) === number && x.card !== card.card)) { setBannerNotice({text:'شماره کارت تکراری است.',type:'error'}); return; }
+                              saveTerminalsAndCards(posTerminals, pettyCashCards.map((x) => x.card === card.card ? {...x, card:number} : x));
+                            }} className="flex-1 px-3 py-2 rounded-lg bg-blue-100 text-blue-800 text-xs font-bold">ویرایش شماره</button>
+                            <button type="button" onClick={() => {
+                              if (window.confirm('کارت ' + card.card + ' حذف شود؟')) saveTerminalsAndCards(posTerminals, pettyCashCards.filter((x) => x.card !== card.card));
+                            }} className="px-3 py-2 rounded-lg bg-rose-100 text-rose-700 text-xs font-bold">حذف کارت</button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))}
