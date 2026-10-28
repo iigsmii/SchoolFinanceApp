@@ -1,7 +1,7 @@
 {
-  "version": "2.16.295",
+  "version": "2.16.298",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Fix school POS terminal mapping and restore Excel reset action",
-  "build": 295,
-  "published_at": "2026-10-28T09:21:10Z"
+  "notes": "Polish multi-card manager grouping and POS terminal validation",
+  "build": 298,
+  "published_at": "2026-10-28T09:24:17Z"
 }
