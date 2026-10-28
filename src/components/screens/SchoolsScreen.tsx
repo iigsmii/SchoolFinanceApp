@@ -61,7 +61,7 @@ export const SchoolsScreen: React.FC = () => {
         code: formCode.trim().toUpperCase(),
         type: formType,
         active: formActive,
-        pos_terminal_number: formPosTerminal.trim(),
+        pos_terminal_number: formPosTerminal.split(/[,،;؛\\n]+/).map((v) => v.replace(/[^0-9۰-۹٠-٩]/g, '').replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))).filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', '),
         tafsili_code: formTafsiliCode.trim(),
       });
     } else {
@@ -124,7 +124,7 @@ export const SchoolsScreen: React.FC = () => {
                       کد تفصیلی: <b className="font-mono">{sc.tafsili_code || 'تعریف‌نشده'}</b>
                     </span>
                   </div>
-                  <div className="text-xs text-gray-600 mt-2">شماره پایانه پوز: <span className="font-mono font-bold">{sc.pos_terminal_number || 'ثبت نشده'}</span></div>
+                  <div className="text-xs text-gray-600 mt-2">شماره پایانه‌های پوز: <span className="font-mono font-bold">{sc.pos_terminal_number ? sc.pos_terminal_number.split(/[,،;؛\\n]+/).map((v) => v.trim()).filter(Boolean).join('، ') : 'ثبت نشده'}</span></div>
                 </div>
 
                 <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-3">
@@ -221,20 +221,17 @@ export const SchoolsScreen: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-[#341648] mb-1.5">
-                  شماره پایانه دستگاه پوز
+                  شماره پایانه‌های دستگاه پوز (امکان ثبت چند دستگاه)
                 </label>
-                <input
-                  type="tel"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  autoComplete="off"
+                <textarea
                   value={formPosTerminal}
-                  onChange={(e) => setFormPosTerminal(e.target.value.replace(/[^0-9۰-۹٠-٩]/g, ''))}
-                  placeholder="شماره پایانه روی رسید/صورتحساب پوز"
+                  onChange={(e) => setFormPosTerminal(e.target.value.replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/[^0-9,،;؛\\n ]/g, ''))}
+                  placeholder="شماره هر پایانه را جداگانه وارد کنید؛ با ویرگول یا در خط جدا"
+                  rows={3}
                   className="w-full px-4 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left"
                   dir="ltr"
                 />
-                <p className="text-[11px] text-gray-500 mt-1">برای انتساب خودکار تراکنش‌های پوز به این مدرسه استفاده می‌شود.</p>
+                <p className="text-[11px] text-gray-500 mt-1">می‌توانید چند پایانه برای یک مدرسه ثبت کنید؛ شماره‌ها را با ویرگول یا در خط جدا بنویسید.</p>
               </div>
               <div>
                 <label className="block text-xs font-bold text-[#341648] mb-1.5">
