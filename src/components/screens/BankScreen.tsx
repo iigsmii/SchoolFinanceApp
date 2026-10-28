@@ -2016,7 +2016,7 @@ export const BankScreen: React.FC = () => {
                       {group.cards.map((card) => (
                         <div key={card.card} className="rounded-xl border border-gray-200 bg-white p-3 space-y-2">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="font-mono font-black text-blue-900 text-xs tracking-wider" dir="ltr">{card.card.replace(/(\\d{4})/g, '$1-').slice(0, 19)}</span>
+                            <span className="font-mono font-black text-blue-900 text-xs tracking-wider" dir="ltr">{card.card.replace(/(\d{4})/g, '$1-').slice(0, 19)}</span>
                             <span className="shrink-0 px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-bold">حساب {card.accountSuffix}</span>
                           </div>
                           <div className="flex gap-2">
