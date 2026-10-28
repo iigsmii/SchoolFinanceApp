@@ -141,24 +141,70 @@ export const BankScreen: React.FC = () => {
   const [pettyCashCards, setPettyCashCards] = useState(DEFAULT_SADERAT_CARDS);
   const [showConfigModal, setShowConfigModal] = useState(false);
 
-  // Load custom rules from server or local storage
+  // Google Sheets is the shared source of truth; local storage is an offline fallback.
   useEffect(() => {
+    let cancelled = false;
     try {
       const savedTerminals = localStorage.getItem('school_finance_pos_terminals');
       if (savedTerminals) setPosTerminals(JSON.parse(savedTerminals));
       const savedCards = localStorage.getItem('school_finance_petty_cards');
       if (savedCards) setPettyCashCards(JSON.parse(savedCards));
-    } catch {
-      // fallback to defaults
+    } catch { /* use defaults if local cache is invalid */ }
+    if (isSenior) {
+      void postToAppsScript({ action: 'bank_rules_get' }).then((res) => {
+        if (cancelled || !res?.success || !res.rules) return;
+        const rules = res.rules;
+        const serverTerminals = Array.isArray(rules.posTerminals) ? rules.posTerminals.map((p: any) => ({
+          ...p,
+          terminal: String(p.terminal || ''),
+          schoolId: Number(p.schoolId || 0),
+          schoolName: p.schoolName || schools.find((sc) => sc.id === Number(p.schoolId || 0))?.name || ''
+        })) : null;
+        const serverCards = Array.isArray(rules.pettyCashCards) ? rules.pettyCashCards.map((c: any) => ({
+          ...c,
+          card: String(c.card || ''),
+          managerName: String(c.managerName || ''),
+          accountSuffix: String(c.accountSuffix || ''),
+          schoolId: Number(c.schoolId || 0),
+          active: c.active !== false
+        })) : null;
+        if (serverTerminals && serverCards) {
+          setPosTerminals(serverTerminals);
+          setPettyCashCards(serverCards);
+          localStorage.setItem('school_finance_pos_terminals', JSON.stringify(serverTerminals));
+          localStorage.setItem('school_finance_petty_cards', JSON.stringify(serverCards));
+        }
+      }).catch(() => { /* retain local offline cache */ });
     }
-  }, []);
+    return () => { cancelled = true; };
+  }, [isSenior, schools]);
 
   const saveTerminalsAndCards = (newTerminals: typeof posTerminals, newCards: typeof pettyCashCards) => {
     setPosTerminals(newTerminals);
     setPettyCashCards(newCards);
     localStorage.setItem('school_finance_pos_terminals', JSON.stringify(newTerminals));
     localStorage.setItem('school_finance_petty_cards', JSON.stringify(newCards));
-    setBannerNotice({ text: 'تنظیمات پایانه‌ها و کارت‌های بانکی ذخیره شد.', type: 'success' });
+    setBannerNotice({ text: 'در حال ذخیره و همگام‌سازی با Google Sheets…', type: 'info' });
+    void postToAppsScript({
+      action: 'bank_rules_save',
+      rules: {
+        version: 1,
+        posTerminals: newTerminals.map((p) => ({ terminal: normalizeTerminal(p.terminal), schoolId: Number(p.schoolId || 0), schoolName: p.schoolName || schools.find((sc) => sc.id === Number(p.schoolId || 0))?.name || '' })),
+        pettyCashCards: newCards.map((c) => ({ card: normalizeCard(c.card), managerName: c.managerName, accountSuffix: String(c.accountSuffix || ''), schoolId: Number(c.schoolId || 0), active: c.active !== false })),
+      }
+    }).then((res) => {
+      if (res?.success) {
+        const savedTerminals = Array.isArray(res.rules?.posTerminals) ? res.rules.posTerminals.map((p: any) => ({ ...p, schoolName: p.schoolName || schools.find((sc) => sc.id === Number(p.schoolId || 0))?.name || '' })) : newTerminals;
+        const savedCards = Array.isArray(res.rules?.pettyCashCards) ? res.rules.pettyCashCards : newCards;
+        setPosTerminals(savedTerminals);
+        setPettyCashCards(savedCards);
+        localStorage.setItem('school_finance_pos_terminals', JSON.stringify(savedTerminals));
+        localStorage.setItem('school_finance_petty_cards', JSON.stringify(savedCards));
+        setBannerNotice({ text: 'پایانه‌ها و کارت‌های تن‌خواه در Google Sheets ذخیره و همگام شد.', type: 'success' });
+      } else {
+        setBannerNotice({ text: 'تغییرات فقط روی این دستگاه ذخیره شد؛ همگام‌سازی ناموفق بود: ' + (res?.error || 'خطای سرور'), type: 'error' });
+      }
+    }).catch(() => setBannerNotice({ text: 'تغییرات فقط روی این دستگاه ذخیره شد؛ اتصال به Google Sheets برقرار نشد.', type: 'error' }));
   };
 
   // Helper normalizers
