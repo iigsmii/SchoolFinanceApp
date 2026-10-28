@@ -205,7 +205,7 @@ function doGet(e) {
     if(action==='my_claim') return json_(myClaim_(b));
     if(action==='app_version') return json_(appVersion_(b));
     if(action==='activity_logs')return json_(activityLogs_(b));
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.20.0',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.23.0',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
@@ -1555,7 +1555,9 @@ function bankRulesSave_(b){
   const cards=Array.isArray(rules.pettyCashCards)?rules.pettyCashCards:[];
   const terminals=Array.isArray(rules.posTerminals)?rules.posTerminals:[];
   if(cards.length>500 || terminals.length>500)throw new Error('حداکثر ۵۰۰ کارت و ۵۰۰ پایانه قابل تعریف است.');
-  const days=Number(rules.matching&&rules.matching.dateWindowDays);
+  // The app sends only terminal/card lists. Use the default matching window when omitted.
+  const defaultMatching=defaultBankRules_().matching;
+  const days=Number(rules.matching && rules.matching.dateWindowDays !== undefined ? rules.matching.dateWindowDays : defaultMatching.dateWindowDays);
   if(!Number.isFinite(days)||days<0||days>30)throw new Error('بازه تطبیق تاریخ باید بین صفر تا ۳۰ روز باشد.');
   const normalized=Object.assign(defaultBankRules_(),rules,{version:1,pettyCashCards:cards,posTerminals:terminals,matching:Object.assign(defaultBankRules_().matching,rules.matching||{})});
   const serialized=JSON.stringify(normalized);
@@ -1793,7 +1795,7 @@ function syncPayload_(b){
     const bankData=(bank_(b)||{}).data||[];
     return {
       success:true,
-      backend_version:'2.22.0',
+      backend_version:'2.23.0',
       students:(students_(b)||{}).data||[],
       schools:(schools_(b)||{}).data||[],
       staff:(staff_(b)||{}).data||[],
