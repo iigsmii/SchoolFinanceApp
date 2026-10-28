@@ -1923,7 +1923,7 @@ export const BankScreen: React.FC = () => {
                       <button type="button" onClick={() => { if (window.confirm('پایانه ' + pos.terminal + ' حذف شود؟')) saveTerminalsAndCards(posTerminals.filter((x) => x.terminal !== pos.terminal), pettyCashCards); }} className="px-3 py-2 rounded-lg bg-rose-100 text-rose-700 text-xs font-bold">حذف</button>
                     </div>
                   </div>
-                ))
+                ))}
               </div>
             </div>
 
@@ -1947,7 +1947,7 @@ export const BankScreen: React.FC = () => {
                       <button type="button" onClick={() => { if (window.confirm('کارت ' + card.card + ' حذف شود؟')) saveTerminalsAndCards(posTerminals, pettyCashCards.filter((x) => x.card !== card.card)); }} className="px-3 py-2 rounded-lg bg-rose-100 text-rose-700 text-xs font-bold">حذف</button>
                     </div>
                   </div>
-                ))
+                ))}
               </div>
             </div>
           </section>
