@@ -1539,7 +1539,7 @@ function bankRulesGet_(b){
     const defaults=defaultBankRules_();
     const saved=JSON.parse(String(hit.obj.value||'{}'));
     const rules=Object.assign({},defaults,saved,{
-      pettyCashCards:defaults.pettyCashCards,
+      pettyCashCards:Array.isArray(saved.pettyCashCards)?saved.pettyCashCards:defaults.pettyCashCards,
       excludedAccountSuffixes:defaults.excludedAccountSuffixes,
       schoolAccounts:defaults.schoolAccounts,
       matching:Object.assign({},defaults.matching,saved.matching||{})
@@ -1793,7 +1793,7 @@ function syncPayload_(b){
     const bankData=(bank_(b)||{}).data||[];
     return {
       success:true,
-      backend_version:'2.21.0',
+      backend_version:'2.22.0',
       students:(students_(b)||{}).data||[],
       schools:(schools_(b)||{}).data||[],
       staff:(staff_(b)||{}).data||[],
