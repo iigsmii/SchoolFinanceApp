@@ -1846,21 +1846,22 @@ export const BankScreen: React.FC = () => {
               <div className="flex items-center justify-between border-b border-gray-100 pb-3">
                 <div className="flex items-center gap-2">
                   <Tag className="w-5 h-5 text-purple-700" />
-                  <h3 className="font-black text-gray-900 text-base">پایانه‌های کارتخوان پوز مدارس (۷ شعبه)</h3>
+                  <h3 className="font-black text-gray-900 text-base">پایانه‌های کارتخوان پوز مدارس ({posTerminals.length})</h3>
                 </div>
-                <span className="text-xs text-gray-400">تراکنش‌های این پایانه‌ها مستقیماً به نام مدرسه تفکیک می‌شوند</span>
+                <button type="button" onClick={() => { const v = window.prompt('شماره پایانه پوز جدید:'); if (v === null) return; const terminal = normalizeTerminal(v); if (!terminal) { setBannerNotice({text:'شماره پایانه معتبر نیست.',type:'error'}); return; } if (posTerminals.some((x) => normalizeTerminal(x.terminal) === terminal)) { setBannerNotice({text:'این شماره پایانه قبلاً ثبت شده است.',type:'error'}); return; } saveTerminalsAndCards([...posTerminals, {terminal, schoolId:0, schoolName:''}], pettyCashCards); }} className="px-3 py-2 rounded-xl bg-purple-700 text-white text-xs font-bold">+ افزودن پایانه</button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {posTerminals.map((pos) => (
-                  <div key={pos.terminal} className="p-3.5 rounded-2xl border border-gray-200 bg-gray-50/50 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono font-black text-purple-900 text-sm">{pos.terminal}</span>
-                      <span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 text-[10px] font-bold">پوز شاپرک</span>
+                  <div key={pos.terminal} className="p-3.5 rounded-2xl border border-gray-200 bg-gray-50/50 space-y-2">
+                    <div className="flex items-center justify-between"><span className="font-mono font-black text-purple-900 text-sm">{pos.terminal}</span><span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 text-[10px] font-bold">پوز شاپرک</span></div>
+                    <div className="font-bold text-xs text-gray-800">{pos.schoolName || 'بدون انتساب به مدرسه'}</div>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => { const v = window.prompt('شماره پایانه:', pos.terminal); if (v === null) return; const terminal = normalizeTerminal(v); if (!terminal) { setBannerNotice({text:'شماره پایانه معتبر نیست.',type:'error'}); return; } if (posTerminals.some((x) => normalizeTerminal(x.terminal) === terminal && x.terminal !== pos.terminal)) { setBannerNotice({text:'شماره پایانه تکراری است.',type:'error'}); return; } saveTerminalsAndCards(posTerminals.map((x) => x.terminal === pos.terminal ? {...x, terminal} : x), pettyCashCards); }} className="flex-1 px-3 py-2 rounded-lg bg-purple-100 text-purple-800 text-xs font-bold">ویرایش شماره</button>
+                      <button type="button" onClick={() => { if (window.confirm('پایانه ' + pos.terminal + ' حذف شود؟')) saveTerminalsAndCards(posTerminals.filter((x) => x.terminal !== pos.terminal), pettyCashCards); }} className="px-3 py-2 rounded-lg bg-rose-100 text-rose-700 text-xs font-bold">حذف</button>
                     </div>
-                    <div className="font-bold text-xs text-gray-800">{pos.schoolName}</div>
                   </div>
-                ))}
+                ))
               </div>
             </div>
 
@@ -1869,25 +1870,22 @@ export const BankScreen: React.FC = () => {
               <div className="flex items-center justify-between border-b border-gray-100 pb-3">
                 <div className="flex items-center gap-2">
                   <CreditCard className="w-5 h-5 text-blue-700" />
-                  <h3 className="font-black text-gray-900 text-base">کارت‌های تن‌خواه بانک صادرات ایران (۱۰ کارت)</h3>
+                  <h3 className="font-black text-gray-900 text-base">کارت‌های تن‌خواه بانک صادرات ایران ({pettyCashCards.length} کارت)</h3>
                 </div>
-                <span className="text-xs text-gray-400">متصل به حساب‌های ۰۰۱ و ۰۰۲ مدرسة القرآن</span>
+                <button type="button" onClick={() => { const v = window.prompt('شماره کارت تن‌خواه جدید (۱۶ رقم):'); if (v === null) return; const card = normalizeCard(v); if (card.length !== 16) { setBannerNotice({text:'شماره کارت باید ۱۶ رقم باشد.',type:'error'}); return; } if (pettyCashCards.some((x) => normalizeCard(x.card) === card)) { setBannerNotice({text:'این شماره کارت قبلاً ثبت شده است.',type:'error'}); return; } const managerName = window.prompt('نام مدیر / دارنده کارت:'); if (managerName === null || !managerName.trim()) return; const accountSuffix = window.prompt('سه رقم انتهایی حساب (۰۰۱ یا ۰۰۲):','002'); if (accountSuffix === null) return; saveTerminalsAndCards(posTerminals, [...pettyCashCards, {card, managerName:managerName.trim(), schoolId:0, accountSuffix:accountSuffix.trim(), active:true}]); }} className="px-3 py-2 rounded-xl bg-blue-700 text-white text-xs font-bold">+ افزودن کارت</button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {pettyCashCards.map((card) => (
-                  <div key={card.card} className="p-3.5 rounded-2xl border border-gray-200 bg-gray-50/50 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono font-black text-blue-900 text-xs tracking-wider">
-                        {card.card.replace(/(\d{4})/g, '$1-').slice(0, 19)}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-bold">
-                        حساب {card.accountSuffix}
-                      </span>
-                    </div>
+                  <div key={card.card} className="p-3.5 rounded-2xl border border-gray-200 bg-gray-50/50 space-y-2">
+                    <div className="flex items-center justify-between"><span className="font-mono font-black text-blue-900 text-xs tracking-wider">{card.card.replace(/(\d{4})/g, '$1-').slice(0, 19)}</span><span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-bold">حساب {card.accountSuffix}</span></div>
                     <div className="font-bold text-xs text-gray-800">{card.managerName}</div>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => { const v = window.prompt('شماره کارت ۱۶ رقمی:', card.card); if (v === null) return; const number = normalizeCard(v); if (number.length !== 16) { setBannerNotice({text:'شماره کارت باید ۱۶ رقم باشد.',type:'error'}); return; } if (pettyCashCards.some((x) => normalizeCard(x.card) === number && x.card !== card.card)) { setBannerNotice({text:'شماره کارت تکراری است.',type:'error'}); return; } saveTerminalsAndCards(posTerminals, pettyCashCards.map((x) => x.card === card.card ? {...x, card:number} : x)); }} className="flex-1 px-3 py-2 rounded-lg bg-blue-100 text-blue-800 text-xs font-bold">ویرایش شماره</button>
+                      <button type="button" onClick={() => { if (window.confirm('کارت ' + card.card + ' حذف شود؟')) saveTerminalsAndCards(posTerminals, pettyCashCards.filter((x) => x.card !== card.card)); }} className="px-3 py-2 rounded-lg bg-rose-100 text-rose-700 text-xs font-bold">حذف</button>
+                    </div>
                   </div>
-                ))}
+                ))
               </div>
             </div>
           </section>
