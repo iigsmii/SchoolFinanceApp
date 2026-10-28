@@ -170,10 +170,19 @@ export const BankScreen: React.FC = () => {
           schoolId: Number(c.schoolId || 0),
           active: c.active !== false
         })) : null;
-        if (res.configured === false && localTerminals && localCards) {
-          // First-time migration: keep this device's existing configuration and upload it to the shared sheet.
-          void postToAppsScript({ action: 'bank_rules_save', rules: { version: 1, posTerminals: localTerminals, pettyCashCards: localCards } }).then((saved) => {
-            if (!cancelled && saved?.success) setBannerNotice({ text: 'فهرست‌های موجود به Google Sheets منتقل شد و از این پس بین دستگاه‌ها همگام می‌شود.', type: 'success' });
+        if (res.configured === false) {
+          // First-time migration: preserve this device's configuration, or seed the shared sheet with the app defaults.
+          const initialTerminals = localTerminals || DEFAULT_POS_TERMINALS;
+          const initialCards = localCards || DEFAULT_SADERAT_CARDS;
+          void postToAppsScript({ action: 'bank_rules_save', rules: { version: 1, posTerminals: initialTerminals, pettyCashCards: initialCards } }).then((saved) => {
+            if (cancelled || !saved?.success) return;
+            const migratedTerminals = Array.isArray(saved.rules?.posTerminals) ? saved.rules.posTerminals.map((p: any) => ({ ...p, schoolName: p.schoolName || schools.find((sc) => sc.id === Number(p.schoolId || 0))?.name || '' })) : initialTerminals;
+            const migratedCards = Array.isArray(saved.rules?.pettyCashCards) ? saved.rules.pettyCashCards : initialCards;
+            setPosTerminals(migratedTerminals);
+            setPettyCashCards(migratedCards);
+            localStorage.setItem('school_finance_pos_terminals', JSON.stringify(migratedTerminals));
+            localStorage.setItem('school_finance_petty_cards', JSON.stringify(migratedCards));
+            setBannerNotice({ text: 'فهرست پایانه‌ها و کارت‌های تن‌خواه در Google Sheets ثبت شد و بین دستگاه‌ها همگام می‌شود.', type: 'success' });
           }).catch(() => {});
         } else if (serverTerminals && serverCards) {
           setPosTerminals(serverTerminals);
