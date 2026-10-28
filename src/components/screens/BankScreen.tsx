@@ -154,6 +154,8 @@ export const BankScreen: React.FC = () => {
       void postToAppsScript({ action: 'bank_rules_get' }).then((res) => {
         if (cancelled || !res?.success || !res.rules) return;
         const rules = res.rules;
+        const localTerminals = (() => { try { const v = localStorage.getItem('school_finance_pos_terminals'); return v ? JSON.parse(v) : null; } catch { return null; } })();
+        const localCards = (() => { try { const v = localStorage.getItem('school_finance_petty_cards'); return v ? JSON.parse(v) : null; } catch { return null; } })();
         const serverTerminals = Array.isArray(rules.posTerminals) ? rules.posTerminals.map((p: any) => ({
           ...p,
           terminal: String(p.terminal || ''),
@@ -168,7 +170,12 @@ export const BankScreen: React.FC = () => {
           schoolId: Number(c.schoolId || 0),
           active: c.active !== false
         })) : null;
-        if (serverTerminals && serverCards) {
+        if (res.configured === false && localTerminals && localCards) {
+          // First-time migration: keep this device's existing configuration and upload it to the shared sheet.
+          void postToAppsScript({ action: 'bank_rules_save', rules: { version: 1, posTerminals: localTerminals, pettyCashCards: localCards } }).then((saved) => {
+            if (!cancelled && saved?.success) setBannerNotice({ text: 'فهرست‌های موجود به Google Sheets منتقل شد و از این پس بین دستگاه‌ها همگام می‌شود.', type: 'success' });
+          }).catch(() => {});
+        } else if (serverTerminals && serverCards) {
           setPosTerminals(serverTerminals);
           setPettyCashCards(serverCards);
           localStorage.setItem('school_finance_pos_terminals', JSON.stringify(serverTerminals));
