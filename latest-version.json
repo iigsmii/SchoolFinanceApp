@@ -1,7 +1,7 @@
 {
-  "version": "2.16.294",
+  "version": "2.16.295",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Fix missing JSX map closing braces in bank rules screen",
-  "build": 294,
-  "published_at": "2026-10-28T09:02:07Z"
+  "notes": "Fix school POS terminal mapping and restore Excel reset action",
+  "build": 295,
+  "published_at": "2026-10-28T09:21:10Z"
 }
