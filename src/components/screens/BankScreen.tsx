@@ -237,6 +237,25 @@ export const BankScreen: React.FC = () => {
       .replace(/\D/g, '')
       .replace(/^0+/, '');
 
+  // Merge POS terminals entered on each school's record into the reconciliation lookup.
+  // School configuration is authoritative for the school assignment of a terminal.
+  const effectivePosTerminals = useMemo(() => {
+    const merged = posTerminals.map((p) => ({ ...p }));
+    schools.forEach((school) => {
+      const terminal = normalizeTerminal(school.pos_terminal_number);
+      if (!terminal) return;
+      const existingIndex = merged.findIndex((p) => normalizeTerminal(p.terminal) === terminal);
+      const mapped = {
+        terminal,
+        schoolId: Number(school.id),
+        schoolName: school.name || '',
+      };
+      if (existingIndex >= 0) merged[existingIndex] = { ...merged[existingIndex], ...mapped };
+      else merged.push(mapped);
+    });
+    return merged;
+  }, [posTerminals, schools]);
+
   // Detect which Stream a bank transaction belongs to:
   // 1. pos: POS Terminal swipe / Shaparak settlement
   // 2. petty: Manager's Petty Cash Card swipe / transfer
@@ -258,7 +277,7 @@ export const BankScreen: React.FC = () => {
     if (isFee && row.direction !== 'pos_sale') return 'fees';
 
     const term = normalizeTerminal(row.terminal_number);
-    if (row.direction === 'pos_sale' || (term && posTerminals.some((p) => normalizeTerminal(p.terminal) === term))) {
+    if (row.direction === 'pos_sale' || (term && effectivePosTerminals.some((p) => normalizeTerminal(p.terminal) === term))) {
       return 'pos';
     }
 
@@ -281,7 +300,7 @@ export const BankScreen: React.FC = () => {
       // Infer school from POS terminal
       const term = normalizeTerminal(row.terminal_number);
       if (term) {
-        const foundPos = posTerminals.find((p) => normalizeTerminal(p.terminal) === term);
+        const foundPos = effectivePosTerminals.find((p) => normalizeTerminal(p.terminal) === term);
         if (foundPos && foundPos.schoolId) {
           matchedSchoolId = foundPos.schoolId;
           matchedSchoolName = foundPos.schoolName || schools.find((s) => s.id === foundPos.schoolId)?.name || '';
@@ -309,7 +328,7 @@ export const BankScreen: React.FC = () => {
         matchedManagerName,
       };
     });
-  }, [bankTransactions, posTerminals, pettyCashCards, schools]);
+  }, [bankTransactions, effectivePosTerminals, pettyCashCards, schools]);
 
   // Role-based visibility filter
   const visibleBankRows = useMemo(() => {
@@ -877,7 +896,7 @@ export const BankScreen: React.FC = () => {
           // School infer
           let schoolId = 1;
           if (terminal) {
-            const hitPos = posTerminals.find((p) => normalizeTerminal(p.terminal) === terminal);
+            const hitPos = effectivePosTerminals.find((p) => normalizeTerminal(p.terminal) === terminal);
             if (hitPos && hitPos.schoolId) schoolId = hitPos.schoolId;
           }
 
@@ -1028,6 +1047,22 @@ export const BankScreen: React.FC = () => {
                   <span>بارگذاری اکسل روزانه بانک</span>
                   <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" />
                 </label>
+              )}
+
+              {isSenior && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!window.confirm('تمام ردیف‌های واردشده از اکسل بانک و پوز فقط از این دستگاه پاک شوند؟ اسناد حسابداری و اطلاعات Google Sheets حذف نمی‌شوند.')) return;
+                    clearImportedBankTransactions();
+                    setBannerNotice({ text: 'اطلاعات واردشده از اکسل بانک و پوز از این دستگاه پاک شد. اسناد حسابداری و اطلاعات مشترک دست‌نخورده ماندند.', type: 'success' });
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-rose-100 hover:bg-rose-200 border border-rose-200 text-rose-800 font-black text-xs shadow-sm active:scale-95 transition-all"
+                  title="پاک‌سازی ردیف‌های واردشده از اکسل در همین دستگاه"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>صفر کردن اطلاعات اکسل</span>
+                </button>
               )}
 
               {isSenior && (
@@ -1908,13 +1943,13 @@ export const BankScreen: React.FC = () => {
               <div className="flex items-center justify-between border-b border-gray-100 pb-3">
                 <div className="flex items-center gap-2">
                   <Tag className="w-5 h-5 text-purple-700" />
-                  <h3 className="font-black text-gray-900 text-base">پایانه‌های کارتخوان پوز مدارس ({posTerminals.length})</h3>
+                  <h3 className="font-black text-gray-900 text-base">پایانه‌های کارتخوان پوز مدارس ({effectivePosTerminals.length})</h3>
                 </div>
                 <button type="button" onClick={() => { const v = window.prompt('شماره پایانه پوز جدید:'); if (v === null) return; const terminal = normalizeTerminal(v); if (!terminal) { setBannerNotice({text:'شماره پایانه معتبر نیست.',type:'error'}); return; } if (posTerminals.some((x) => normalizeTerminal(x.terminal) === terminal)) { setBannerNotice({text:'این شماره پایانه قبلاً ثبت شده است.',type:'error'}); return; } saveTerminalsAndCards([...posTerminals, {terminal, schoolId:0, schoolName:''}], pettyCashCards); }} className="px-3 py-2 rounded-xl bg-purple-700 text-white text-xs font-bold">+ افزودن پایانه</button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {posTerminals.map((pos) => (
+                {effectivePosTerminals.map((pos) => (
                   <div key={pos.terminal} className="p-3.5 rounded-2xl border border-gray-200 bg-gray-50/50 space-y-2">
                     <div className="flex items-center justify-between"><span className="font-mono font-black text-purple-900 text-sm">{pos.terminal}</span><span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 text-[10px] font-bold">پوز شاپرک</span></div>
                     <div className="font-bold text-xs text-gray-800">{pos.schoolName || 'بدون انتساب به مدرسه'}</div>
