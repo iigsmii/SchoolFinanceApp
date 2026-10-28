@@ -254,7 +254,7 @@ export const BankScreen: React.FC = () => {
     const merged = posTerminals.map((p) => ({ ...p }));
     schools.forEach((school) => {
       const terminals = String(school.pos_terminal_number || '')
-        .split(/[,،;؛\\n\\s]+/)
+        .split(/[,،;؛\n\s]+/)
         .map((value) => normalizeTerminal(value))
         .filter(Boolean);
       terminals.forEach((terminal) => {
