@@ -535,7 +535,6 @@ export const StudentsScreen: React.FC = () => {
                   <input
                     type="tel"
                     inputMode="numeric"
-                    pattern="[0-9]*"
                     autoComplete="off"
                     maxLength={10}
                     value={formNationalId}
@@ -556,7 +555,6 @@ export const StudentsScreen: React.FC = () => {
                   <input
                     type="tel"
                     inputMode="numeric"
-                    pattern="[0-9]*"
                     autoComplete="off"
                     maxLength={11}
                     value={formFatherPhone}
@@ -574,7 +572,6 @@ export const StudentsScreen: React.FC = () => {
                   <input
                     type="tel"
                     inputMode="numeric"
-                    pattern="[0-9]*"
                     autoComplete="off"
                     maxLength={11}
                     value={formMotherPhone}

@@ -1116,7 +1116,6 @@ export const StaffScreen: React.FC = () => {
                     <input
                       type="tel"
                       inputMode="numeric"
-                      pattern="[0-9]*"
                       autoComplete="off"
                       disabled={!isSenior}
                       value={staffHourlyRate}
@@ -1137,7 +1136,6 @@ export const StaffScreen: React.FC = () => {
                     <input
                       type="tel"
                       inputMode="numeric"
-                      pattern="[0-9]*"
                       autoComplete="off"
                       disabled={!isSenior}
                       value={staffBaseSalary}
@@ -1160,7 +1158,6 @@ export const StaffScreen: React.FC = () => {
                     <input
                       type="tel"
                       inputMode="numeric"
-                      pattern="[0-9]*"
                       autoComplete="off"
                       disabled={!isSenior}
                       value={staffEmployerIns}
@@ -1181,7 +1178,6 @@ export const StaffScreen: React.FC = () => {
                     <input
                       type="tel"
                       inputMode="numeric"
-                      pattern="[0-9]*"
                       autoComplete="off"
                       disabled={!isSenior}
                       value={staffEmployeeIns}
@@ -1478,7 +1474,6 @@ export const StaffScreen: React.FC = () => {
                   <input
                     type="tel"
                     inputMode="numeric"
-                    pattern="[0-9]*"
                     autoComplete="off"
                     value={payGrossAmount}
                     onChange={(e) => {
@@ -1495,7 +1490,6 @@ export const StaffScreen: React.FC = () => {
                   <input
                     type="tel"
                     inputMode="numeric"
-                    pattern="[0-9]*"
                     autoComplete="off"
                     value={payInsuranceDeduction}
                     onChange={(e) => {
@@ -1512,7 +1506,6 @@ export const StaffScreen: React.FC = () => {
                   <input
                     type="tel"
                     inputMode="numeric"
-                    pattern="[0-9]*"
                     autoComplete="off"
                     value={payNetAmount}
                     onChange={(e) => {

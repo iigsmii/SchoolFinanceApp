@@ -1034,7 +1034,6 @@ export const BankAccountsScreen: React.FC = () => {
                   <input
                     type="tel"
                     inputMode="numeric"
-                    pattern="[0-9]*"
                     autoComplete="off"
                     value={formInitialBalance}
                     onChange={(e) => {

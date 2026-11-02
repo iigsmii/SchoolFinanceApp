@@ -590,7 +590,6 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                 <input
                   type="tel"
                   inputMode="numeric"
-                  pattern="[0-9]*"
                   autoComplete="off"
                   value={amountStr}
                   onChange={(e) => {

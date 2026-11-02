@@ -249,7 +249,6 @@ export const QuickInvoiceModal: React.FC<QuickInvoiceModalProps> = ({
             <input
               type="tel"
               inputMode="numeric"
-              pattern="[0-9]*"
               autoComplete="off"
               value={tuitionAmount}
               onChange={(e) => {

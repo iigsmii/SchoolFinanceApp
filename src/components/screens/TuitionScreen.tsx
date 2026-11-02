@@ -784,7 +784,6 @@ export const TuitionScreen: React.FC = () => {
                 <input
                   type="tel"
                   inputMode="numeric"
-                  pattern="[0-9]*"
                   autoComplete="off"
                   value={formAmount}
                   onChange={(e) => handleAmountInputChange(e, setFormAmount)}
@@ -936,7 +935,6 @@ export const TuitionScreen: React.FC = () => {
                 <input
                   type="tel"
                   inputMode="numeric"
-                  pattern="[0-9]*"
                   autoComplete="off"
                   value={formAmount}
                   onChange={(e) => handleAmountInputChange(e, setFormAmount)}
@@ -1218,7 +1216,6 @@ export const TuitionScreen: React.FC = () => {
                 <input
                   type="tel"
                   inputMode="numeric"
-                  pattern="[0-9]*"
                   autoComplete="off"
                   value={formAmount}
                   onChange={(e) => handleAmountInputChange(e, setFormAmount)}
@@ -1313,7 +1310,6 @@ export const TuitionScreen: React.FC = () => {
                   <input
                     type="tel"
                     inputMode="numeric"
-                    pattern="[0-9]*"
                     autoComplete="off"
                     value={bulkAmount}
                     onChange={(e) => {

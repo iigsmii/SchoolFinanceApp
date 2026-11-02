@@ -208,7 +208,6 @@ export const SchoolsScreen: React.FC = () => {
                   <input
                     type="tel"
                     inputMode="numeric"
-                    pattern="[0-9]*"
                     autoComplete="off"
                     value={formTafsiliCode}
                     onChange={(e) => setFormTafsiliCode(e.target.value.replace(/[^0-9۰-۹٠-٩]/g, ''))}
