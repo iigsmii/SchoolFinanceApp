@@ -1,7 +1,7 @@
 {
-  "version": "2.16.301",
+  "version": "2.16.302",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Fix multi-line POS terminal separators",
-  "build": 301,
-  "published_at": "2026-10-28T09:27:30Z"
+  "notes": "Fix Persian typing on Android and amount-field format error",
+  "build": 302,
+  "published_at": "2026-11-02T09:14:01Z"
 }
