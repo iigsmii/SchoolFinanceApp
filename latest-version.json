@@ -1,7 +1,7 @@
 {
-  "version": "2.16.303",
+  "version": "2.16.304",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Precise login/sync errors; stop sync from hanging on weak internet",
-  "build": 303,
-  "published_at": "2026-11-03T11:22:47Z"
+  "notes": "Remove senior manager dashboard section",
+  "build": 304,
+  "published_at": "2026-11-03T13:29:47Z"
 }
