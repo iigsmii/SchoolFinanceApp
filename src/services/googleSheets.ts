@@ -41,6 +41,8 @@ export interface SheetLoadResult {
     expensesCount: number;
   };
   error?: string;
+  /** Why the load failed: no internet, slow server, unreachable server, bad server reply or expired login. */
+  errorKind?: NetErrorKind | 'auth';
 }
 
 export const extractSpreadsheetId = (input: string): string => {
@@ -72,13 +74,59 @@ const cleanHeader = (h: any) =>
     .toLowerCase()
     .replace(/[\u200c\u200f\u202a-\u202e\s_-]/g, '');
 
+/** Why a request to the server failed (used for precise user-facing messages). */
+export type NetErrorKind = 'offline' | 'timeout' | 'network' | 'server';
+
+export const NET_MESSAGES: Record<NetErrorKind, string> = {
+  offline: 'اینترنت دستگاه قطع است. اتصال را بررسی کنید و دوباره تلاش کنید.',
+  timeout: 'پاسخ سرور دیر رسید؛ اینترنت ضعیف است یا سرور شلوغ است. چند لحظه بعد دوباره تلاش کنید.',
+  network: 'اتصال به سرور برقرار نشد. اینترنت را بررسی کنید و دوباره تلاش کنید.',
+  server: 'پاسخ نامعتبر از سرور دریافت شد؛ چند لحظه بعد دوباره تلاش کنید.',
+};
+
+/** Maps a thrown fetch error to a kind + Persian message (never "wrong password"). */
+export const classifyFetchError = (err: any): { kind: NetErrorKind; message: string } => {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return { kind: 'offline', message: NET_MESSAGES.offline };
+  if (err?.name === 'AbortError' || err?.name === 'TimeoutError') return { kind: 'timeout', message: NET_MESSAGES.timeout };
+  return { kind: 'network', message: NET_MESSAGES.network };
+};
+
+/**
+ * fetch + JSON parse under ONE time limit (the limit also covers reading the body, so a
+ * half-open connection can never hang forever). Throws on network error or timeout.
+ */
+const requestJson = async (
+  url: string,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<{ ok: boolean; status: number; data: any; parseFailed: boolean }> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    let data: any = null;
+    let parseFailed = false;
+    try {
+      data = await res.json();
+    } catch (e: any) {
+      if (e?.name === 'AbortError') throw e;
+      parseFailed = true;
+    }
+    return { ok: res.ok, status: res.status, data, parseFailed };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+const READ_ONLY_ACTIONS = ['app_version', 'bank_rules_get'];
+
 /**
  * Sends a mutation to the Google Apps Script Web App
  */
 export const postToAppsScript = async (
   payload: Record<string, any>,
   webAppUrl: string = DEFAULT_WEBAPP_URL
-): Promise<{ success: boolean; network?: boolean; needs_review?: boolean; review_status?: string; error?: string; data?: any; id?: number; ids?: any[]; attachment_url?: string; url?: string; count?: number; skipped?: number; message?: string; matched?: number; unmatched?: number; rules?: any; configured?: boolean }> => {
+): Promise<{ success: boolean; network?: boolean; kind?: NetErrorKind; needs_review?: boolean; review_status?: string; error?: string; data?: any; id?: number; ids?: any[]; attachment_url?: string; url?: string; count?: number; skipped?: number; message?: string; matched?: number; unmatched?: number; rules?: any; configured?: boolean }> => {
   try {
     const url = webAppUrl.trim();
     if (!url) return { success: false, error: 'آدرس وب‌اپ تعریف نشده است.' };
@@ -99,58 +147,75 @@ export const postToAppsScript = async (
       owner: OWNER_EMAIL,
     });
 
-    // Retry once with the exact same body/request_id. If the first response was
-    // lost after the server committed the write, Apps Script can return its stored result.
+    // Writes may legitimately wait for the server's write lock (up to 30 s) and can carry
+    // images, so they get a generous limit; it only exists so a dead connection cannot hang forever.
+    const timeoutMs = READ_ONLY_ACTIONS.includes(action) ? 30000 : 90000;
+
+    // Retry once (same body/request_id) only after a FAST failure. After a timeout the first
+    // request may still be running on the server; the outbox retries later with the same
+    // request_id, and the server then replays the stored result instead of writing twice.
     let lastError: any = null;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const res = await fetch(url, {
+        const r = await requestJson(url, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'text/plain;charset=utf-8',
-          },
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: bodyData,
           mode: 'cors',
-        });
-        if (!res.ok) return { success: false, network: true, error: `خطای سرور (${res.status})` };
-        return await res.json();
+        }, timeoutMs);
+        if (!r.ok) return { success: false, network: true, kind: 'server', error: `خطای سرور (${r.status})؛ چند لحظه بعد دوباره تلاش کنید.` };
+        if (r.parseFailed) { lastError = new Error('invalid json'); continue; }
+        return r.data;
       } catch (err: any) {
         lastError = err;
+        if (err?.name === 'AbortError') break;
         if (attempt === 0) continue;
       }
     }
-    console.warn('Apps Script mutation failed after retry:', lastError);
-    return { success: false, network: true, error: lastError?.message || 'ارتباط با سرور برقرار نشد.' };
+    console.warn('Apps Script mutation failed:', lastError);
+    if (lastError?.message === 'invalid json') return { success: false, network: true, kind: 'server', error: NET_MESSAGES.server };
+    const c = classifyFetchError(lastError);
+    return { success: false, network: true, kind: c.kind, error: c.message };
   } catch (err: any) {
     console.warn('Apps Script mutation failed:', err);
-    return { success: false, network: true, error: err?.message || 'ارتباط با سرور برقرار نشد.' };
+    const c = classifyFetchError(err);
+    return { success: false, network: true, kind: c.kind, error: c.message };
   }
 };
 
+export type LoginFailureKind = 'credentials' | 'locked' | NetErrorKind;
+
 /** Authenticate against the Apps Script Managers table. Password hashes never leave the server. */
-export const apiLogin = async (username: string, password: string): Promise<{ success: boolean; token?: string; user?: User; error?: string }> => {
+export const apiLogin = async (
+  username: string,
+  password: string
+): Promise<{ success: boolean; token?: string; user?: User; error?: string; kind?: LoginFailureKind }> => {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
-    const res = await fetch(DEFAULT_WEBAPP_URL, {
+    // 25 s: the server may be starting up or waiting behind another write.
+    const r = await requestJson(DEFAULT_WEBAPP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action: 'login', username: username.trim(), password }),
       mode: 'cors',
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    const result = await res.json();
-    if (!res.ok || !result?.success || !result?.token || !result?.user) {
-      return { success: false, error: result?.error || 'نام کاربری یا رمز عبور نامعتبر است.' };
+    }, 25000);
+
+    if (r.parseFailed || !r.data) {
+      return { success: false, kind: 'server', error: r.ok ? NET_MESSAGES.server : `خطای سرور (${r.status})؛ چند لحظه بعد دوباره تلاش کنید.` };
     }
-    if (typeof localStorage !== 'undefined') localStorage.setItem('school_finance_auth_token', result.token);
-    return { success: true, token: result.token, user: result.user };
+    const result = r.data;
+    if (r.ok && result.success && result.token && result.user) {
+      if (typeof localStorage !== 'undefined') localStorage.setItem('school_finance_auth_token', result.token);
+      return { success: true, token: result.token, user: result.user };
+    }
+
+    // Only a definite "no" from the server is reported as a credentials problem.
+    const msg = String(result.error || '').trim();
+    if (/بیش از حد/.test(msg)) return { success: false, kind: 'locked', error: msg };
+    if (/اشتباه|الزامی|غیرفعال/.test(msg)) return { success: false, kind: 'credentials', error: msg };
+    return { success: false, kind: 'server', error: msg ? `خطای سرور: ${msg}` : NET_MESSAGES.server };
   } catch (err: any) {
-    if (err?.name === 'AbortError') {
-      return { success: false, error: 'زمان پاسخ‌دهی سرور ورود به پایان رسید. لطفاً اتصال اینترنت خود را بررسی نمایید.' };
-    }
-    return { success: false, error: err?.message || 'ارتباط با سرور ورود برقرار نشد.' };
+    const c = classifyFetchError(err);
+    return { success: false, kind: c.kind, error: c.message };
   }
 };
 
@@ -720,54 +785,70 @@ export const loadDataFromAppsScript = async (
   webAppUrl: string = DEFAULT_WEBAPP_URL
 ): Promise<SheetLoadResult & { staff: StaffMember[] }> => {
   const cleanUrl = webAppUrl.trim().replace(/\/+$/, '');
+  const failResult = (error: string, errorKind?: NetErrorKind | 'auth') => ({
+    success: false, students: [], schools: [], transactions: [], cheques: [], categories: [],
+    managers: [], bankTransactions: [], staff: [],
+    stats: { studentsCount: 0, transactionsCount: 0, chequesCount: 0, expensesCount: 0 },
+    error, errorKind,
+  });
+  const isAuthMessage = (msg: unknown) => /نشست|وارد سامانه/.test(String(msg || ''));
 
   let rawData: any = null;
   const authToken = typeof localStorage !== 'undefined' ? (localStorage.getItem('school_finance_auth_token') || '') : '';
-  if (!authToken) {
-    return { success: false, students: [], schools: [], transactions: [], cheques: [], categories: [], managers: [], bankTransactions: [], staff: [], stats: { studentsCount: 0, transactionsCount: 0, chequesCount: 0, expensesCount: 0 }, error: 'ابتدا وارد سامانه شوید.' };
-  }
+  if (!authToken) return failResult('ابتدا وارد سامانه شوید.', 'auth');
+
+  // With no internet there is nothing to wait for: fail at once instead of burning timeouts.
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return failResult(NET_MESSAGES.offline, 'offline');
+
+  let lastNet: { kind: NetErrorKind; message: string } | null = null;
+  let serverAnswered = false;
 
   // 1. Try POST action: 'sync' with the authenticated session token.
   try {
-    const postRes = await fetch(cleanUrl, {
+    const r = await requestJson(cleanUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8',
-      },
-      body: JSON.stringify({
-        action: 'sync',
-        token: authToken,
-        owner: OWNER_EMAIL,
-      }),
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'sync', token: authToken, owner: OWNER_EMAIL }),
       mode: 'cors',
-      signal: AbortSignal.timeout(16000),
-    });
-    if (postRes.ok) {
-      const json = await postRes.json();
-      if (json && (json.success || Array.isArray(json.students) || Array.isArray(json.data))) {
-        rawData = json;
-      }
+    }, 25000);
+    serverAnswered = true;
+    const json = r.data;
+    if (r.ok && json && (json.success || Array.isArray(json.students) || Array.isArray(json.data))) {
+      rawData = json;
+    } else if (json && json.success === false && isAuthMessage(json.error)) {
+      return failResult(String(json.error), 'auth');
     }
   } catch (err) {
-    console.warn('Apps Script POST sync notice, trying GET:', err);
+    lastNet = classifyFetchError(err);
+    console.warn('Apps Script POST sync notice:', err);
   }
+
+  // The server was too slow: a second request to the same server would only double the wait.
+  if (!rawData && lastNet?.kind === 'timeout') return failResult(lastNet.message, 'timeout');
 
   // 2. Fallback to GET action: 'sync'
   if (!rawData) {
     try {
-      const getRes = await fetch(`${cleanUrl}?action=sync&token=${encodeURIComponent(authToken)}&owner=${encodeURIComponent(OWNER_EMAIL)}`, {
-        signal: AbortSignal.timeout(16000),
-      });
-      if (getRes.ok) {
-        const json = await getRes.json();
-        if (json && (json.success || Array.isArray(json.students))) {
-          rawData = json;
-        }
+      const r = await requestJson(
+        `${cleanUrl}?action=sync&token=${encodeURIComponent(authToken)}&owner=${encodeURIComponent(OWNER_EMAIL)}`,
+        {},
+        20000
+      );
+      serverAnswered = true;
+      const json = r.data;
+      if (r.ok && json && (json.success || Array.isArray(json.students))) {
+        rawData = json;
+      } else if (json && json.success === false && isAuthMessage(json.error)) {
+        return failResult(String(json.error), 'auth');
       }
     } catch (err) {
+      lastNet = classifyFetchError(err);
       console.warn('Apps Script GET sync notice:', err);
     }
   }
+
+  // Neither request got any answer: the connection is the problem, not the data.
+  if (!rawData && !serverAnswered && lastNet) return failResult(lastNet.message, lastNet.kind);
 
   // 3. Fallback to separate endpoints if unified sync wasn't deployed yet
   if (!rawData || (!Array.isArray(rawData.students) && !Array.isArray(rawData.tuition))) {
@@ -775,11 +856,13 @@ export const loadDataFromAppsScript = async (
     // fallback request so the UI can never remain stuck at 65% indefinitely.
     const fetchFallback = async (action: string): Promise<any | null> => {
       try {
-        const response = await fetch(`${cleanUrl}?action=${action}&token=${encodeURIComponent(authToken)}&owner=${encodeURIComponent(OWNER_EMAIL)}`, {
-          signal: AbortSignal.timeout(12000),
-        });
-        if (!response.ok) return null;
-        const json = await response.json();
+        const r = await requestJson(
+          `${cleanUrl}?action=${action}&token=${encodeURIComponent(authToken)}&owner=${encodeURIComponent(OWNER_EMAIL)}`,
+          {},
+          15000
+        );
+        if (!r.ok || r.parseFailed) return null;
+        const json = r.data;
         return json && (json.success !== false) && Array.isArray(json.data) ? json : null;
       } catch (_) {
         return null;
@@ -796,12 +879,7 @@ export const loadDataFromAppsScript = async (
     // Never report an empty successful sync when the students endpoint failed:
     // that could replace valid local data with empty arrays.
     if (!studentsRes) {
-      return {
-        success: false, students: [], schools: [], transactions: [], cheques: [],
-        categories: [], managers: [], bankTransactions: [], staff: [],
-        stats: { studentsCount: 0, transactionsCount: 0, chequesCount: 0, expensesCount: 0 },
-        error: 'پاسخ سرور همگام‌سازی دریافت نشد؛ لطفاً دوباره تلاش کنید.',
-      };
+      return failResult('پاسخ سرور همگام‌سازی دریافت نشد؛ لطفاً دوباره تلاش کنید.', 'server');
     }
 
     rawData = {
@@ -1135,24 +1213,39 @@ export const loadDataFromAppsScript = async (
  * 4. Google Sheets GViz CSV queries
  */
 export const loadDataFromPublicGoogleSheet = async (
-  spreadsheetInput: string = DEFAULT_SPREADSHEET_ID
+  spreadsheetInput: string = DEFAULT_SPREADSHEET_ID,
+  options: { skipAppsScript?: boolean } = {}
 ): Promise<SheetLoadResult & { staff: StaffMember[] }> => {
   // Strategy 1: Primary - Google Apps Script Web App (Live authoritative data for s.mehdi.golzari@gmail.com)
-  try {
-    const gasResult = await loadDataFromAppsScript(DEFAULT_WEBAPP_URL);
-    if (gasResult && gasResult.success) {
-      return gasResult;
+  // The caller passes skipAppsScript when it has just tried this and failed: repeating it only doubles the wait.
+  if (!options.skipAppsScript) {
+    try {
+      const gasResult = await loadDataFromAppsScript(DEFAULT_WEBAPP_URL);
+      if (gasResult && gasResult.success) {
+        return gasResult;
+      }
+    } catch (e) {
+      console.warn('Strategy 1 (Apps Script live backend) notice:', e);
     }
-  } catch (e) {
-    console.warn('Strategy 1 (Apps Script live backend) notice:', e);
   }
+
+  // Every request below is time-limited so a weak connection can never hang the sync.
+  const fetchLimited = async (url: string, ms = 20000): Promise<Response> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    try {
+      return await fetch(url, { signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
 
   const spreadsheetId = extractSpreadsheetId(spreadsheetInput);
 
   // Strategy 2: Direct XLSX export from Google Docs
   try {
     const exportUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=xlsx`;
-    const response = await fetch(exportUrl);
+    const response = await fetchLimited(exportUrl, 30000);
     if (response.ok) {
       const buffer = await response.arrayBuffer();
       const wb = XLSX.read(new Uint8Array(buffer), { type: 'array' });
@@ -1166,7 +1259,7 @@ export const loadDataFromPublicGoogleSheet = async (
   // Strategy 3: Local Vite / server proxy (/api/sync-sheet)
   try {
     const proxyUrl = `/api/sync-sheet?id=${encodeURIComponent(spreadsheetId)}`;
-    const response = await fetch(proxyUrl);
+    const response = await fetchLimited(proxyUrl, 15000);
     if (response.ok) {
       const buffer = await response.arrayBuffer();
       const wb = XLSX.read(new Uint8Array(buffer), { type: 'array' });
@@ -1183,7 +1276,7 @@ export const loadDataFromPublicGoogleSheet = async (
   for (const name of sheetNames) {
     try {
       const csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(name)}`;
-      const res = await fetch(csvUrl);
+      const res = await fetchLimited(csvUrl, 15000);
       if (res.ok) {
         const csvText = await res.text();
         const ws = XLSX.read(csvText, { type: 'string' }).Sheets['Sheet1'];
@@ -1193,6 +1286,7 @@ export const loadDataFromPublicGoogleSheet = async (
       }
     } catch (err) {
       console.warn(`Could not fetch sheet ${name}:`, err);
+      break; // a network failure/timeout will repeat for every remaining sheet
     }
   }
 

@@ -45,6 +45,9 @@ import {
   loadDataFromAppsScript,
   loadDataFromExcelFile,
   loadDataFromPublicGoogleSheet,
+  classifyFetchError,
+  NET_MESSAGES,
+  type NetErrorKind,
   extractSpreadsheetId,
   apiLogin,
   postToAppsScript,
@@ -855,7 +858,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   /** Queue a write and start sending it right away (the sync pass drains the queue first). */
   const queue = (action: string, payload: Record<string, any>, entity?: OutboxEntity) => {
-    void enqueue({ action, payload, entity }).then(() => { void syncWithGoogleSheets(spreadsheetId).catch(() => {}); });
+    void enqueue({ action, payload, entity }).then(() => { void syncWithGoogleSheets(spreadsheetId, { pull: false }).catch(() => {}); });
   };
 
   /** If the record has not been sent yet, fold the change into the queued add instead of queueing an edit. */
@@ -940,31 +943,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const syncLock = useRef<Promise<boolean> | null>(null);
   const syncAgain = useRef(false);
+  const syncAgainPull = useRef(false);
 
-  /** One sync at a time; a request made while syncing triggers one more pass afterwards. */
-  const syncWithGoogleSheets = (targetSheetId?: string): Promise<boolean> => {
+  /**
+   * One sync at a time; a request made while syncing triggers one more pass afterwards.
+   * `pull: false` only sends queued changes (used right after the user saves something) so
+   * saving does not re-download the whole database every time.
+   * A watchdog frees the lock if a pass never finishes, so one bad connection can no longer
+   * leave every later sync waiting on a stuck one.
+   */
+  const syncWithGoogleSheets = (targetSheetId?: string, opts: { pull?: boolean } = {}): Promise<boolean> => {
+    const wantPull = opts.pull !== false;
     if (syncLock.current) {
       syncAgain.current = true;
+      if (wantPull) syncAgainPull.current = true;
       return syncLock.current;
     }
-    const p = (async () => {
+    let timedOut = false;
+    let p!: Promise<boolean>;
+    const watchdog = setTimeout(() => {
+      timedOut = true;
+      if (syncLock.current === p) syncLock.current = null;
+      setSyncProgress(0);
+      setSyncStageText('');
+      setSyncStatus('error');
+      setSyncError('همگام‌سازی بیش از حد طول کشید و متوقف شد؛ اینترنت ضعیف است. تغییرات روی گوشی ذخیره‌اند؛ دوباره تلاش کنید.');
+    }, 180000);
+    p = (async () => {
       try {
-        let ok = await runSync(targetSheetId);
+        let ok = await runSync(targetSheetId, wantPull);
         let guard = 0;
-        while (syncAgain.current && guard++ < 3) {
+        while (syncAgain.current && guard++ < 3 && !timedOut) {
+          const again = syncAgainPull.current;
           syncAgain.current = false;
-          ok = await runSync(targetSheetId);
+          syncAgainPull.current = false;
+          ok = await runSync(targetSheetId, again);
         }
         return ok;
       } finally {
-        syncLock.current = null;
+        clearTimeout(watchdog);
+        if (!timedOut && syncLock.current === p) syncLock.current = null;
       }
     })();
     syncLock.current = p;
     return p;
   };
 
-  const runSync = async (targetSheetId?: string): Promise<boolean> => {
+  const runSync = async (targetSheetId?: string, pull: boolean = true): Promise<boolean> => {
     const sId = extractSpreadsheetId(targetSheetId || spreadsheetId || DEFAULT_SPREADSHEET_ID);
     setSyncStatus('syncing');
     setSyncError(null);
@@ -981,6 +1006,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (e) {
       console.warn('Outbox drain notice:', e);
     }
+
+    const authMessage = 'نشست شما منقضی شده است؛ دوباره وارد شوید تا تغییرات ذخیره‌شده ارسال شود.';
+
+    // Send-only pass (right after the user saved something): no need to download everything again.
+    if (!pull) {
+      setSyncProgress(0);
+      setSyncStageText('');
+      if (drain?.authExpired) {
+        setSyncStatus('error');
+        setSyncError(authMessage);
+        return false;
+      }
+      if (drain?.offline) {
+        setSyncStatus('error');
+        setSyncError(`ارسال انجام نشد؛ تغییرات روی گوشی ذخیره شده و خودکار ارسال می‌شود. ${NET_MESSAGES[drain.kind || 'network']}`);
+        return false;
+      }
+      setSyncStatus('synced');
+      return true;
+    }
+
+    // What went wrong, if anything — used for a precise message at the end.
+    let failure: { kind: NetErrorKind | 'auth'; message: string } | null = null;
+    if (drain?.authExpired) failure = { kind: 'auth', message: authMessage };
 
     // 2) Google Apps Script Web App (authoritative backend)
     try {
@@ -1001,37 +1050,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }, 1200);
         return true;
       }
+      if (gasResult?.errorKind) {
+        failure = { kind: gasResult.errorKind, message: gasResult.error || NET_MESSAGES.server };
+      }
     } catch (e: any) {
       console.warn('Apps Script sync attempt notice:', e);
+      const c = classifyFetchError(e);
+      failure = { kind: c.kind, message: c.message };
     }
 
-    // 3) Direct Google Sheet export / fallback (read-only snapshot)
-    try {
-      setSyncStageText('دریافت اطلاعات از نسخه پشتیبان شیت...');
-      setSyncProgress(80);
-      const result = await loadDataFromPublicGoogleSheet(sId);
-      if (result.success) {
-        setSyncProgress(95);
-        setSyncStageText('تکمیل همگام‌سازی پشتیبان...');
-        applyRemoteData(result);
-        logActivity('همگام‌سازی اکسل گوگل شیت', `دریافت ${result.students.length} دانش‌آموز`);
-        setSyncProgress(100);
-        setSyncStageText('همگام‌سازی با موفقیت انجام شد');
-        setTimeout(() => {
-          setSyncProgress(0);
-          setSyncStageText('');
-        }, 1200);
-        return true;
+    // 3) Direct Google Sheet export / fallback (read-only snapshot). Only worth trying when the
+    //    server answered but its data was unusable; with no connection / slow server / expired
+    //    login it would just add more waiting.
+    if (!failure || failure.kind === 'server') {
+      try {
+        setSyncStageText('دریافت اطلاعات از نسخه پشتیبان شیت...');
+        setSyncProgress(80);
+        const result = await loadDataFromPublicGoogleSheet(sId, { skipAppsScript: true });
+        if (result.success) {
+          setSyncProgress(95);
+          setSyncStageText('تکمیل همگام‌سازی پشتیبان...');
+          applyRemoteData(result);
+          logActivity('همگام‌سازی اکسل گوگل شیت', `دریافت ${result.students.length} دانش‌آموز`);
+          setSyncProgress(100);
+          setSyncStageText('همگام‌سازی با موفقیت انجام شد');
+          setTimeout(() => {
+            setSyncProgress(0);
+            setSyncStageText('');
+          }, 1200);
+          return true;
+        }
+      } catch (err: any) {
+        console.warn('Public sheet sync attempt notice:', err);
       }
-    } catch (err: any) {
-      console.warn('Public sheet sync attempt notice:', err);
     }
+
     setSyncProgress(0);
     setSyncStageText('');
     setSyncStatus('error');
-    setSyncError(drain?.authExpired
-      ? 'نشست شما منقضی شده است؛ دوباره وارد شوید تا تغییرات ذخیره‌شده ارسال شود.'
-      : 'عدم امکان همگام‌سازی برخط با سرور ابری. لطفاً اتصال اینترنت خود را بررسی فرمایید.');
+    setSyncError(failure?.message || 'همگام‌سازی انجام نشد؛ لطفاً اتصال اینترنت را بررسی کنید و دوباره تلاش کنید.');
     return false;
   };
 
@@ -2276,33 +2333,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       clearInterval(progressInterval);
 
       if (!result.success || !result.user) {
-        // Fallback: Check local cached users if offline or server timeout/network issue
-        const cleanUser = username.trim().toLowerCase();
-        const localMatch = users.find(
-          (u) =>
-            u.username?.toLowerCase() === cleanUser &&
-            (u.password ? u.password === pass : true) &&
-            u.active !== false
-        );
-
-        if (localMatch && (!result.success && (result.error?.includes('ارتباط') || result.error?.includes('پایان')))) {
-          onProgress?.(95, 'ورود با حساب محلی ذخیره‌شده...');
-          const matchedSchool = schools.find((school) => String(school.id) === String(localMatch.school_id));
-          const authenticatedUser: User = {
-            ...localMatch,
-            active: true,
-            role: localMatch.role === 'admin' ? 'senior' : localMatch.role,
-            school_name: localMatch.school_name || matchedSchool?.name,
-          };
-          onProgress?.(100, 'ورود با موفقیت انجام شد! در حال انتقال...');
-          setCurrentUser(authenticatedUser);
-          setCurrentScreen('dashboard');
-          logActivity('ورود به سیستم (آفلاین)', `ورود کاربر ${authenticatedUser.name}`);
-          return true;
-        }
-
-        console.warn('Login rejected:', result.error || 'invalid credentials');
-        return false;
+        // Report the real reason. Only a definite answer from the server means "wrong password";
+        // a dead/slow connection or a bad server reply must never look like a credentials error.
+        // (The old offline fallback accepted ANY password for a known username and was removed.)
+        console.warn('Login failed:', result.kind, result.error);
+        const failure: any = new Error(result.error || 'ورود انجام نشد. دوباره تلاش کنید.');
+        failure.kind = result.kind || 'server';
+        throw failure;
       }
 
       onProgress?.(90, 'تکمیل مجوزهای کاربری و آماده‌سازی میز کار...');

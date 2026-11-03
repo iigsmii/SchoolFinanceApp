@@ -11,6 +11,8 @@ export const LoginScreen: React.FC = () => {
   const [showPass, setShowPass] = useState(false);
   const [remember, setRemember] = useState(() => { try { return localStorage.getItem('schoolfinance_remember_login') === '1'; } catch { return false; } });
   const [error, setError] = useState('');
+  // true when the problem is the connection/server, not the username or password
+  const [isConnectionError, setIsConnectionError] = useState(false);
 
   // Live percentage progress & stage feedback
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -32,6 +34,7 @@ export const LoginScreen: React.FC = () => {
     e.preventDefault();
     if (isLoggingIn) return;
     setError('');
+    setIsConnectionError(false);
 
     if (!username.trim() || !password) {
       setError('نام کاربری و رمز عبور را وارد کنید');
@@ -83,7 +86,8 @@ export const LoginScreen: React.FC = () => {
       setIsLoggingIn(false);
       setLoginProgress(0);
       setLoginStage('');
-      setError(err?.message || 'ارتباط با سرور ورود برقرار نشد. اینترنت و آدرس وب‌اپ را بررسی کنید.');
+      setIsConnectionError(['offline', 'timeout', 'network', 'server'].includes(err?.kind));
+      setError(err?.message || 'ورود انجام نشد. اینترنت را بررسی کنید و دوباره تلاش کنید.');
     }
   };
 
@@ -121,9 +125,18 @@ export const LoginScreen: React.FC = () => {
           </div>
 
           {error && (
-            <div className="p-3 mb-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2 animate-in fade-in duration-200">
-              <span className="shrink-0">⚠️</span>
-              <span>{error}</span>
+            <div
+              className={`p-3 mb-4 rounded-xl border text-xs font-semibold flex items-center gap-2 animate-in fade-in duration-200 ${
+                isConnectionError
+                  ? 'bg-amber-50 border-amber-200 text-amber-800'
+                  : 'bg-rose-50 border-rose-200 text-rose-700'
+              }`}
+            >
+              <span className="shrink-0">{isConnectionError ? '📡' : '⚠️'}</span>
+              <span>
+                {error}
+                {isConnectionError && ' (نام کاربری و رمز عبور شما بررسی نشده است.)'}
+              </span>
             </div>
           )}
 

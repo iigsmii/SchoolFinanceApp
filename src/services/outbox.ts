@@ -7,7 +7,7 @@
  * Apps Script `Requests` sheet can replay the stored result instead of writing twice.
  */
 import { idbGet, idbSet } from './idb';
-import { postToAppsScript } from './googleSheets';
+import { postToAppsScript, type NetErrorKind } from './googleSheets';
 
 export interface OutboxEntity {
   type: string; // student | tuition | expense | cheque | petty_income | worklog | payroll | bank_account | message | category | staff | school | manager | bank_upload | ...
@@ -108,6 +108,8 @@ export interface DrainResult {
   pending: number;
   offline: boolean;
   authExpired: boolean;
+  /** Why the connection failed (when offline is true). */
+  kind?: NetErrorKind;
 }
 
 const isAuthError = (msg?: string) => /نشست|وارد سامانه|ورود/.test(String(msg || ''));
@@ -139,7 +141,7 @@ export async function drainOutbox(onSuccess: (entry: OutboxEntry, result: any) =
         out.sent++;
         continue;
       }
-      if (res?.network) { out.offline = true; break; }
+      if (res?.network) { out.offline = true; out.kind = res.kind; break; }
       if (isAuthError(res?.error || res?.message)) { out.authExpired = true; break; }
       if (res?.needs_review) {
         // The server may or may not have written the row: never replay automatically.
