@@ -848,7 +848,7 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
         <div className="pt-2 space-y-3">
           <div className="text-xs font-bold text-[#62205f] flex items-center gap-1.5" style={{ color: accentColor }}>
             <Sparkles className="w-3.5 h-3.5" />
-            <span>بخش ویژه مدیریت ارشد مجموعه (سیدمهدی گلزاری)</span>
+            <span>بخش ویژه مدیریت ارشد مجموعه</span>
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-2">
             {seniorExtraItems.map((item) => {
