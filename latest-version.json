@@ -1,7 +1,7 @@
 {
-  "version": "2.16.302",
+  "version": "2.16.303",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Fix Persian typing on Android and amount-field format error",
-  "build": 302,
-  "published_at": "2026-11-02T09:14:01Z"
+  "notes": "Precise login/sync errors; stop sync from hanging on weak internet",
+  "build": 303,
+  "published_at": "2026-11-03T11:22:47Z"
 }
