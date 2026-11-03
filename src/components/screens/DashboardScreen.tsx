@@ -17,6 +17,11 @@ import {
   BarChart3,
   ClipboardList,
   Settings,
+  Building2,
+  UserCog,
+  FileSpreadsheet,
+  Megaphone,
+  Landmark,
   ChevronLeft,
   AlertCircle,
   PhoneCall,
@@ -261,6 +266,19 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
   ];
 
 
+
+  const seniorExtraItems = [
+    { id: 'feedback', label: 'صندوق پیشنهادات', icon: MessageSquare, color: 'text-rose-600', bg: 'bg-rose-50' },
+    { id: 'staff', label: 'حقوق و بیمه', icon: GraduationCap, color: 'text-purple-600', bg: 'bg-purple-50' },
+    { id: 'cheques', label: 'تأیید چک صیادی', icon: FileCheck, color: 'text-rose-600', bg: 'bg-rose-50' },
+    { id: 'bank', label: 'تطبیق بانک', icon: Landmark, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { id: 'bank_accounts', label: 'حساب‌های بانکی', icon: Landmark, color: 'text-emerald-700', bg: 'bg-emerald-50' },
+    { id: 'managers', label: 'مدیران مدارس', icon: UserCog, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { id: 'schools', label: 'واحدهای آموزشی', icon: Building2, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { id: 'google_settings', label: 'تنظیمات گوگل', icon: Database, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { id: 'export', label: 'خروجی پارسیان', icon: FileSpreadsheet, color: 'text-teal-600', bg: 'bg-teal-50' },
+    { id: 'messages', label: 'ارسال بخشنامه', icon: Megaphone, color: 'text-purple-600', bg: 'bg-purple-50' },
+  ];
 
   return (
     <div className="max-w-4xl mx-auto px-3 sm:px-4 py-3 sm:py-4 space-y-3.5 sm:space-y-4">
@@ -825,6 +843,29 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
       <>
       {/* Quick invoice is now the first item in the Quick Access grid. */}
 
+      {/* 8. Senior Only Section: Tuition Trend Chart + Management tools */}
+      {isSenior && (
+        <div className="pt-2 space-y-3">
+          <div className="text-xs font-bold text-[#62205f] flex items-center gap-1.5" style={{ color: accentColor }}>
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>بخش ویژه مدیریت ارشد مجموعه (سیدمهدی گلزاری)</span>
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-2">
+            {seniorExtraItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button key={item.id} onClick={() => { playClickSound(); setCurrentScreen(item.id as ScreenType); }}
+                  className="flex flex-col items-center justify-center p-2.5 rounded-2xl bg-white border border-[#e5dde8] hover:border-[#62205f] hover:shadow-xs active:scale-95 transition-all text-center min-h-[75px] group">
+                  <div className={`w-8 h-8 rounded-xl ${item.bg} flex items-center justify-center mb-1 group-hover:scale-105 transition-transform`}>
+                    <Icon className={`w-4 h-4 ${item.color}`} />
+                  </div>
+                  <span className="text-[10px] sm:text-[11px] font-bold text-[#341648] leading-tight line-clamp-1">{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
             </>
       )}
 
