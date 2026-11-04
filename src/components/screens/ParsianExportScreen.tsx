@@ -4,8 +4,6 @@ import { Header } from '../Header';
 import { matchTokens } from '../../utils/studentSearch';
 import {
   generateParsianJournalEntries,
-  exportParsianStandardExcel,
-  exportParsianDisketteTxt,
   calculateTrialBalance,
   exportParsianTreeExcel,
   DEFAULT_PARSIAN_CODING,
@@ -15,6 +13,15 @@ import {
   SCHOOL_PARSIAN_MAPPINGS,
   ParsianKolAccount,
 } from '../../data/parsianTreeData';
+import {
+  buildPayableChequesFile,
+  buildReceivableChequesFile,
+  buildDetailAccountsFile,
+  buildDocumentsFile,
+  exportParsianFile,
+  isChequeTransaction,
+  ParsianExportFile,
+} from '../../utils/parsianExports';
 import { formatRial, jalaliFromGregorian, todayJalali } from '../../utils/jalali';
 import { ParsianCodingConfig, ParsianJournalEntry } from '../../types';
 import {
@@ -53,6 +60,8 @@ export const ParsianExportScreen: React.FC = () => {
     schools,
     categories,
     cheques,
+    staffMembers,
+    bankAccounts,
     currentUser,
     accentColor,
     setCurrentScreen,
@@ -70,7 +79,7 @@ export const ParsianExportScreen: React.FC = () => {
     }
   });
 
-  const [activeTab, setActiveTab] = useState<'vouchers' | 'tree_explorer' | 'trial_balance' | 'coding_settings'>('vouchers');
+  const [activeTab, setActiveTab] = useState<'exports' | 'vouchers' | 'tree_explorer' | 'trial_balance' | 'coding_settings'>('exports');
 
   // Tree Explorer State
   const [treeSearch, setTreeSearch] = useState('');
@@ -94,8 +103,9 @@ export const ParsianExportScreen: React.FC = () => {
 
   // Generate double-entry journal vouchers
   const allEntries = useMemo(() => {
+    // Cheque transactions are imported through the two cheque files; keeping them here too would double-post.
     return generateParsianJournalEntries(
-      transactions,
+      transactions.filter((t) => !isChequeTransaction(t)),
       students,
       schools,
       categories,
@@ -168,15 +178,47 @@ export const ParsianExportScreen: React.FC = () => {
     return calculateTrialBalance(filteredEntries);
   }, [filteredEntries]);
 
-  const handleExportExcel = () => {
-    const schoolObj = schools.find((s) => s.id === selectedSchoolId);
-    exportParsianStandardExcel(filteredEntries, {
-      schoolName: schoolObj?.name || (selectedSchoolId === 0 ? 'کلیه مدارس مدرسة القرآن' : 'مدرسه'),
-    });
+  const exportFilters = useMemo(
+    () => ({ schoolId: selectedSchoolId, startDate: startDate.trim(), endDate: endDate.trim() }),
+    [selectedSchoolId, startDate, endDate]
+  );
+
+  const exportFiles = useMemo<ParsianExportFile[]>(
+    () => [
+      buildPayableChequesFile(transactions, schools, bankAccounts, codingConfig, exportFilters),
+      buildReceivableChequesFile(cheques, students, schools, codingConfig, exportFilters),
+      buildDetailAccountsFile(students, staffMembers, codingConfig, exportFilters),
+      buildDocumentsFile(filteredEntries),
+    ],
+    [transactions, schools, bankAccounts, codingConfig, exportFilters, cheques, students, staffMembers, filteredEntries]
+  );
+
+  const EXPORT_META: Record<ParsianExportFile['key'], { title: string; desc: string }> = {
+    payable_cheques: { title: 'خروجی چک‌های پرداختنی', desc: 'انتقال چک‌های پرداختنی از نرم‌افزار اکسل' },
+    receivable_cheques: { title: 'خروجی چک‌های دریافتنی', desc: 'انتقال چک‌های دریافتنی از نرم‌افزار اکسل' },
+    detail_accounts: { title: 'خروجی حساب‌های تفصیلی', desc: 'انتقال حساب‌ها از فایل اکسل (دانش‌آموزان و پرسنل)' },
+    documents: { title: 'خروجی اسناد حسابداری', desc: 'انتقال به سند حسابداری از اکسل' },
   };
 
-  const handleExportTxt = () => {
-    exportParsianDisketteTxt(filteredEntries);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [exportMsg, setExportMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const handleExportFile = async (file: ParsianExportFile) => {
+    if (file.rows.length === 0) {
+      setExportMsg({ ok: false, text: `برای «${EXPORT_META[file.key].title}» هیچ ردیفی با فیلترهای فعلی وجود ندارد.` });
+      return;
+    }
+    setBusyKey(file.key);
+    setExportMsg(null);
+    try {
+      const name = await exportParsianFile(file);
+      setExportMsg({ ok: true, text: `فایل ${name} (${file.rows.length.toLocaleString('fa-IR')} ردیف) ساخته شد.` });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'خطای نامشخص';
+      setExportMsg({ ok: false, text: `ذخیره فایل ناموفق بود: ${reason}` });
+    } finally {
+      setBusyKey(null);
+    }
   };
 
   const handlePrint = () => {
@@ -215,8 +257,14 @@ export const ParsianExportScreen: React.FC = () => {
     setExpandedKols(new Set());
   };
 
-  const handleExportTree = () => {
-    exportParsianTreeExcel(PARSIAN_ACCOUNTS_TREE, SCHOOL_PARSIAN_MAPPINGS);
+  const handleExportTree = async () => {
+    try {
+      await exportParsianTreeExcel(PARSIAN_ACCOUNTS_TREE, SCHOOL_PARSIAN_MAPPINGS);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'خطای نامشخص';
+      setSaveSuccessMsg(`ذخیره فایل ناموفق بود: ${reason}`);
+      setTimeout(() => setSaveSuccessMsg(null), 5000);
+    }
   };
 
   const treeCategories = useMemo(() => {
@@ -281,25 +329,6 @@ export const ParsianExportScreen: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
               <button
                 type="button"
-                onClick={handleExportExcel}
-                className="flex-1 md:flex-initial px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all"
-              >
-                <Download className="w-4 h-4" />
-                <span>دانلود اکسل پارسیان (.xlsx)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleExportTxt}
-                className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-gray-50 text-[#341648] border border-gray-300 text-xs font-bold flex items-center gap-1.5 shadow-xs active:scale-95 transition-all"
-                title="فایل متنی تب‌دار سازگار با دیسکت ورود اسناد پارسیان"
-              >
-                <FileText className="w-4 h-4 text-purple-700" />
-                <span>فایل دیسکت (.txt)</span>
-              </button>
-
-              <button
-                type="button"
                 onClick={handlePrint}
                 className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 text-xs font-bold flex items-center gap-1.5 shadow-xs active:scale-95 transition-all"
               >
@@ -346,6 +375,20 @@ export const ParsianExportScreen: React.FC = () => {
 
         {/* Tab Navigation */}
         <div className="flex flex-wrap items-center gap-2 border-b border-[#e5dde8] pb-1 print:hidden">
+          <button
+            type="button"
+            onClick={() => setActiveTab('exports')}
+            className={`px-4 py-2.5 rounded-2xl text-xs font-black flex items-center gap-2 transition-all whitespace-nowrap ${
+              activeTab === 'exports'
+                ? 'bg-[#62205f] text-white shadow-sm'
+                : 'text-gray-600 hover:bg-white'
+            }`}
+            style={activeTab === 'exports' ? { backgroundColor: accentColor } : {}}
+          >
+            <Download className="w-4 h-4" />
+            <span>فایل‌های ورود به پارسیان (۴ خروجی)</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setActiveTab('vouchers')}
@@ -402,6 +445,94 @@ export const ParsianExportScreen: React.FC = () => {
             <span>تنظیمات کدینگ پارسیان</span>
           </button>
         </div>
+
+        {/* TAB 0: the four Parsian import files */}
+        {activeTab === 'exports' && (
+          <div className="space-y-4 print:hidden">
+            <div className="bg-white rounded-3xl p-4 border border-[#e5dde8] shadow-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {isSenior && (
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-700 mb-1">واحد آموزشی / مدرسه:</label>
+                    <select
+                      value={selectedSchoolId}
+                      onChange={(e) => setSelectedSchoolId(Number(e.target.value))}
+                      className="w-full py-2 px-3 rounded-xl border border-gray-300 text-xs font-bold text-[#341648] bg-white"
+                    >
+                      <option value={0}>همه مدارس مجموعه ({schools.length} مرکز)</option>
+                      {schools.map((sc) => (
+                        <option key={sc.id} value={sc.id}>{sc.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-1">از تاریخ (مثال 1405/01/01):</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    dir="ltr"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full py-2 px-3 rounded-xl border border-gray-300 text-xs font-mono text-[#341648]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-gray-700 mb-1">تا تاریخ:</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    dir="ltr"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-full py-2 px-3 rounded-xl border border-gray-300 text-xs font-mono text-[#341648]"
+                  />
+                </div>
+              </div>
+              <p className="text-[10px] text-gray-400 mt-2">
+                بازه‌ی تاریخ برای چک‌ها روی تاریخ سررسید و برای اسناد روی تاریخ سند اعمال می‌شود. حساب‌های تفصیلی فیلتر تاریخ ندارند.
+              </p>
+            </div>
+
+            {exportMsg && (
+              <div
+                className={`p-3 rounded-xl text-xs font-bold border ${
+                  exportMsg.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'
+                }`}
+              >
+                {exportMsg.text}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {exportFiles.map((file) => (
+                <div key={file.key} className="bg-white rounded-3xl p-5 border border-[#e5dde8] shadow-xs flex flex-col gap-3">
+                  <div>
+                    <h3 className="text-sm font-black text-[#341648]">{EXPORT_META[file.key].title}</h3>
+                    <p className="text-[11px] text-gray-500 mt-0.5">منوی پارسیان: «{EXPORT_META[file.key].desc}»</p>
+                  </div>
+                  <div className="text-xs font-mono font-black text-purple-900">
+                    {file.rows.length.toLocaleString('fa-IR')} <span className="font-sans font-normal text-gray-500">ردیف</span>
+                  </div>
+                  <ul className="text-[10px] text-gray-500 leading-relaxed list-disc list-inside space-y-0.5 flex-1">
+                    {file.notes.map((n, i) => (
+                      <li key={i}>{n}</li>
+                    ))}
+                  </ul>
+                  <button
+                    type="button"
+                    disabled={busyKey !== null}
+                    onClick={() => handleExportFile(file)}
+                    className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>{busyKey === file.key ? 'در حال ساخت فایل...' : 'دانلود فایل (.xls)'}</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* TAB 1: Vouchers List with Filters */}
         {activeTab === 'vouchers' && (
@@ -1094,6 +1225,19 @@ export const ParsianExportScreen: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">
+                    کد کل اسناد پرداختنی (چک‌های پرداختنی)
+                  </label>
+                  <input
+                    type="text"
+                    value={codingConfig.kol_payable ?? DEFAULT_PARSIAN_CODING.kol_payable}
+                    onChange={(e) => setCodingConfig({ ...codingConfig, kol_payable: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-mono text-[#341648]"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">پیش‌فرض پارسیان مجموعه: 22 (اسناد پرداختنی)</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
                     کد کل صندوق و تنخواه‌گردان‌ها
                   </label>
                   <input
@@ -1142,12 +1286,12 @@ export const ParsianExportScreen: React.FC = () => {
         <div className="bg-[#fcfaff] rounded-3xl p-5 border border-[#ede5ef] space-y-3 print:hidden">
           <div className="flex items-center gap-2 text-xs font-black text-[#341648]">
             <HelpCircle className="w-4 h-4 text-purple-700" />
-            <span>راهنمای فراخوانی مستقیم فایل اکسل در نرم‌افزار حسابداری پارسیان:</span>
+            <span>راهنمای ورود فایل‌ها به نرم‌افزار حسابداری پارسیان:</span>
           </div>
           <ol className="text-xs text-gray-600 space-y-1.5 list-decimal list-inside leading-relaxed pr-1">
-            <li>روی دکمه سبز رنگ <strong>«دانلود اکسل پارسیان (.xlsx)»</strong> در بالای همین صفحه کلیک کنید.</li>
-            <li>در نرم‌افزار پارسیان، وارد منوی <strong>«عملیات حسابداری» ⬅️ «ورود اسناد از فایل اکسل یا دیسکت»</strong> شوید.</li>
-            <li>فایل دانلودشده را انتخاب نموده و تطبیق ستون‌ها را بر اساس ردیف اول تأیید فرمایید؛ تمامی اسناد به صورت دوبل، تراز و با تفصیلی کد ملی دانش‌آموزان ثبت خواهند شد.</li>
+            <li>در تب «فایل‌های ورود به پارسیان» فایل مورد نظر را دانلود کنید؛ همه‌ی فایل‌ها با پسوند <strong>XLS</strong> و صفحه‌ای به نام <strong>sheet1</strong> ساخته می‌شوند.</li>
+            <li>ترتیب پیشنهادی ورود: <strong>حساب‌های تفصیلی ← اسناد حسابداری ← چک‌های دریافتنی ← چک‌های پرداختنی</strong>.</li>
+            <li>در پارسیان از هر پنجره‌ی انتقال (چک پرداختنی، چک دریافتنی، حساب‌ها، سند حسابداری) دکمه‌ی «...» را بزنید، فایل را انتخاب کنید و دکمه‌ی انتقال را بزنید.</li>
           </ol>
         </div>
       </main>

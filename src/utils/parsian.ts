@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import { Transaction, Student, School, ExpenseCategory, Cheque, ParsianJournalEntry, JournalEntryRow, ParsianCodingConfig } from '../types';
 import { jalaliFromGregorian } from './jalali';
+import { saveOrShareFile } from './fileDownload';
 
 export const DEFAULT_PARSIAN_CODING: ParsianCodingConfig = {
   kol_receivable: '67', // گردش حساب شهریه دانش آموزان
@@ -424,110 +425,6 @@ export function generateParsianJournalEntries(
 }
 
 /**
- * Standard Parsian Excel (.xlsx) file generator
- */
-export function exportParsianStandardExcel(
-  journalEntries: ParsianJournalEntry[],
-  options?: {
-    schoolName?: string;
-    dateRangeLabel?: string;
-  }
-) {
-  const flatRows: any[] = [];
-  let rowCounter = 1;
-
-  journalEntries.forEach((entry) => {
-    entry.rows.forEach((r) => {
-      flatRows.push({
-        'ردیف': rowCounter++,
-        'شماره سند': entry.doc_number,
-        'تاریخ سند': entry.date_jalali,
-        'کد کل': r.kol_code,
-        'نام حساب کل': r.kol_name,
-        'کد معین': r.moeen_code,
-        'نام حساب معین': r.moeen_name,
-        'کد تفصیلی': r.tafsili_code,
-        'نام طرف حساب / تفصیلی': r.tafsili_name,
-        'شرح آرتیکل سند': r.description,
-        'بدهکار (ریال)': r.debit,
-        'بستانکار (ریال)': r.credit,
-        'شماره پیگیری / عطف': r.tracking_code || '',
-        'کد مرکز هزینه': r.school_id,
-        'مرکز هزینه / واحد آموزشی': r.school_name,
-      });
-    });
-  });
-
-  const worksheet = XLSX.utils.json_to_sheet(flatRows);
-
-  // Set RTL and column widths
-  worksheet['!cols'] = [
-    { wch: 6 },  // ردیف
-    { wch: 10 }, // شماره سند
-    { wch: 12 }, // تاریخ
-    { wch: 8 },  // کد کل
-    { wch: 22 }, // نام کل
-    { wch: 8 },  // کد معین
-    { wch: 25 }, // نام معین
-    { wch: 14 }, // کد تفصیلی
-    { wch: 24 }, // نام تفصیلی
-    { wch: 38 }, // شرح سند
-    { wch: 15 }, // بدهکار
-    { wch: 15 }, // بستانکار
-    { wch: 16 }, // پیگیری
-    { wch: 12 }, // کد مرکز هزینه
-    { wch: 22 }, // مرکز هزینه
-  ];
-
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'اسناد دوبل پارسیان');
-
-  // Trigger download
-  const dateStr = jalaliFromGregorian(new Date().toISOString()).replace(/\//g, '-');
-  const targetLabel = options?.schoolName ? options.schoolName.replace(/\s+/g, '_') : 'all_schools';
-  const filename = `Parsian_Journal_Vouchers_${targetLabel}_${dateStr}.xlsx`;
-  XLSX.writeFile(workbook, filename);
-}
-
-/**
- * Parsian Text / CSV format (.txt / .csv) for legacy or direct diskette imports
- */
-export function exportParsianDisketteTxt(journalEntries: ParsianJournalEntry[]) {
-  const lines: string[] = [];
-  // Standard header: DocNo, Date, Kol, Moeen, Tafsili, Description, Debit, Credit, RefNo
-  lines.push(['شماره سند', 'تاریخ', 'کد کل', 'کد معین', 'کد تفصیلی', 'شرح سند', 'بدهکار', 'بستانکار', 'کد پیگیری'].join('\t'));
-
-  journalEntries.forEach((entry) => {
-    entry.rows.forEach((r) => {
-      const cleanDesc = (r.description || '').replace(/[\t\r\n]/g, ' ');
-      lines.push([
-        entry.doc_number,
-        entry.date_jalali,
-        r.kol_code,
-        r.moeen_code,
-        r.tafsili_code,
-        cleanDesc,
-        r.debit,
-        r.credit,
-        r.tracking_code || '',
-      ].join('\t'));
-    });
-  });
-
-  const content = '\uFEFF' + lines.join('\r\n'); // UTF-8 BOM for Windows Notepad/Parsian
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  const dateStr = jalaliFromGregorian(new Date().toISOString()).replace(/\//g, '-');
-  a.download = `Parsian_Diskette_Import_${dateStr}.txt`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-/**
  * Generates standard Trial Balance (تراز آزمایشی ۲ و ۴ ستونی)
  */
 export function calculateTrialBalance(journalEntries: ParsianJournalEntry[]): Array<{
@@ -581,7 +478,7 @@ export function calculateTrialBalance(journalEntries: ParsianJournalEntry[]): Ar
 /**
  * Export complete Parsian Chart of Accounts and School Mappings to Excel
  */
-export function exportParsianTreeExcel(
+export async function exportParsianTreeExcel(
   accounts: Array<{
     code: string;
     name: string;
@@ -674,6 +571,11 @@ export function exportParsianTreeExcel(
   XLSX.utils.book_append_sheet(workbook, wsMappings, 'نگاشت مدارس مجموعه');
 
   const dateStr = jalaliFromGregorian(new Date().toISOString()).replace(/\//g, '-');
-  XLSX.writeFile(workbook, `Parsian_Chart_Of_Accounts_${dateStr}.xlsx`);
+  const base64 = XLSX.write(workbook, { bookType: 'xlsx', type: 'base64' });
+  await saveOrShareFile({
+    fileName: `Parsian_Chart_Of_Accounts_${dateStr}.xlsx`,
+    base64,
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
 }
 
