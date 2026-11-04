@@ -1,7 +1,7 @@
 {
-  "version": "2.16.307",
+  "version": "2.16.308",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Remove personal name from senior management section title",
-  "build": 307,
-  "published_at": "2026-11-03T13:31:51Z"
+  "notes": "Merge pull request #14 from iigsmii/fix/parsian-export-four-files",
+  "build": 308,
+  "published_at": "2026-11-04T05:21:35Z"
 }
