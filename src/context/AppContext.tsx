@@ -1040,6 +1040,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setSyncProgress(90);
         setSyncStageText('بروزرسانی داده‌ها و ثبت در حافظه...');
         applyRemoteData(gasResult);
+        // Pull complete audit history for the senior manager. The backend requires all=true
+        // to bypass the default current-user filter.
+        if (currentUser?.role === 'senior' || currentUser?.role === 'admin') {
+          try {
+            const audit: any = await postToAppsScript({ action: 'activity_logs', all: true }, DEFAULT_WEBAPP_URL);
+            if (audit?.success && Array.isArray(audit.data)) {
+              const remoteLogs: ActivityLog[] = audit.data.map((row: any) => ({
+                id: String(row.id || ''),
+                user_id: Number(row.user_id || 0),
+                user_name: String(row.user_name || row.username || ''),
+                school_id: row.school_id === '' || row.school_id == null ? undefined : Number(row.school_id),
+                school_name: row.school_name || schools.find(s => String(s.id) === String(row.school_id))?.name,
+                action: String(row.action || ''),
+                description: String(row.description || ''),
+                entity_type: row.entity_type || undefined,
+                entity_id: row.entity_id || undefined,
+                date: String(row.date || ''),
+              }));
+              setActivityLogs(remoteLogs);
+            }
+          } catch (auditError) { console.warn('Activity log refresh failed:', auditError); }
+        }
         logActivity('همگام‌سازی ابری گوگل شیت', `دریافت ${gasResult.students.length} دانش‌آموز و ${gasResult.transactions.length} تراکنش`);
         if (drain && drain.sent > 0) refreshOutboxInfo();
         setSyncProgress(100);
