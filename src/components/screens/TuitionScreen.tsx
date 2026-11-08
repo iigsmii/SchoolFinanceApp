@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useDeferredValue } from 'react';
+import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { Student, Transaction } from '../../types';
@@ -100,8 +101,11 @@ export const TuitionScreen: React.FC = () => {
 
   // Modals state
   const [modalType, setModalType] = useState<'debt' | 'payment' | 'bulk_debt' | 'discount' | null>(null);
+  useBackClose(modalType !== null, () => setModalType(null));
   const [selectedAttachment, setSelectedAttachment] = useState<{ url: string; title: string } | null>(null);
+  useBackClose(!!selectedAttachment, () => setSelectedAttachment(null));
   const [rejectModalTx, setRejectModalTx] = useState<Transaction | null>(null);
+  useBackClose(!!rejectModalTx, () => setRejectModalTx(null));
   const [rejectionReasonInput, setRejectionReasonInput] = useState('');
 
   // Debt Item Type & Installment state
@@ -1285,8 +1289,8 @@ export const TuitionScreen: React.FC = () => {
       {/* Bulk Debt Modal */}
       {modalType === 'bulk_debt' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-[#e5dde8] max-h-[92vh] flex flex-col">
-            <div className="flex items-center justify-between pb-4 border-b border-[#e5dde8] mb-4">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-4 sm:p-6 shadow-2xl border border-[#e5dde8] max-h-[92vh] supports-[height:100dvh]:max-h-[92dvh] flex flex-col overflow-hidden">
+            <div className="shrink-0 flex items-center justify-between pb-4 border-b border-[#e5dde8] mb-4">
               <h3 className="text-base font-bold text-[#341648]">
                 ثبت گروهی بدهی شهریه ({bulkSelectedIds.size} نفر انتخاب شده)
               </h3>
@@ -1301,7 +1305,8 @@ export const TuitionScreen: React.FC = () => {
               </div>
             )}
 
-            <form onSubmit={handleSaveBulk} className="flex-1 flex flex-col overflow-hidden space-y-4">
+            <form onSubmit={handleSaveBulk} className="flex-1 min-h-0 flex flex-col">
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain space-y-4 pb-2 pr-0.5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-[#341648] mb-1.5">
@@ -1372,7 +1377,7 @@ export const TuitionScreen: React.FC = () => {
               )}
 
               {/* Student Multi-Select List */}
-              <div className="flex-1 flex flex-col min-h-[180px] border border-[#e5dde8] rounded-2xl p-3 bg-[#fcfaff] overflow-hidden">
+              <div className="flex flex-col border border-[#e5dde8] rounded-2xl p-3 bg-[#fcfaff]">
                 <div className="flex items-center justify-between pb-2 border-b border-[#e5dde8] mb-2 text-xs">
                   <label className="flex items-center gap-2 font-bold cursor-pointer select-none">
                     <input
@@ -1402,7 +1407,7 @@ export const TuitionScreen: React.FC = () => {
                   />
                 </div>
 
-                <div className="flex-1 overflow-y-auto space-y-1.5">
+                <div className="max-h-[40vh] supports-[height:100dvh]:max-h-[40dvh] overflow-y-auto overscroll-contain space-y-1.5">
                   {displayedBulkStudents.map((st) => (
                     <label
                       key={st.id}
@@ -1428,8 +1433,9 @@ export const TuitionScreen: React.FC = () => {
                   ))}
                 </div>
               </div>
+              </div>
 
-              <div className="flex items-center gap-3 pt-2">
+              <div className="shrink-0 flex items-center gap-3 pt-3 mt-2 border-t border-[#e5dde8]">
                 <button
                   type="submit"
                   className="flex-1 py-3 px-4 rounded-xl text-white font-bold text-sm bg-rose-600 hover:bg-rose-700 active:scale-95 transition-all shadow-md flex items-center justify-center gap-2"

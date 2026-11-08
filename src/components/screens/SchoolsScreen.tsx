@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { School } from '../../types';
@@ -9,6 +10,7 @@ export const SchoolsScreen: React.FC = () => {
   const { schools, addSchool, updateSchool, deleteSchool, accentColor } = useApp();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  useBackClose(isModalOpen, () => setIsModalOpen(false));
   const [editingSchool, setEditingSchool] = useState<School | null>(null);
   const [formName, setFormName] = useState('');
   const [formCode, setFormCode] = useState('');

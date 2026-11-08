@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { Transaction } from '../../types';
@@ -86,7 +87,9 @@ export const ExpensesScreen: React.FC = () => {
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  useBackClose(isModalOpen, () => setIsModalOpen(false));
   const [isCatModalOpen, setIsCatModalOpen] = useState(false);
+  useBackClose(isCatModalOpen, () => setIsCatModalOpen(false));
   const [editingExpense, setEditingExpense] = useState<Transaction | null>(null);
 
   // Status Filter
@@ -94,7 +97,9 @@ export const ExpensesScreen: React.FC = () => {
 
   // Preview & Rejection Modals
   const [selectedAttachment, setSelectedAttachment] = useState<{ url: string; title: string } | null>(null);
+  useBackClose(!!selectedAttachment, () => setSelectedAttachment(null));
   const [rejectModalTx, setRejectModalTx] = useState<Transaction | null>(null);
+  useBackClose(!!rejectModalTx, () => setRejectModalTx(null));
   const [rejectionReasonInput, setRejectionReasonInput] = useState('');
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 

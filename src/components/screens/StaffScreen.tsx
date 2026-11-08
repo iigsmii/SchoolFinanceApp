@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useDeferredValue } from 'react';
+import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { StaffMember, StaffWorkLog, PayrollPayment } from '../../types';
@@ -97,6 +98,7 @@ export const StaffScreen: React.FC = () => {
 
   // Staff Modal
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
+  useBackClose(isStaffModalOpen, () => setIsStaffModalOpen(false));
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
   const [staffName, setStaffName] = useState('');
@@ -115,9 +117,11 @@ export const StaffScreen: React.FC = () => {
   const [staffTafsiliCode, setStaffTafsiliCode] = useState('');
   const [staffError, setStaffError] = useState('');
   const [showSignatureModal, setShowSignatureModal] = useState(false);
+  useBackClose(showSignatureModal, () => setShowSignatureModal(false));
 
   // Work Log Modal
   const [isWorkLogModalOpen, setIsWorkLogModalOpen] = useState(false);
+  useBackClose(isWorkLogModalOpen, () => setIsWorkLogModalOpen(false));
   const [workLogStaffId, setWorkLogStaffId] = useState<number>(staffMembers[0]?.id || 1);
   const [workLogHours, setWorkLogHours] = useState('');
   const [workLogOvertime, setWorkLogOvertime] = useState('');
@@ -128,6 +132,7 @@ export const StaffScreen: React.FC = () => {
 
   // Payment Modal (Salary / Insurance)
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  useBackClose(isPaymentModalOpen, () => setIsPaymentModalOpen(false));
   const [payStaffId, setPayStaffId] = useState<number>(staffMembers[0]?.id || 1);
   const [payType, setPayType] = useState<'salary' | 'insurance' | 'bonus'>('salary');
   const [payMonth, setPayMonth] = useState(MONTH_NAMES[0]);
@@ -148,6 +153,7 @@ export const StaffScreen: React.FC = () => {
     monthName: string;
     payment?: PayrollPayment;
   } | null>(null);
+  useBackClose(!!printSlipData, () => setPrintSlipData(null));
 
   // Filter staff list with deferred query and tokenized Persian search
   const filteredStaff = useMemo(() => {

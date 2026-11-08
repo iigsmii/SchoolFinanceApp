@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { useBackClose } from '../hooks/useBackClose';
 import { Camera, Image as ImageIcon, Trash2, Eye, Sparkles, AlertCircle, CheckCircle2, Loader2, X } from 'lucide-react';
 import { compressReceiptImage, CompressionResult } from '../utils/imageCompressor';
 
@@ -25,6 +26,7 @@ export const ReceiptImageUploader: React.FC<ReceiptImageUploaderProps> = ({
   const [isCompressing, setIsCompressing] = useState(false);
   const [stats, setStats] = useState<CompressionResult | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  useBackClose(isPreviewOpen, () => setIsPreviewOpen(false));
   const [localError, setLocalError] = useState<string | null>(null);
 
   const handleFileProcess = async (e: React.ChangeEvent<HTMLInputElement>) => {

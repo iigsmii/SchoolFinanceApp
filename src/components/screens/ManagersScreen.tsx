@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { User } from '../../types';
@@ -8,6 +9,7 @@ export const ManagersScreen: React.FC = () => {
   const { users, schools, addManager, updateManager, deleteManager, accentColor } = useApp();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  useBackClose(isModalOpen, () => setIsModalOpen(false));
   const [editingManager, setEditingManager] = useState<User | null>(null);
   const [formName, setFormName] = useState('');
   const [formGender, setFormGender] = useState<'male' | 'female'>('male');

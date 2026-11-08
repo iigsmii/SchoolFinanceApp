@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { useBackClose } from '../hooks/useBackClose';
 import { processSignatureImage } from '../utils/signatureProcessor';
 import { Upload, Trash2, CheckCircle2, Sliders, X, Sparkles, Image as ImageIcon } from 'lucide-react';
 
@@ -22,6 +23,7 @@ export const SignatureUploader: React.FC<SignatureUploaderProps> = ({
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showEditor, setShowEditor] = useState<boolean>(false);
+  useBackClose(showEditor, () => setShowEditor(false));
 
   const handleFile = async (file: File) => {
     setErrorMsg(null);

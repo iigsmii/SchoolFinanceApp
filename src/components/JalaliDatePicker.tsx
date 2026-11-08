@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useBackClose } from '../hooks/useBackClose';
 import { Calendar as CalendarIcon, Check, X } from 'lucide-react';
 import { todayJalali, daysInMonth, JALALI_MONTH_NAMES } from '../utils/jalali';
 import { useApp } from '../context/AppContext';
@@ -18,6 +19,7 @@ export const JalaliDatePicker: React.FC<JalaliDatePickerProps> = ({
 }) => {
   const { accentColor } = useApp();
   const [isOpen, setIsOpen] = useState(false);
+  useBackClose(isOpen, () => setIsOpen(false));
 
   const initialVal = value || todayJalali();
   const parts = initialVal.split('/').map(Number);

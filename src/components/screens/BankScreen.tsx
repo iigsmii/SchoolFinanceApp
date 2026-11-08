@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useDeferredValue } from 'react';
+import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { formatRial, jalaliFromGregorian, todayGregorian, todayJalali, jalaliToIso } from '../../utils/jalali';
@@ -127,6 +128,7 @@ export const BankScreen: React.FC = () => {
 
   // Resolution Modal State (Unified for Student Tuition / Expense / Manual Match)
   const [resolveRow, setResolveRow] = useState<BankTransaction | null>(null);
+  useBackClose(!!resolveRow, () => setResolveRow(null));
   const [resolveMode, setResolveMode] = useState<'tuition' | 'expense' | 'link'>('tuition');
   const [resolveSchoolId, setResolveSchoolId] = useState<number>(1);
   const [resolveStudentSearch, setResolveStudentSearch] = useState('');

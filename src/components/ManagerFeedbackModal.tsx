@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { useBackClose } from '../hooks/useBackClose';
 import { useApp } from '../context/AppContext';
 import { FeedbackType, FeedbackPriority, ManagerFeedback } from '../types';
 import { PersianVoiceTypingButton } from './PersianVoiceTypingButton';
@@ -107,6 +108,8 @@ export const ManagerFeedbackModal: React.FC<ManagerFeedbackModalProps> = ({
   const [copiedCode, setCopiedCode] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useBackClose(isOpen, onClose);
 
   if (!isOpen) return null;
 

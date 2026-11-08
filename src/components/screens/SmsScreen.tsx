@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useDeferredValue } from 'react';
+import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { formatRial, jalaliFromGregorian } from '../../utils/jalali';
@@ -62,12 +63,14 @@ export const SmsScreen: React.FC = () => {
 
   // Preview & Edit State
   const [previewStudent, setPreviewStudent] = useState<Student | null>(null);
+  useBackClose(!!previewStudent, () => setPreviewStudent(null));
   const [previewTargetPhone, setPreviewTargetPhone] = useState<string>('');
   const [editableMessage, setEditableMessage] = useState('');
   const [copiedNotice, setCopiedNotice] = useState(false);
 
   // Batch Confirm Modal
   const [isBatchConfirmOpen, setIsBatchConfirmOpen] = useState(false);
+  useBackClose(isBatchConfirmOpen, () => setIsBatchConfirmOpen(false));
   const [batchResult, setBatchResult] = useState<{ sentCount: number; failedCount: number } | null>(null);
 
   // Settings State
