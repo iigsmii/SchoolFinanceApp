@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { runTopBackHandler } from './hooks/useBackClose';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { useApp } from './context/AppContext';
@@ -63,7 +64,9 @@ export const App: React.FC = () => {
       if (handlingBack) return;
       handlingBack = true;
       try {
-        // A visible dialog gets the Back event first; it must not bubble into dashboard exit.
+        // The top-most open modal/preview closes first; Back only leaves the screen when none is open.
+        if (runTopBackHandler()) return;
+        // Legacy dialogs that listen for app:back themselves.
         const overlay = document.querySelector('.invoice-print-root, .quick-invoice-modal');
         if (overlay) {
           window.dispatchEvent(new Event('app:back'));

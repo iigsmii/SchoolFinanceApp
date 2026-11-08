@@ -2,10 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { Download, X } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { postToAppsScript } from '../services/googleSheets';
+import { useBackClose } from '../hooks/useBackClose';
 import packageJson from '../../package.json';
 
 const CURRENT_VERSION = String(packageJson.version);
-const LATEST_MANIFEST_URL = 'https://raw.githubusercontent.com/iigsmii/SchoolFinanceApp/main/latest-version.json';
 type UpdateInfo = { version: string; apk_url: string; notes?: string; force_update?: boolean };
 function newer(remote: string, local: string) {
   const a = remote.split('.').map(Number), b = local.split('.').map(Number);
@@ -16,19 +16,12 @@ function newer(remote: string, local: string) {
   return false;
 }
 async function getLatestUpdate(webAppUrl: string): Promise<UpdateInfo | null> {
-  // GitHub Actions updates this manifest after each successful signed APK release.
-  try {
-    const response = await fetch(LATEST_MANIFEST_URL + '?t=' + Date.now(), { cache: 'no-store' });
-    if (response.ok) {
-      const info = await response.json() as UpdateInfo;
-      if (info.version && info.apk_url && /^https:\/\//i.test(info.apk_url)) return info;
-    }
-  } catch (_) {
-    // Continue to the Apps Script configuration as a fallback.
-  }
-  const result = await postToAppsScript({ action: 'app_version' }, webAppUrl);
-  if (!result.success) return null;
-  const info = ((result as any).data && typeof (result as any).data === 'object' ? (result as any).data : result) as Partial<UpdateInfo>;
+  // Only the senior admin decides when an update is announced: the Apps Script settings are the
+  // single source of truth. The GitHub manifest changes with every build and must never trigger this prompt.
+  const result: any = await postToAppsScript({ action: 'app_version' }, webAppUrl);
+  if (!result?.success) return null;
+  const info = (result.data && typeof result.data === 'object' ? result.data : result) as Partial<UpdateInfo> & { release_enabled?: boolean };
+  if (info.release_enabled !== true) return null;
   return info.version && info.apk_url && /^https:\/\//i.test(info.apk_url) ? (info as UpdateInfo) : null;
 }
 export const AppUpdatePrompt: React.FC = () => {
@@ -48,6 +41,8 @@ export const AppUpdatePrompt: React.FC = () => {
     const timer = window.setInterval(() => void check(), 300000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [currentUser, webAppUrl]);
+  const promptOpen = !!update && dismissed !== update.version;
+  useBackClose(promptOpen && !update?.force_update, () => { if (update) setDismissed(update.version); });
   if (!update || dismissed === update.version) return null;
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4" dir="rtl">

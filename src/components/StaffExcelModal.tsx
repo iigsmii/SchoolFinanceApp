@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { useBackClose } from '../hooks/useBackClose';
 import * as XLSX from 'xlsx';
 import { StaffMember, School } from '../types';
 import {
@@ -69,6 +70,8 @@ export const StaffExcelModal: React.FC<StaffExcelModalProps> = ({
   const [fallbackSchoolId, setFallbackSchoolId] = useState<number>(defaultSchoolId || 1);
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useBackClose(isOpen, onClose);
 
   if (!isOpen) return null;
 

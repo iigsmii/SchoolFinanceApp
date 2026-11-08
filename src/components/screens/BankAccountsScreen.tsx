@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useDeferredValue } from 'react';
+import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { BankAccount, Transaction, BankTransaction } from '../../types';
@@ -78,6 +79,7 @@ export const BankAccountsScreen: React.FC = () => {
 
   // Modal State for Add / Edit Account
   const [isModalOpen, setIsModalOpen] = useState(false);
+  useBackClose(isModalOpen, () => setIsModalOpen(false));
   const [editingAccount, setEditingAccount] = useState<BankAccount | null>(null);
 
   // Form Fields

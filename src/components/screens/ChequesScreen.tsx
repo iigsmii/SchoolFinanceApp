@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { Cheque } from '../../types';
@@ -72,6 +73,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
 
   // Cheque Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
+  useBackClose(isModalOpen, () => setIsModalOpen(false));
   const [chequeType, setChequeType] = useState<'sayad' | 'non_sayad' | 'gharzolhasane' | 'guarantee'>('sayad');
   const [bankName, setBankName] = useState(IRANIAN_BANKS[0]);
   const [chequePurpose, setChequePurpose] = useState<'tuition' | 'guarantee' | 'staff_guarantee' | 'general'>('tuition');
@@ -89,6 +91,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
   const [attachment, setAttachment] = useState('');
   const [formError, setFormError] = useState('');
   const [previewAttachment, setPreviewAttachment] = useState<string | null>(null);
+  useBackClose(!!previewAttachment, () => setPreviewAttachment(null));
 
   const pendingCheques = cheques.filter((c) => c.status === 'pending');
   const userCheques = isSenior

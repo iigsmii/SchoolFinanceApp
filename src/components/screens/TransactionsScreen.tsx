@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useDeferredValue } from 'react';
+import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { normalizeSearchText, matchTokens } from '../../utils/studentSearch';
 import { Header } from '../Header';
@@ -41,9 +42,11 @@ export const TransactionsScreen: React.FC = () => {
   const deferredQuery = useDeferredValue(searchQuery);
   const [filterAccount, setFilterAccount] = useState('all');
   const [selectedAttachment, setSelectedAttachment] = useState<{ url: string; title: string } | null>(null);
+  useBackClose(!!selectedAttachment, () => setSelectedAttachment(null));
 
   // Reject Modal state
   const [rejectModalTx, setRejectModalTx] = useState<Transaction | null>(null);
+  useBackClose(!!rejectModalTx, () => setRejectModalTx(null));
   const [rejectionReasonInput, setRejectionReasonInput] = useState('');
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 

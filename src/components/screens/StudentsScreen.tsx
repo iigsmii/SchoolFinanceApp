@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useDeferredValue } from 'react';
+import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { Student } from '../../types';
@@ -50,6 +51,7 @@ export const StudentsScreen: React.FC = () => {
 
   // Edit / Add modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
+  useBackClose(isModalOpen, () => setIsModalOpen(false));
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [formName, setFormName] = useState('');
   const [formGrade, setFormGrade] = useState('اول');

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useDeferredValue } from 'react';
+import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { Student, Transaction } from '../../types';
@@ -39,6 +40,7 @@ export const StatementScreen: React.FC = () => {
   const [showExpenseLedger, setShowExpenseLedger] = useState(false);
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [selectedAttachment, setSelectedAttachment] = useState<{ url: string; title: string } | null>(null);
+  useBackClose(!!selectedAttachment, () => setSelectedAttachment(null));
 
   const availableStudents = useMemo(() => {
     return students.filter((s) => {
