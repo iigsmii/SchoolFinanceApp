@@ -64,21 +64,57 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
   const [inputSheetId, setInputSheetId] = useState(spreadsheetId);
   const [inputWebAppUrl, setInputWebAppUrl] = useState(webAppUrl);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const [releaseEnabled, setReleaseEnabled] = useState(false);
+  const [releaseVersion, setReleaseVersion] = useState(String(packageJson.version || '2.16.0'));
+  const [releaseApkUrl, setReleaseApkUrl] = useState('https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk');
+  const [releaseNotes, setReleaseNotes] = useState('');
+  const [releaseBusy, setReleaseBusy] = useState(false);
+
+  useEffect(() => {
+    if (!googleOnly || !isSenior) return;
+    let cancelled = false;
+    postToAppsScript({ action: 'app_version' }, webAppUrl).then((result: any) => {
+      if (cancelled || !result?.success) return;
+      setReleaseEnabled(Boolean(result.release_enabled));
+      if (result.version) setReleaseVersion(String(result.version));
+      if (result.apk_url) setReleaseApkUrl(String(result.apk_url));
+      if (result.notes) setReleaseNotes(String(result.notes));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [googleOnly, isSenior, webAppUrl]);
+
+  const saveReleaseSettings = async (enabled: boolean) => {
+    if (enabled && (!/^\\d+\\.\\d+\\.\\d+/.test(releaseVersion.trim()) || !/^https:\\/\\//i.test(releaseApkUrl.trim()) || !/\\.apk(?:$|[?#])/i.test(releaseApkUrl.trim()))) {
+      setSaveFeedback('شماره نسخه و لینک مستقیم APK معتبر را وارد کنید.');
+      return;
+    }
+    setReleaseBusy(true);
+    try {
+      const result: any = await postToAppsScript({ action: 'update_settings', version: releaseVersion.trim(), apk_url: releaseApkUrl.trim(), notes: releaseNotes.trim(), release_enabled: enabled }, webAppUrl);
+      if (!result?.success) throw new Error(result?.error || result?.message || 'ذخیره تنظیمات انتشار انجام نشد.');
+      setReleaseEnabled(enabled);
+      setSaveFeedback(enabled ? 'انتشار بروزرسانی برای مدیران فعال شد.' : 'انتشار بروزرسانی غیرفعال شد.');
+    } catch (error: any) {
+      setSaveFeedback(error?.message || 'ذخیره تنظیمات انتشار ناموفق بود.');
+    } finally {
+      setReleaseBusy(false);
+    }
+  };
+
 
   const handleCheckUpdate = async () => {
     setCheckingUpdate(true);
     setUpdateMsg(null);
     try {
-      let latest: any = null;
-      try {
-        const response = await fetch('https://raw.githubusercontent.com/iigsmii/SchoolFinanceApp/main/latest-version.json?t=' + Date.now(), { cache: 'no-store' });
-        if (response.ok) latest = await response.json();
-      } catch (_) {
-        // Fall back to the shared server if GitHub is unavailable.
+      // Apps Script is authoritative for update visibility; GitHub JSON must not bypass manual publication.
+      const latest: any = await postToAppsScript({ action: 'app_version' }, webAppUrl);
+      if (!latest?.success) {
+        setUpdateMsg(latest?.error || 'دریافت وضعیت انتشار از سرور ممکن نشد.');
+        return;
       }
-      if (!latest?.version || !latest?.apk_url) {
-        const result = await postToAppsScript({ action: 'app_version' }, webAppUrl);
-        if (result.success) latest = (result as any).data || result;
+      if (!latest.release_enabled) {
+        setUpdateMsg('در حال حاضر مدیر ارشد انتشار نسخه جدید را فعال نکرده است.');
+        return;
       }
       if (!latest?.version || !/^https:\/\//i.test(String(latest.apk_url || ''))) {
         setUpdateMsg('بررسی بروزرسانی انجام نشد؛ اتصال اینترنت را بررسی کنید و دوباره تلاش کنید.');
