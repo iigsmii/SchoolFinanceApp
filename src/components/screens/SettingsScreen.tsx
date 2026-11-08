@@ -84,7 +84,7 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
   }, [googleOnly, isSenior, webAppUrl]);
 
   const saveReleaseSettings = async (enabled: boolean) => {
-    if (enabled && (!/^\d+\.\d+\.\d+/.test(releaseVersion.trim()) || !/^https:\/\/\//i.test(releaseApkUrl.trim()) || /\.apk(?:$|[?#])/i.test(releaseApkUrl.trim()))) {
+    if (enabled && (!/^\d+\.\d+\.\d+/.test(releaseVersion.trim()) || !/^https:\/\/\//i.test(releaseApkUrl.trim()) || !/\.apk(?:$|[?#])/i.test(releaseApkUrl.trim()))) {
       setSaveFeedback('شماره نسخه و لینک مستقیم APK معتبر را وارد کنید.');
       return;
     }
