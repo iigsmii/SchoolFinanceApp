@@ -8,7 +8,7 @@ export const ActivityScreen: React.FC = () => {
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
 
   // Senior managers can inspect one manager at a time, their own activity, or everyone.
-  const [selectedManager, setSelectedManager] = useState<string>('mine');
+  const [selectedManager, setSelectedManager] = useState<string>(isSenior ? 'all' : 'mine');
 
   const displayedLogs = useMemo(() => activityLogs.filter((log) => {
     const searchableSyncText = `${log.action || ''} ${log.description || ''} ${log.entity_type || ''}`
