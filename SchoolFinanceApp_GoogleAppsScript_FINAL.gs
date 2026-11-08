@@ -590,7 +590,8 @@ function studentAdd_(b) {
     const u=auth_(b);
     ensureCoreData_();
     ensureStudentPhoneColumns_();
-    const schoolId=Number(b.school_id) || (u.school_id ? Number(u.school_id) : 1);
+    const schoolId=Number(b.school_id) || Number(userSchoolIds_(u)[0]) || 1;
+    if(!userCanAccessSchool_(u,schoolId)) throw new Error('دسترسی به این مدرسه مجاز نیست.');
     const fullName=normalizeStudentName_(b.name);
     if(!fullName) throw new Error('نام و نام خانوادگی دانش‌آموز الزامی است.');
 
@@ -702,7 +703,8 @@ function studentsImport_(b) {
 
       // National ID is checked globally only when it is a complete 10-digit ID.
       // Invalid IDs are STILL imported so the manager can open/edit the student later.
-      const rowSchoolId=(u.role==='senior' || u.role==='admin') ? String(r.school_id||schoolId) : String(u.school_id||'');
+      const rowSchoolId=String(r.school_id||schoolId||userSchoolIds_(u)[0]||'');
+      if(!userCanAccessSchool_(u,rowSchoolId)){rowErrors.push('مدرسه انتخاب‌شده خارج از دسترسی مدیر است'); invalid++; return;}
       const invalidKey=(name+'|'+nid+'|'+digits_(r.phone||'')+'|'+grade+'|'+rowSchoolId).toLowerCase();
       if(!/^\d{10}$/.test(nid)) {
         invalidNid++;
@@ -968,7 +970,7 @@ function studentUpdate_(b) {
     if(!hit) throw new Error('دانش‌آموز یافت نشد.');
     const old=hit.obj;
     if(u.role!=='senior' && !userCanAccessSchool_(u,old.school_id)) throw new Error('دسترسی مجاز نیست.');
-    const targetSchool=(u.role==='senior' || u.role==='admin') ? String(b.school_id!==undefined?b.school_id:old.school_id) : String(u.school_id);
+    const targetSchool=(u.role==='senior' || u.role==='admin') ? String(b.school_id!==undefined?b.school_id:old.school_id) : String((b.school_id && userCanAccessSchool_(u,b.school_id))?b.school_id:old.school_id);
     activeSchool_(targetSchool);
     const fullName=normalizeStudentName_(b.name!==undefined?b.name:old.name); if(!fullName)throw new Error('نام دانش‌آموز الزامی است.');
     const targetNid=b.national_id!==undefined?digits_(b.national_id):normalizeNationalId_(old.national_id);
@@ -1059,7 +1061,7 @@ function tuitionBulkDebt_(b) {
   lock.waitLock(30000);
   try {
     const u=auth_(b);
-    const schoolId=(u.role==='senior' || u.role==='admin') ? String(b.school_id||'') : String(u.school_id||'');
+    const schoolId=(u.role==='senior' || u.role==='admin') ? String(b.school_id||'') : String(b.school_id||(userSchoolIds_(u).length===1?userSchoolIds_(u)[0]:''));
     if(!schoolId) throw new Error('مدرسه مشخص نشده است.');
     activeSchool_(schoolId);
     const amount=amount_(b.amount);
@@ -1947,7 +1949,7 @@ function payrollAdd_(b){
   const u=auth_(b);
   const staff=findRow_('Staff',b.staff_id); if(!staff) throw new Error('پرسنل یافت نشد.');
   const schoolId=String(staff.obj.school_id);
-  if(!isSenior_(u)&&schoolId!==String(u.school_id)) throw new Error('دسترسی به این مدرسه مجاز نیست.');
+  if(!isSenior_(u)&&!userCanAccessSchool_(u,schoolId)) throw new Error('دسترسی به این مدرسه مجاز نیست.');
   const type=String(b.payment_type||'salary');
   if(['salary','insurance','bonus','advance'].indexOf(type)<0) throw new Error('نوع پرداخت نامعتبر است.');
   const net=Number(b.net_paid_amount||0), gross=Number(b.gross_amount||0), ins=Number(b.insurance_deduction||0);
@@ -2118,7 +2120,7 @@ function attachmentRead_(b){
   let allowed=u.role==='senior';
   if(table){
     const record=findRow_(table,a.source_id);
-    allowed=allowed||!!(record&&String(record.obj.school_id)===String(u.school_id));
+    allowed=allowed||!!(record&&userCanAccessSchool_(u,record.obj.school_id));
     // An approved cheque image is also visible through its generated tuition record.
   }else allowed=allowed||String(a.created_by)===String(u.id);
   if(!allowed)throw new Error('دسترسی به این پیوست مجاز نیست.');
