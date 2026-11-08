@@ -1,7 +1,7 @@
 {
-  "version": "2.16.308",
+  "version": "2.16.309",
   "apk_url": "https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk",
-  "notes": "Merge pull request #14 from iigsmii/fix/parsian-export-four-files",
-  "build": 308,
-  "published_at": "2026-11-04T05:21:35Z"
+  "notes": "Add manual update publishing and multi-school access",
+  "build": 309,
+  "published_at": "2026-11-08T07:19:41Z"
 }
