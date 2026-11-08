@@ -967,7 +967,7 @@ function studentUpdate_(b) {
     const hit=findRow_('Students',b.id);
     if(!hit) throw new Error('دانش‌آموز یافت نشد.');
     const old=hit.obj;
-    if(u.role!=='senior' && String(old.school_id)!==String(u.school_id)) throw new Error('دسترسی مجاز نیست.');
+    if(u.role!=='senior' && !userCanAccessSchool_(u,old.school_id)) throw new Error('دسترسی مجاز نیست.');
     const targetSchool=(u.role==='senior' || u.role==='admin') ? String(b.school_id!==undefined?b.school_id:old.school_id) : String(u.school_id);
     activeSchool_(targetSchool);
     const fullName=normalizeStudentName_(b.name!==undefined?b.name:old.name); if(!fullName)throw new Error('نام دانش‌آموز الزامی است.');
@@ -997,7 +997,7 @@ function studentDelete_(b) {
   const u=auth_(b);
   const hit=findRow_('Students',b.id);
   if(!hit) throw new Error('دانش‌آموز یافت نشد.');
-  if(u.role!=='senior' && String(hit.obj.school_id)!==String(u.school_id)) throw new Error('دسترسی مجاز نیست.');
+  if(u.role!=='senior' && !userCanAccessSchool_(u,hit.obj.school_id)) throw new Error('دسترسی مجاز نیست.');
   sheet_('Students').getRange(hit.row,10).setValue(false);
   return {success:true};
 }
@@ -1211,7 +1211,7 @@ function financeTransactionAdd_(b) {
   if(cheque && !/^\d{16}$/.test(sayad)) throw new Error('شناسه صیادی باید ۱۶ رقم باشد.');
   const date=date_(b.date);
   const dueDate=cheque?date_(b.due_date):'';
-  const schoolId=u.role==='senior'?(Number(b.school_id)||Number(u.school_id)||0):Number(u.school_id)||0;
+  const schoolId=u.role==='senior'?(Number(b.school_id)||Number(u.school_id)||0):(Number(b.school_id)||Number(userSchoolIds_(u)[0])||0);
   activeSchool_(schoolId);
   const detail=(kind==='cash_receipt'?'دریافت از: ':kind==='cash_payment'?'پرداخت به: ':kind==='cheque_receipt'?'دریافت چک از: ':'پرداخت چک به: ')+person+' | '+description+(cheque?' | بانک: '+String(b.bank_name||'')+' | سررسید: '+dueDate:'');
   const id=nextId_('Transactions');
@@ -1316,15 +1316,15 @@ function bank_(b) {
 }
 function bankAnnotationSave_(b){
   const u=auth_(b);
-  const schoolId=String(b.school_id||u.school_id||'');
-  if(u.role!=='senior' && u.role!=='admin' && schoolId!==String(u.school_id)) throw new Error('دسترسی به این مدرسه مجاز نیست.');
+  const schoolId=String(b.school_id||(userSchoolIds_(u).length===1?userSchoolIds_(u)[0]:''));
+  if(u.role!=='senior' && u.role!=='admin' && !userCanAccessSchool_(u,schoolId)) throw new Error('دسترسی به این مدرسه مجاز نیست.');
   const date=String(b.date||'').trim(), amount=Number(b.amount||0), tracking=String(b.tracking_code||'').trim(), account=String(b.bank_account||'').trim();
   if(!date || !amount) throw new Error('تاریخ و مبلغ تراکنش برای ثبت تخصیص الزامی است.');
   const key=bankAnnotationKey_({school_id:schoolId,date:date,amount:amount,tracking_code:tracking,bank_account:account});
   const sh=sheet_('BankAnnotations');
   const hit=rows_('BankAnnotations').find(x=>bankAnnotationKey_(x.obj)===key);
   const studentId=String(b.student_id||'');
-  if(studentId){const student=findRow_('Students',studentId);if(!student)throw new Error('دانش‌آموز انتخاب‌شده یافت نشد.');if(u.role!=='senior'&&String(student.obj.school_id)!==String(u.school_id))throw new Error('دانش‌آموز متعلق به مدرسه دیگری است.');}
+  if(studentId){const student=findRow_('Students',studentId);if(!student)throw new Error('دانش‌آموز انتخاب‌شده یافت نشد.');if(u.role!=='senior'&&!userCanAccessSchool_(u,student.obj.school_id))throw new Error('دانش‌آموز متعلق به مدرسه دیگری است.');}
   const values=[hit?hit.obj.id:Utilities.getUuid(),schoolId,date,amount,tracking,account,studentId,String(b.student_name||''),String(b.purpose||''),u.id,now_(),String(b.direction||'unknown'),b.balance===undefined?'':Number(b.balance||0),String(b.card_number||account)];
   if(hit) updateRow_('BankAnnotations',hit.row,values); else sh.appendRow(values);
   return {success:true,message:'تخصیص تراکنش بانکی ذخیره شد.'};
@@ -1414,7 +1414,7 @@ function transactionReview_(b){
   if(sourceTable){
     const src=findRow_(sourceTable,sourceId);
     if(!src) throw new Error('رکورد اصلی تراکنش یافت نشد.');
-    if(!isSenior_(u)&&String(src.obj.school_id)!==String(u.school_id)) throw new Error('دسترسی مجاز نیست.');
+    if(!isSenior_(u)&&!userCanAccessSchool_(u,src.obj.school_id)) throw new Error('دسترسی مجاز نیست.');
     patchRow_(sourceTable,src.row,{approved:approved,review_status:status,rejection_reason:reason}); touched++;
     const ledgerKinds=sourceTable==='Expenses'?['expense']:['payment','debt'];
     rows_('Transactions').forEach(x=>{
@@ -1661,7 +1661,7 @@ function categoryDelete_(b) {
 function messages_(b) {
   const u=auth_(b);
   ensureCoreData_();
-  const data=rows_('Messages').map(x=>x.obj).filter(x=>String(x.active)!=='false').filter(x=>{ const school=String(x.target_school_id||'').trim(); const role=String(x.target_role||'').trim(); const roleOk=!role || role.split(',').indexOf(String(u.role))>=0; const schoolOk=!school || String(u.school_id)===school || u.role==='senior' || u.role==='admin'; return roleOk&&schoolOk; }).reverse();
+  const data=rows_('Messages').map(x=>x.obj).filter(x=>String(x.active)!=='false').filter(x=>{ const school=String(x.target_school_id||'').trim(); const role=String(x.target_role||'').trim(); const roleOk=!role || role.split(',').indexOf(String(u.role))>=0; const schoolOk=!school || userCanAccessSchool_(u,school) || u.role==='senior' || u.role==='admin'; return roleOk&&schoolOk; }).reverse();
   return {success:true,data:data};
 }
 
@@ -1834,7 +1834,7 @@ function chequesAll_(b){
 function chequeAdd_(b){
   const u=auth_(b);
   const senior=isSenior_(u);
-  const schoolId=senior?String(b.school_id||u.school_id||''):String(u.school_id||'');
+  const schoolId=senior?String(b.school_id||u.school_id||''):String(b.school_id||(userSchoolIds_(u).length===1?userSchoolIds_(u)[0]:''));
   const studentId=String(b.student_id||'').trim() && Number(b.student_id)>0 ? String(b.student_id).trim() : '';
   if(!schoolId) throw new Error('مدرسه مربوط به چک الزامی است.');
   activeSchool_(schoolId);
@@ -1873,7 +1873,7 @@ function chequeUpdate_(b){
   const u=auth_(b);
   const hit=findRow_('Cheques',b.id); if(!hit) throw new Error('چک یافت نشد.');
   const c=hit.obj;
-  if(!isSenior_(u)&&String(c.school_id)!==String(u.school_id)) throw new Error('دسترسی مجاز نیست.');
+  if(!isSenior_(u)&&!userCanAccessSchool_(u,c.school_id)) throw new Error('دسترسی مجاز نیست.');
   if(!isSenior_(u)&&String(c.created_by)!==String(u.id)) throw new Error('فقط ثبت‌کننده یا مدیر ارشد می‌تواند چک را ویرایش کند.');
   const approved=String(c.status)==='approved'||String(c.status)==='paid';
   const patch={};
@@ -1893,7 +1893,7 @@ function chequeDelete_(b){
   const u=auth_(b);
   const hit=findRow_('Cheques',b.id); if(!hit) throw new Error('چک یافت نشد.');
   const c=hit.obj;
-  if(!isSenior_(u)&&(String(c.school_id)!==String(u.school_id)||String(c.created_by)!==String(u.id))) throw new Error('دسترسی مجاز نیست.');
+  if(!isSenior_(u)&&(!userCanAccessSchool_(u,c.school_id)||String(c.created_by)!==String(u.id))) throw new Error('دسترسی مجاز نیست.');
   if(String(c.status)==='approved'||String(c.status)==='paid') throw new Error('چک تأییدشده که پرداخت آن ثبت شده قابل حذف نیست.');
   voidRecord_('Cheques',hit.row);
   return {success:true};
@@ -1915,7 +1915,7 @@ function staffWorkLogAdd_(b){
   const u=auth_(b);
   const staff=findRow_('Staff',b.staff_id); if(!staff) throw new Error('پرسنل یافت نشد.');
   const schoolId=String(staff.obj.school_id);
-  if(!isSenior_(u)&&schoolId!==String(u.school_id)) throw new Error('دسترسی به این مدرسه مجاز نیست.');
+  if(!isSenior_(u)&&!userCanAccessSchool_(u,schoolId)) throw new Error('دسترسی به این مدرسه مجاز نیست.');
   const month=String(b.month_name||'').trim(); if(!month) throw new Error('ماه کارکرد الزامی است.');
   const num=(k)=>{const n=Number(b[k]||0); if(!isFinite(n)||n<0) throw new Error('مقدار '+k+' نامعتبر است.'); return n;};
   const id=nextId_('StaffWorkLogs');
@@ -1925,7 +1925,7 @@ function staffWorkLogAdd_(b){
 function staffWorkLogDelete_(b){
   const u=auth_(b);
   const hit=findRow_('StaffWorkLogs',b.id); if(!hit) throw new Error('کارکرد یافت نشد.');
-  if(!isSenior_(u)&&String(hit.obj.school_id)!==String(u.school_id)) throw new Error('دسترسی مجاز نیست.');
+  if(!isSenior_(u)&&!userCanAccessSchool_(u,hit.obj.school_id)) throw new Error('دسترسی مجاز نیست.');
   patchRow_('StaffWorkLogs',hit.row,{active:false});
   return {success:true};
 }
@@ -1960,7 +1960,7 @@ function payrollAdd_(b){
 function payrollDelete_(b){
   const u=auth_(b);
   const hit=findRow_('PayrollPayments',b.id); if(!hit) throw new Error('پرداخت یافت نشد.');
-  if(!isSenior_(u)&&String(hit.obj.school_id)!==String(u.school_id)) throw new Error('دسترسی مجاز نیست.');
+  if(!isSenior_(u)&&!userCanAccessSchool_(u,hit.obj.school_id)) throw new Error('دسترسی مجاز نیست.');
   patchRow_('PayrollPayments',hit.row,{active:false});
   return {success:true};
 }
@@ -2085,7 +2085,7 @@ function attachment_(b) {
   if(table){
     const target=findRow_(table,sourceId);
     if(!target)throw new Error('رکورد مقصد پیوست یافت نشد.');
-    if(u.role!=='senior'&&String(target.obj.school_id)!==String(u.school_id))throw new Error('پیوست متعلق به مدرسه دیگری است.');
+    if(u.role!=='senior'&&!userCanAccessSchool_(u,target.obj.school_id))throw new Error('پیوست متعلق به مدرسه دیگری است.');
   }else if(sourceType!=='general')throw new Error('نوع پیوست پشتیبانی نمی‌شود.');
   const saved=saveAttachment_(b.base64,b.file_name||('file_'+id+'.jpg'),b.mime_type||'image/jpeg',id,u.id,sourceType,sourceId);
   // Persist the Drive URL on the business record and its ledger transaction;
@@ -2157,7 +2157,7 @@ function getDriveFolder_() {
 }
 
 function parsianSchoolMap_(b){ auth_(b); const out=[]; Object.keys(SCHOOL_TUITION).forEach(k=>out.push({school_id:Number(k),school_name:schoolName_(Number(k)),tuition:{code:SCHOOL_TUITION[k],name:'سرفصل درآمد شهریه مدرسه'}})); return {success:true,data:out}; }
-function parsianStudentAccounts_(b){const u=auth_(b);let data=rows_('Students').map(x=>x.obj).filter(s=>String(s.active)!=='false'&&(u.role==='senior'||String(s.school_id)===String(u.school_id))).map(s=>({code:[s.tafsili_code,s.moeen_code,s.kol_code||'67'].join('-'),name:s.name,id:s.id}));if(b.q){const q=String(b.q).toLowerCase();data=data.filter(x=>String(x.code).toLowerCase().includes(q)||String(x.name).toLowerCase().includes(q));}return {success:true,data:data};}
+function parsianStudentAccounts_(b){const u=auth_(b);let data=rows_('Students').map(x=>x.obj).filter(s=>String(s.active)!=='false'&&(u.role==='senior'||userCanAccessSchool_(u,s.school_id))).map(s=>({code:[s.tafsili_code,s.moeen_code,s.kol_code||'67'].join('-'),name:s.name,id:s.id}));if(b.q){const q=String(b.q).toLowerCase();data=data.filter(x=>String(x.code).toLowerCase().includes(q)||String(x.name).toLowerCase().includes(q));}return {success:true,data:data};}
 function parsianAllocate_(b){ auth_(b); return {success:true,data:{code:'0-'+String(b.moeen||1)+'-67',name:String(b.name||'حساب دانش‌آموز')}}; }
 
 /* ---------- PARSIAN ---------- */
