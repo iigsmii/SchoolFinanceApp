@@ -4,7 +4,7 @@ export interface User {
   name: string;
   gender?: 'male' | 'female';
   role: 'senior' | 'admin' | 'manager';
-  school_id?: number;
+  school_id?: number | string;
   school_name?: string;
   active: boolean;
   password?: string;
