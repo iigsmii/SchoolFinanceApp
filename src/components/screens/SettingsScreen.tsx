@@ -192,6 +192,23 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
 
         </>}
         {googleOnly && isSenior && <>
+        <section className="bg-white rounded-3xl p-5 border border-[#e5dde8] shadow-xs space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div><h3 className="text-sm font-bold text-[#341648]">مدیریت انتشار بروزرسانی</h3><p className="text-xs text-gray-500 mt-1">تا زمان فعال‌سازی دستی شما، نسخه جدید به مدیران دیگر نمایش داده نمی‌شود.</p></div>
+            <span className={`text-xs font-bold px-3 py-1.5 rounded-full ${releaseEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>{releaseEnabled ? 'انتشار فعال' : 'انتشار متوقف'}</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="text-xs font-semibold text-gray-600 space-y-1 block"><span>شماره نسخه</span><input value={releaseVersion} onChange={e => setReleaseVersion(e.target.value)} placeholder="2.24.0" dir="ltr" className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-mono" /></label>
+            <label className="text-xs font-semibold text-gray-600 space-y-1 block"><span>لینک مستقیم APK</span><input value={releaseApkUrl} onChange={e => setReleaseApkUrl(e.target.value)} placeholder="https://.../SchoolFinanceApp-latest.apk" dir="ltr" className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-xs font-mono" /></label>
+          </div>
+          <label className="text-xs font-semibold text-gray-600 space-y-1 block"><span>تغییرات نسخه</span><textarea value={releaseNotes} onChange={e => setReleaseNotes(e.target.value)} rows={3} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm" placeholder="شرح تغییرات این نسخه..." /></label>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button type="button" disabled={releaseBusy} onClick={() => saveReleaseSettings(true)} className="flex-1 rounded-xl bg-emerald-700 text-white px-4 py-3 text-sm font-bold disabled:opacity-50">{releaseBusy ? 'در حال ذخیره...' : 'فعال‌سازی انتشار برای همه مدیران'}</button>
+            <button type="button" disabled={releaseBusy} onClick={() => saveReleaseSettings(false)} className="flex-1 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-4 py-3 text-sm font-bold disabled:opacity-50">توقف / لغو انتشار</button>
+          </div>
+          {saveFeedback && <div className="rounded-xl bg-blue-50 border border-blue-100 text-blue-800 p-3 text-xs">{saveFeedback}</div>}
+        </section>
+
         {/* Google Sheets Cloud Connection Section */}
         <div className="bg-white rounded-3xl p-6 border border-[#e5dde8] shadow-xs space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#e5dde8] pb-4">
