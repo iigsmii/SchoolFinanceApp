@@ -205,7 +205,7 @@ function doGet(e) {
     if(action==='my_claim') return json_(myClaim_(b));
     if(action==='app_version') return json_(appVersion_(b));
     if(action==='activity_logs')return json_(activityLogs_(b));
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.23.0',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.24.0',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
@@ -475,7 +475,7 @@ function schools_(b) {
   const posMap={};
   rows_('Settings').forEach(x=>{const key=String(x.obj.key||'');if(key.indexOf('pos_terminal_')===0)posMap[key.slice('pos_terminal_'.length)]=String(x.obj.value||'');});
   const data=rows_('Schools').map(x=>Object.assign({},x.obj,{pos_terminal_number:posMap[String(x.obj.id)]||''})).filter(x=>String(x.active)!=='false');
-  if(u.role!=='senior' && u.role!=='admin') return {success:true,data:data.filter(x=>String(x.id)===String(u.school_id))};
+  if(u.role!=='senior' && u.role!=='admin') return {success:true,data:data.filter(x=>userCanAccessSchool_(u,x.id))};
   return {success:true,data:data};
 }
 
@@ -2287,25 +2287,31 @@ function appVersion_(b){
     apk_url:settings['android_apk_url']||'',
     notes:settings['android_update_notes']||'',
     force_update:String(settings['android_force_update']||'false').toLowerCase()==='true',
-    backend_version:'2.19.0'
+    release_enabled:String(settings['android_release_enabled']||'false').toLowerCase()==='true',
+    backend_version:'2.24.0'
   };
 }
 
 function updateSettings_(b){
   const u=auth_(b,['senior']);
+  const releaseEnabled=String(b.release_enabled||'false').toLowerCase()==='true';
   const version=String(b.version||'').trim();
   const apkUrl=String(b.apk_url||'').trim();
   const notes=String(b.notes||'').trim().slice(0,2000);
   const force=String(b.force_update||'false').toLowerCase()==='true';
-  if(!version.split('.')[0] || version.split('.').length < 3 || !/^[0-9A-Za-z.+-]+$/.test(version))
-    throw new Error('شماره نسخه باید مانند 2.17.0 باشد.');
-  if(apkUrl.indexOf('https://')!==0 || apkUrl.toLowerCase().indexOf('.apk')<0)
-    throw new Error('لینک باید نشانی مستقیم و امن فایل APK باشد.');
-  saveSetting_('android_version',version);
-  saveSetting_('android_apk_url',apkUrl);
-  saveSetting_('android_update_notes',notes);
-  saveSetting_('android_force_update',force?'true':'false');
-  return {success:true,message:'تنظیمات به‌روزرسانی برای همه کاربران ذخیره شد.',version:version,updated_by:u.username};
+  // Publishing requires valid version and APK URL; unpublishing can be done alone.
+  if(releaseEnabled){
+    if(!version.split('.')[0] || version.split('.').length < 3 || !/^[0-9A-Za-z.+-]+$/.test(version))
+      throw new Error('شماره نسخه باید مانند 2.17.0 باشد.');
+    if(apkUrl.indexOf('https://')!==0 || apkUrl.toLowerCase().indexOf('.apk')<0)
+      throw new Error('لینک باید نشانی مستقیم و امن فایل APK باشد.');
+  }
+  if(version) saveSetting_('android_version',version);
+  if(apkUrl) saveSetting_('android_apk_url',apkUrl);
+  if(b.notes!==undefined) saveSetting_('android_update_notes',notes);
+  if(b.force_update!==undefined) saveSetting_('android_force_update',force?'true':'false');
+  saveSetting_('android_release_enabled',releaseEnabled?'true':'false');
+  return {success:true,message:releaseEnabled?'انتشار بروزرسانی برای کاربران فعال شد.':'انتشار بروزرسانی غیرفعال شد.',version:version||'',release_enabled:releaseEnabled,updated_by:u.username};
 }
 
 function myClaim_(b){
@@ -2562,3 +2568,12 @@ function csvEscape_(v) {
   const s=String(v==null?'':v);
   return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
 }
+// Supports one school ID or a comma/semicolon-separated list (e.g. "5,6").
+function userSchoolIds_(u){
+  return String(u && u.school_id !== undefined ? u.school_id : '').split(/[;,，；]/).map(x=>String(x).trim()).filter(Boolean);
+}
+function userCanAccessSchool_(u,schoolId){
+  if(!u || u.role==='senior' || u.role==='admin') return true;
+  return userSchoolIds_(u).indexOf(String(schoolId))>=0;
+}
+
