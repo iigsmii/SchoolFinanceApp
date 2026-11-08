@@ -184,67 +184,8 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish APK and refresh automatic update manifest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
+      - name: Build-only summary (no automatic publication)
         run: |
-          set -euo pipefail
-          APK_PATH="output/SchoolFinanceApp-latest.apk"
-          test -s "$APK_PATH"
-          RELEASE_TAG="v${APP_VERSION}-build-${GITHUB_RUN_NUMBER}"
-          gh release create "$RELEASE_TAG" "$APK_PATH" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "SchoolFinanceApp ${APP_VERSION} (build ${GITHUB_RUN_NUMBER})" \
-            --notes "نسخه آماده نصب برنامه SchoolFinanceApp. این انتشار به‌صورت خودکار ساخته شده است."
-          APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/SchoolFinanceApp-latest.apk"
-          LAST_CHANGE="$(git log -5 --pretty=format:'%s' | paste -sd '; ' - | sed 's/"/\"/g')"
-          BUILD_TIME="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          cat > latest-version.json <<EOF
-          {
-            "version": "${APP_VERSION}",
-            "apk_url": "${APK_URL}",
-            "notes": "${LAST_CHANGE}",
-            "build": ${GITHUB_RUN_NUMBER},
-            "published_at": "${BUILD_TIME}"
-          }
-          EOF
-          # Update the manifest through the GitHub Contents API using the current file SHA.
-          # This avoids a non-fast-forward push when main changes during the Android build.
-          MANIFEST_BASE64="$(base64 -w 0 latest-version.json)"
-          UPDATED=false
-          for attempt in 1 2 3 4 5; do
-            CURRENT_SHA="$(gh api "repos/$GITHUB_REPOSITORY/contents/latest-version.json" --jq .sha 2>/dev/null || true)"
-            if [ -n "$CURRENT_SHA" ]; then
-              if gh api --method PUT "repos/$GITHUB_REPOSITORY/contents/latest-version.json" \
-                -f message="chore: update latest Android build manifest [skip ci]" \
-                -f content="$MANIFEST_BASE64" \
-                -f sha="$CURRENT_SHA" \
-                -f branch="main" >/dev/null; then
-                UPDATED=true
-                break
-              fi
-            else
-              if gh api --method PUT "repos/$GITHUB_REPOSITORY/contents/latest-version.json" \
-                -f message="chore: initialize latest Android build manifest [skip ci]" \
-                -f content="$MANIFEST_BASE64" \
-                -f branch="main" >/dev/null; then
-                UPDATED=true
-                break
-              fi
-            fi
-            sleep 2
-          done
-          if [ "$UPDATED" != true ]; then
-            echo "::error::Could not update latest-version.json after 5 attempts"
-            exit 1
-          fi
-          {
-            echo "## نسخه آماده نصب اندروید"
-            echo ""
-            echo "- نسخه: ${APP_VERSION}"
-            echo "- لینک مستقیم آخرین APK: [دانلود برنامه](${APK_URL})"
-            echo "- فایل وضعیت به‌روزرسانی: https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/latest-version.json"
-            echo "- آخرین تغییر ثبت‌شده: ${LAST_CHANGE}"
-          } >> "$GITHUB_STEP_SUMMARY"
-          echo "APK direct download URL: ${APK_URL}"
+          echo "APK built and stored as a GitHub Actions artifact."
+          echo "No GitHub Release or latest-version.json manifest is changed automatically."
+          echo "Publish a version intentionally using the tagged Release workflow."
