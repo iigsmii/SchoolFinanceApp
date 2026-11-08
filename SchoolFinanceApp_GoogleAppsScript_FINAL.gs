@@ -205,7 +205,7 @@ function doGet(e) {
     if(action==='my_claim') return json_(myClaim_(b));
     if(action==='app_version') return json_(appVersion_(b));
     if(action==='activity_logs')return json_(activityLogs_(b));
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.24.0',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.24.1',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
@@ -502,7 +502,7 @@ function staff_(b){
     x.id=Number(x.id);x.school_id=Number(x.school_id);
     ['hourly_rate','base_salary','insurance_employer_share','insurance_employee_share'].forEach(k=>x[k]=Number(x[k]||0));
     x.active=x.active!==false && String(x.active)!=='false';
-    if(u.role!=='senior' && u.role!=='admin' && String(x.school_id)!==String(u.school_id)) return null;
+    if(u.role!=='senior' && u.role!=='admin' && !userCanAccessSchool_(u,x.school_id)) return null;
     x.school_name=x.school_name||schoolName_(x.school_id);
     return x;
   }).filter(Boolean);
@@ -549,7 +549,7 @@ function students_(b) {
     const motherPhone=normalizeImportedPhone_(x.mother_phone||'');
     // Return normalized values only. Reads must never mutate spreadsheet data.
     x.phone=phone;x.father_phone=fatherPhone;x.mother_phone=motherPhone;x.national_id=nid;
-    if(u.role!=='senior' && String(x.school_id)!==String(u.school_id)) return;
+    if(u.role!=='senior' && !userCanAccessSchool_(u,x.school_id)) return;
     if(b.school_id && String(x.school_id)!==String(b.school_id)) return;
     if(b.id && String(x.id)!==String(b.id)) return;
     if(b.q) {
@@ -656,7 +656,7 @@ function studentsImport_(b) {
   try {
     const u=auth_(b);
     ensureCoreData_();
-    const schoolId=(u.role==='senior' || u.role==='admin') ? String(b.school_id||'') : String(u.school_id||'');
+    const schoolId=(u.role==='senior' || u.role==='admin') ? String(b.school_id||'') : (userCanAccessSchool_(u,b.school_id)?String(b.school_id||''):(userSchoolIds_(u).length===1?userSchoolIds_(u)[0]:''));
     if(!schoolId) throw new Error('مدرسه برای ورود دانش‌آموزان مشخص نشده است.');
     if(!b.base64 && !Array.isArray(b.students)) throw new Error('اطلاعات دانش‌آموزان ارسال نشده است.');
 
@@ -1007,7 +1007,7 @@ function studentDelete_(b) {
 function tuition_(b) {
   const u=auth_(b);
   let data=rows_('Tuition').map(x=>x.obj);
-  if(u.role!=='senior') data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  if(u.role!=='senior') data=data.filter(x=>userCanAccessSchool_(u,x.school_id));
   if(b.student_id) data=data.filter(x=>String(x.student_id)===String(b.student_id));
   if(b.school_id) data=data.filter(x=>String(x.school_id)===String(b.school_id));
   return {success:true,data:data};
@@ -1015,7 +1015,7 @@ function tuition_(b) {
 
 function tuitionAdd_(b) {
   const u=auth_(b);
-  const schoolId=u.role==='senior'?b.school_id:u.school_id;
+  const schoolId=(u.role==='senior'||u.role==='admin')?b.school_id:(userCanAccessSchool_(u,b.school_id)?b.school_id:(userSchoolIds_(u).length===1?userSchoolIds_(u)[0]:''));
   if(!schoolId || !b.student_id) throw new Error('مدرسه و دانش‌آموز الزامی است.');
   activeSchool_(schoolId);activeStudentForSchool_(b.student_id,schoolId);
   const type=String(b.type||'payment');
@@ -1128,7 +1128,7 @@ function tuitionDelete_(b) {
 function expenses_(b) {
   const u=auth_(b);
   let data=rows_('Expenses').map(x=>x.obj);
-  if(u.role!=='senior') data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  if(u.role!=='senior') data=data.filter(x=>userCanAccessSchool_(u,x.school_id));
   return {success:true,data:data};
 }
 
@@ -1223,7 +1223,7 @@ function financeTransactionAdd_(b) {
 function transactions_(b) {
   const u=auth_(b);
   let data=rows_('Transactions').map(x=>x.obj);
-  if(u.role!=='senior') data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  if(u.role!=='senior') data=data.filter(x=>userCanAccessSchool_(u,x.school_id));
   if(b.student_id) data=data.filter(x=>{if(x.kind!=='payment'&&x.kind!=='debt')return false;const hit=findRow_('Tuition',x.source_id); return String(hit&&hit.obj.student_id)===String(b.student_id); });
   if(b.kind_query) data=data.filter(x=>b.kind_query==='هزینه' ? String(x.kind)==='expense' : (b.kind_query==='شهریه' ? String(x.kind)==='payment' : String(x.kind)===b.kind_query));
   const students=rows_('Students').map(x=>x.obj); const tuition=rows_('Tuition').map(x=>x.obj); const expenses=rows_('Expenses').map(x=>x.obj);
@@ -1311,7 +1311,7 @@ function bank_(b) {
   const annotations=rows_('BankAnnotations').map(x=>x.obj);
   const byKey={}; annotations.forEach(a=>byKey[bankAnnotationKey_(a)]=a);
   data=data.map(x=>{const a=byKey[bankAnnotationKey_(x)];return a?Object.assign({},x,{assigned_student_id:a.student_id?Number(a.student_id):undefined,assigned_student_name:a.student_name||'',assigned_purpose:a.purpose||'',annotation_updated_at:a.updated_at,direction:a.direction||'unknown',balance:a.balance!==''&&a.balance!==undefined?Number(a.balance):undefined,card_number:a.card_number||a.bank_account||''}):x;});
-  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>userCanAccessSchool_(u,x.school_id));
   return {success:true,data:data};
 }
 function bankAnnotationSave_(b){
@@ -1689,7 +1689,7 @@ function cheques_(b){
   const schools={}; rows_('Schools').forEach(x=>schools[String(x.obj.id)]=x.obj.name);
   const students={}; rows_('Students').forEach(x=>students[String(x.obj.id)]=x.obj);
   let data=rows_('Cheques').map(x=>Object.assign({},x.obj));
-  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>userCanAccessSchool_(u,x.school_id));
   data=data.filter(x=>String(x.status||'pending')==='pending').map(x=>{x.school_name=schools[String(x.school_id)]||'';x.student_name=students[String(x.student_id)]?.name||x.issuer_name||'صادرکننده نامشخص';x.student_grade=students[String(x.student_id)]?.grade||'';x.attachment_url=x.image_url||'';return x;});
   return {success:true,data:data};
 }
@@ -1699,7 +1699,7 @@ function chequeList_(b){
   const students={}; rows_('Students').forEach(x=>students[String(x.obj.id)]=x.obj);
   let data=rows_('Cheques').map(x=>Object.assign({},x.obj))
     .filter(x=>['approved','bounced','rejected','paid'].indexOf(String(x.status))>=0);
-  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>userCanAccessSchool_(u,x.school_id));
   data=data.map(x=>{const s=students[String(x.student_id)]||{};x.school_name=schools[String(x.school_id)]||'';x.student_name=s.name||x.issuer_name||'صادرکننده نامشخص';x.student_grade=s.grade||'';x.attachment_url=x.image_url||'';return x;})
     .sort((a,b)=>String(a.due_date||'').localeCompare(String(b.due_date||'')));
   return {success:true,data:data};
@@ -1709,7 +1709,7 @@ function chequeAlerts_(b){
   const today=todayIso_();
   const students={}; rows_('Students').forEach(x=>students[String(x.obj.id)]=x.obj);
   let data=rows_('Cheques').map(x=>x.obj).filter(x=>['approved','bounced'].indexOf(String(x.status))>=0);
-  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>userCanAccessSchool_(u,x.school_id));
   const alerts=[];
   data.forEach(c=>{
     const name=students[String(c.student_id)]?.name||'دانش‌آموز';
@@ -1795,7 +1795,7 @@ function syncPayload_(b){
     const bankData=(bank_(b)||{}).data||[];
     return {
       success:true,
-      backend_version:'2.23.0',
+      backend_version:'2.24.1',
       students:(students_(b)||{}).data||[],
       schools:(schools_(b)||{}).data||[],
       staff:(staff_(b)||{}).data||[],
@@ -1826,7 +1826,7 @@ function chequesAll_(b){
   const schools={}; rows_('Schools').forEach(x=>schools[String(x.obj.id)]=x.obj.name);
   const students={}; rows_('Students').forEach(x=>students[String(x.obj.id)]=x.obj);
   let data=rows_('Cheques').map(x=>Object.assign({},x.obj));
-  if(!isSenior_(u)) data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  if(!isSenior_(u)) data=data.filter(x=>userCanAccessSchool_(u,x.school_id));
   data=data.map(x=>{const s=students[String(x.student_id)]||{};x.school_name=schools[String(x.school_id)]||'';x.student_name=s.name||x.issuer_name||'صادرکننده نامشخص';x.student_grade=s.grade||'';x.attachment_url=x.image_url||'';return x;});
   return {success:true,data:data};
 }
@@ -1903,7 +1903,7 @@ function chequeDelete_(b){
 function staffWorkLogs_(b){
   const u=auth_(b);
   let data=rows_('StaffWorkLogs').map(x=>x.obj).filter(x=>String(x.active)!=='false');
-  if(!isSenior_(u)) data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  if(!isSenior_(u)) data=data.filter(x=>userCanAccessSchool_(u,x.school_id));
   data=data.map(x=>{
     ['id','staff_id','school_id'].forEach(k=>x[k]=Number(x[k]));
     ['work_hours','overtime_hours','sessions_count','absent_hours'].forEach(k=>x[k]=Number(x[k]||0));
@@ -1934,7 +1934,7 @@ function staffWorkLogDelete_(b){
 function payroll_(b){
   const u=auth_(b);
   let data=rows_('PayrollPayments').map(x=>x.obj).filter(x=>String(x.active)!=='false');
-  if(!isSenior_(u)) data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  if(!isSenior_(u)) data=data.filter(x=>userCanAccessSchool_(u,x.school_id));
   data=data.map(x=>{
     ['id','staff_id','school_id'].forEach(k=>x[k]=Number(x[k]));
     ['gross_amount','insurance_deduction','net_paid_amount'].forEach(k=>x[k]=Number(x[k]||0));
@@ -2317,7 +2317,7 @@ function updateSettings_(b){
 function myClaim_(b){
   const u=auth_(b);
   let data=rows_('Expenses').map(x=>x.obj).filter(x=>String(x.payment_source||'')==='own');
-  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>String(x.school_id)===String(u.school_id));
+  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>userCanAccessSchool_(u,x.school_id));
   const total=data.reduce((n,x)=>n+(Number(x.amount)||0),0);
   return {success:true,total:total,data:data.map(x=>({id:x.id,date:x.date,school_id:x.school_id,school_name:schoolName_(x.school_id),category:x.category,amount:x.amount,description:x.description,tracking_code:x.tracking_code,image_url:x.image_url}))};
 }
@@ -2330,9 +2330,9 @@ function summary_(b) {
   let tuition=rows_('Tuition').map(x=>x.obj);
   let expenses=rows_('Expenses').map(x=>x.obj);
   if(u.role!=='senior') {
-    students=students.filter(x=>String(x.school_id)===String(u.school_id));
-    tuition=tuition.filter(x=>String(x.school_id)===String(u.school_id));
-    expenses=expenses.filter(x=>String(x.school_id)===String(u.school_id));
+    students=students.filter(x=>userCanAccessSchool_(u,x.school_id));
+    tuition=tuition.filter(x=>userCanAccessSchool_(u,x.school_id));
+    expenses=expenses.filter(x=>userCanAccessSchool_(u,x.school_id));
   }
 
   const debt={};
