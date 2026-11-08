@@ -1050,7 +1050,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 id: String(row.id || ''),
                 user_id: Number(row.user_id || 0),
                 user_name: String(row.user_name || row.username || ''),
-                school_id: row.school_id === '' || row.school_id == null ? undefined : Number(row.school_id),
+                school_id: row.school_id === '' || row.school_id == null ? undefined : (Number(String(row.school_id).split(/[;,،；]/)[0]) || undefined),
                 school_name: row.school_name || schools.find(s => String(s.id) === String(row.school_id))?.name,
                 action: String(row.action || ''),
                 description: String(row.description || ''),
