@@ -2366,9 +2366,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       onProgress?.(90, 'تکمیل مجوزهای کاربری و آماده‌سازی میز کار...');
       const backendUser = result.user as User;
-      const matchedSchool = schools.find((school) => String(school.id) === String(backendUser.school_id));
+      // Managers may be assigned multiple school IDs in Sheets (e.g. "5,6").
+      const assignedSchoolIds = String((backendUser as any).school_id || '')
+        .split(/[;,،；]/).map((value) => Number(value.trim())).filter((value) => Number.isFinite(value) && value > 0);
+      const primarySchoolId = assignedSchoolIds[0] || Number(backendUser.school_id || 0) || undefined;
+      const matchedSchool = schools.find((school) => String(school.id) === String(primarySchoolId));
       const authenticatedUser: User = {
         ...backendUser,
+        school_id: primarySchoolId,
+        school_ids: assignedSchoolIds,
         active: true,
         role: backendUser.role === 'admin' ? 'senior' : backendUser.role,
         school_name: backendUser.school_name || matchedSchool?.name,
