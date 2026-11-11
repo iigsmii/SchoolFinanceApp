@@ -101,6 +101,10 @@ export const TransactionsScreen: React.FC = () => {
         return matchTokens(combined, deferredQuery);
       }
       return true;
+    }).sort((a, b) => {
+      // Newest first: by transaction date, then by id (ids grow with creation time) as the tie-breaker.
+      const byDate = String(b.date || '').localeCompare(String(a.date || ''));
+      return byDate !== 0 ? byDate : Number(b.id) - Number(a.id);
     });
   }, [scopedTxs, filterAccount, filterKind, filterStatus, deferredQuery]);
 
