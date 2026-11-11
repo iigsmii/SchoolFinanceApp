@@ -184,8 +184,27 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Build-only summary (no automatic publication)
+      # Every build gets its own GitHub Release so the APK is easy to find and download, but it is
+      # marked as a pre-release: it never becomes the "latest" release and nobody is notified.
+      # Users only see the in-app update prompt after the senior admin presses publish in the app
+      # (Settings > Google settings > update publishing), which stores version + APK link in Apps Script.
+      - name: Create GitHub Release for this build (no user notification)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.APP_VERSION }}
+          target_commitish: ${{ github.sha }}
+          name: SchoolFinanceApp v${{ env.APP_VERSION }}
+          prerelease: true
+          make_latest: 'false'
+          generate_release_notes: true
+          body: |
+            ساخت خودکار نسخه ${{ env.APP_VERSION }}.
+            این نسخه تا زمانی که مدیر ارشد «فعال‌سازی انتشار» را در نرم‌افزار نزند، برای کاربران اعلان نمی‌شود.
+            لینک مستقیم APK: https://github.com/${{ github.repository }}/releases/download/v${{ env.APP_VERSION }}/SchoolFinanceApp-${{ env.APP_VERSION }}-release.apk
+          files: output/SchoolFinanceApp-${{ env.APP_VERSION }}-release.apk
+          fail_on_unmatched_files: true
+
+      - name: Build summary
         run: |
-          echo "APK built and stored as a GitHub Actions artifact."
-          echo "No GitHub Release or latest-version.json manifest is changed automatically."
-          echo "Publish a version intentionally using the tagged Release workflow."
+          echo "APK built and attached to GitHub Release v${APP_VERSION} (pre-release)."
+          echo "Users are NOT notified. The senior admin announces it from the app."

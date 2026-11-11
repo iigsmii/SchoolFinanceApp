@@ -69,6 +69,16 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
   const [releaseApkUrl, setReleaseApkUrl] = useState('https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk');
   const [releaseNotes, setReleaseNotes] = useState('');
   const [releaseBusy, setReleaseBusy] = useState(false);
+  // Each build is stored as its own GitHub Release; typing the version fills that exact APK link
+  // (only when the link is still one of this repository's release links, never a custom one).
+  const handleReleaseVersionChange = (value: string) => {
+    setReleaseVersion(value);
+    const version = value.trim();
+    const isRepoReleaseLink = /^https:\/\/github\.com\/iigsmii\/SchoolFinanceApp\/releases\//i.test(releaseApkUrl.trim());
+    if (/^\d+\.\d+\.\d+$/.test(version) && (!releaseApkUrl.trim() || isRepoReleaseLink)) {
+      setReleaseApkUrl(`https://github.com/iigsmii/SchoolFinanceApp/releases/download/v${version}/SchoolFinanceApp-${version}-release.apk`);
+    }
+  };
 
   useEffect(() => {
     if (!googleOnly || !isSenior) return;
@@ -194,11 +204,11 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
         {googleOnly && isSenior && <>
         <section className="bg-white rounded-3xl p-5 border border-[#e5dde8] shadow-xs space-y-4">
           <div className="flex items-center justify-between gap-3">
-            <div><h3 className="text-sm font-bold text-[#341648]">مدیریت انتشار بروزرسانی</h3><p className="text-xs text-gray-500 mt-1">تا زمان فعال‌سازی دستی شما، نسخه جدید به مدیران دیگر نمایش داده نمی‌شود.</p></div>
+            <div><h3 className="text-sm font-bold text-[#341648]">مدیریت انتشار بروزرسانی</h3><p className="text-xs text-gray-500 mt-1">هر بیلد جدید خودکار در بخش Releases گیت‌هاب ساخته می‌شود، اما تا زمان فعال‌سازی دستی شما، پیام بروزرسانی به مدیران دیگر نمایش داده نمی‌شود. شماره نسخه را وارد کنید تا لینک همان APK پر شود.</p></div>
             <span className={`text-xs font-bold px-3 py-1.5 rounded-full ${releaseEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>{releaseEnabled ? 'انتشار فعال' : 'انتشار متوقف'}</span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="text-xs font-semibold text-gray-600 space-y-1 block"><span>شماره نسخه</span><input value={releaseVersion} onChange={e => setReleaseVersion(e.target.value)} placeholder="2.24.0" dir="ltr" className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-mono" /></label>
+            <label className="text-xs font-semibold text-gray-600 space-y-1 block"><span>شماره نسخه</span><input value={releaseVersion} onChange={e => handleReleaseVersionChange(e.target.value)} placeholder="2.24.0" dir="ltr" className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-mono" /></label>
             <label className="text-xs font-semibold text-gray-600 space-y-1 block"><span>لینک مستقیم APK</span><input value={releaseApkUrl} onChange={e => setReleaseApkUrl(e.target.value)} placeholder="https://.../SchoolFinanceApp-latest.apk" dir="ltr" className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-xs font-mono" /></label>
           </div>
           <label className="text-xs font-semibold text-gray-600 space-y-1 block"><span>تغییرات نسخه</span><textarea value={releaseNotes} onChange={e => setReleaseNotes(e.target.value)} rows={3} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm" placeholder="شرح تغییرات این نسخه..." /></label>
