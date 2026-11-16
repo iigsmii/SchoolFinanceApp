@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useDeferredValue } from 'react';
+import SchoolSelect from '../SchoolSelect';
 import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
@@ -517,18 +518,7 @@ export const StaffScreen: React.FC = () => {
             {isSenior ? (
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <span className="text-xs font-bold text-[#341648] whitespace-nowrap">مدرسه:</span>
-                <select
-                  value={selectedSchoolId}
-                  onChange={(e) => setSelectedSchoolId(Number(e.target.value))}
-                  className="px-3 py-2 bg-[#fcfaff] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#341648] focus:outline-hidden w-full sm:w-auto"
-                >
-                  <option value={0}>همه مدارس و مراکز قرآنی شهرضا</option>
-                  {schools.map((sc) => (
-                    <option key={sc.id} value={sc.id}>
-                      {sc.name}
-                    </option>
-                  ))}
-                </select>
+                <SchoolSelect schools={schools} value={selectedSchoolId} onChange={(value) => setSelectedSchoolId(Number(value))} className="px-3 py-2 bg-[#fcfaff] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#341648] focus:outline-hidden w-full sm:w-auto" includeAll allValue={0} allLabel={`همه مدارس و مراکز قرآنی شهرضا`} />
               </div>
             ) : (
               <span className="text-xs font-bold text-gray-700 bg-gray-100 px-3 py-1.5 rounded-xl border border-gray-200">
@@ -1063,18 +1053,7 @@ export const StaffScreen: React.FC = () => {
 
                 <div>
                   <label className="block text-xs font-bold text-[#341648] mb-1">مدرسه مربوطه</label>
-                  <select
-                    disabled={!isSenior}
-                    value={staffSchoolId}
-                    onChange={(e) => setStaffSchoolId(Number(e.target.value))}
-                    className="w-full px-3 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-semibold text-[#302735]"
-                  >
-                    {schools.map((sc) => (
-                      <option key={sc.id} value={sc.id}>
-                        {sc.name}
-                      </option>
-                    ))}
-                  </select>
+                  <SchoolSelect schools={schools} value={staffSchoolId} onChange={(value) => setStaffSchoolId(Number(value))} className="w-full px-3 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-semibold text-[#302735]" />
                 </div>
               </div>
 
