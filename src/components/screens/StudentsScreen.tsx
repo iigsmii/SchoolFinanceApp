@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useDeferredValue } from 'react';
+import SchoolSelect from '../SchoolSelect';
 import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
@@ -337,18 +338,7 @@ export const StudentsScreen: React.FC = () => {
           {isSenior && (
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-gray-500 shrink-0">مرکز:</span>
-              <select
-                value={selectedSchoolFilter}
-                onChange={(e) => setSelectedSchoolFilter(Number(e.target.value))}
-                className="px-3 py-2 bg-[#fcfaff] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#341648] focus:outline-hidden"
-              >
-                <option value={0}>همه مراکز آموزشی</option>
-                {schools.map((sc) => (
-                  <option key={sc.id} value={sc.id}>
-                    {sc.name}
-                  </option>
-                ))}
-              </select>
+              <SchoolSelect schools={schools} value={selectedSchoolFilter} onChange={(value) => setSelectedSchoolFilter(Number(value))} className="px-3 py-2 bg-[#fcfaff] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#341648] focus:outline-hidden" includeAll allValue={0} allLabel={`همه مراکز آموزشی`} />
             </div>
           )}
         </div>
@@ -590,17 +580,7 @@ export const StudentsScreen: React.FC = () => {
                   <label className="block text-xs font-bold text-[#341648] mb-1">
                     مرکز آموزشی / مدرسه <span className="text-rose-500">*</span>
                   </label>
-                  <select
-                    value={formSchoolId}
-                    onChange={(e) => setFormSchoolId(Number(e.target.value))}
-                    className="w-full px-3 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-semibold text-[#302735] focus:outline-hidden focus:border-[#62205f]"
-                  >
-                    {schools.map((sc) => (
-                      <option key={sc.id} value={sc.id}>
-                        {sc.name}
-                      </option>
-                    ))}
-                  </select>
+                  <SchoolSelect schools={schools} value={formSchoolId} onChange={(value) => setFormSchoolId(Number(value))} className="w-full px-3 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-semibold text-[#302735] focus:outline-hidden focus:border-[#62205f]" />
                 </div>
               )}
 
