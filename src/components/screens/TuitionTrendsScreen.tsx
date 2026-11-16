@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import SchoolSelect from '../SchoolSelect';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { formatRial, fromGregorian, JALALI_MONTH_NAMES, todayGregorian } from '../../utils/jalali';
@@ -157,18 +158,7 @@ export const TuitionTrendsScreen: React.FC<{ embedded?: boolean }> = ({ embedded
           {isSenior && (
             <div className="flex items-center gap-2 min-w-0">
               <SchoolIcon className="w-4 h-4 text-gray-400 shrink-0" />
-              <select
-                value={selectedSchoolId}
-                onChange={(e) => setSelectedSchoolId(Number(e.target.value))}
-                className="py-2 px-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#341648] focus:outline-hidden"
-              >
-                <option value={0}>همه واحدهای آموزشی (کل مجموعه)</option>
-                {schools.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
+              <SchoolSelect schools={schools} value={selectedSchoolId} onChange={(value) => setSelectedSchoolId(Number(value))} className="py-2 px-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#341648] focus:outline-hidden" includeAll allValue={0} allLabel={`همه واحدهای آموزشی (کل مجموعه)`} />
             </div>
           )}
 
