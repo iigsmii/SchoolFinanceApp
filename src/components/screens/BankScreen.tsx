@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useDeferredValue } from 'react';
+import SchoolSelect from '../SchoolSelect';
 import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
@@ -1307,18 +1308,7 @@ export const BankScreen: React.FC = () => {
 
             {/* School Selector (for Senior) */}
             {isSenior && (
-              <select
-                value={selectedSchoolId}
-                onChange={(e) => setSelectedSchoolId(Number(e.target.value))}
-                className="text-xs py-2 px-3 rounded-xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-400 font-bold"
-              >
-                <option value={0}>🏢 تمام مدارس و مراکز (همه)</option>
-                {schools.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
+              <SchoolSelect schools={schools} value={selectedSchoolId} onChange={(value) => setSelectedSchoolId(Number(value))} className="text-xs py-2 px-3 rounded-xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-400 font-bold" includeAll allValue={0} allLabel={`🏢 تمام مدارس و مراکز (همه)`} />
             )}
 
             {/* Stream Selector */}
@@ -2121,20 +2111,10 @@ export const BankScreen: React.FC = () => {
                 <div className="space-y-3">
                   <div>
                     <label className="text-xs font-bold text-gray-700 block mb-1">مدرسه مربوطه</label>
-                    <select
-                      value={resolveSchoolId}
-                      onChange={(e) => {
-                        setResolveSchoolId(Number(e.target.value));
+                    <SchoolSelect schools={schools} value={resolveSchoolId} onChange={(value) => {
+                        setResolveSchoolId(Number(value));
                         setResolveSelectedStudent(null);
-                      }}
-                      className="w-full text-xs p-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-400"
-                    >
-                      {schools.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </select>
+                      }} className="w-full text-xs p-2.5 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-400" />
                   </div>
 
                   <div>
@@ -2192,17 +2172,7 @@ export const BankScreen: React.FC = () => {
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-xs font-bold text-gray-700 block mb-1">مدرسه</label>
-                      <select
-                        value={resolveSchoolId}
-                        onChange={(e) => setResolveSchoolId(Number(e.target.value))}
-                        className="w-full text-xs p-2.5 rounded-xl border border-gray-200 bg-gray-50"
-                      >
-                        {schools.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name}
-                          </option>
-                        ))}
-                      </select>
+                      <SchoolSelect schools={schools} value={resolveSchoolId} onChange={(value) => setResolveSchoolId(Number(value))} className="w-full text-xs p-2.5 rounded-xl border border-gray-200 bg-gray-50" />
                     </div>
 
                     <div>
