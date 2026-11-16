@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useDeferredValue } from 'react';
+import SchoolSelect from '../SchoolSelect';
 import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
@@ -365,18 +366,7 @@ export const SmsScreen: React.FC = () => {
 
                 {/* School Selector (for Senior Admin) */}
                 {isSenior ? (
-                  <select
-                    value={selectedSchoolId}
-                    onChange={(e) => setSelectedSchoolId(Number(e.target.value))}
-                    className="py-2.5 px-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735]"
-                  >
-                    <option value={0}>همه مراکز آموزشی</option>
-                    {schools.map((sc) => (
-                      <option key={sc.id} value={sc.id}>
-                        {sc.name}
-                      </option>
-                    ))}
-                  </select>
+                  <SchoolSelect schools={schools} value={selectedSchoolId} onChange={(value) => setSelectedSchoolId(Number(value))} className="py-2.5 px-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735]" includeAll allValue={0} allLabel={`همه مراکز آموزشی`} />
                 ) : (
                   <div className="py-2.5 px-3 bg-gray-50 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 flex items-center truncate">
                     {currentUser?.school_name || 'مرکز شما'}
