@@ -19,11 +19,12 @@ const CFG = {
   SHEETS: [
     'Managers','Schools','Students','Tuition','Expenses','Transactions',
     'Bank','BankDetails','ExpenseCategories','Messages','Attachments','ParsianAccounts','Settings','ActivityLogs','Cheques','Requests','Staff',
-    'StaffWorkLogs','PayrollPayments','BankAccounts'
+    'StaffWorkLogs','PayrollPayments','BankAccounts','ClaimSettlements'
   ]
 };
 
 const HEADERS = {
+  ClaimSettlements: ['id','date','school_id','manager_id','manager_name','amount','tracking_code','expense_ids','note','created_by','created_at'],
   Requests: ['id','user_id','action','payload_hash','status','result','created_at'],
   Managers: ['id','name','username','password','school_id','role','active','created_at','petty_cash_card','petty_cash_bank','petty_cash_shaba','petty_cash_limit','petty_cash_balance','gender'],
   Schools: ['id','name','code','active','created_at','petty_cash_card','type','moeen_code'],
@@ -244,7 +245,7 @@ function doPost(e) {
     if (action === 'sync' || action === 'all') return json_(syncPayload_(body));
 
     // POST carries tokens in its body, but read-only actions do not need a write lock.
-    const reads={cheques_all:chequesAll_,staff_worklogs:staffWorkLogs_,payroll:payroll_,bank_accounts:bankAccounts_,schools:schools_,staff:staff_,students:students_,tuition:tuition_,expenses:expenses_,transactions:transactions_,bank:bank_,bank_review:bankReview_,bank_rules_get:bankRulesGet_,categories:categories_,messages:messages_,managers:managers_,cheques:cheques_,cheque_list:chequeList_,cheque_alerts:chequeAlerts_,summary:summary_,my_claim:myClaim_,app_version:appVersion_,activity_logs:activityLogs_,parsian_export:parsianExport_,parsian_school_map:parsianSchoolMap_,parsian_student_accounts:parsianStudentAccounts_,attachment_read:attachmentRead_};
+    const reads={claim_settlements:claimSettlements_,cheques_all:chequesAll_,staff_worklogs:staffWorkLogs_,payroll:payroll_,bank_accounts:bankAccounts_,schools:schools_,staff:staff_,students:students_,tuition:tuition_,expenses:expenses_,transactions:transactions_,bank:bank_,bank_review:bankReview_,bank_rules_get:bankRulesGet_,categories:categories_,messages:messages_,managers:managers_,cheques:cheques_,cheque_list:chequeList_,cheque_alerts:chequeAlerts_,summary:summary_,my_claim:myClaim_,app_version:appVersion_,activity_logs:activityLogs_,parsian_export:parsianExport_,parsian_school_map:parsianSchoolMap_,parsian_student_accounts:parsianStudentAccounts_,attachment_read:attachmentRead_};
     if(reads[action])return json_(reads[action](body));
     lock.waitLock(30000);locked=true;writeLockHeld_=true;
     ensureStructure_();
@@ -294,6 +295,7 @@ function doPost(e) {
       case 'expenses': result=expenses_(body); break;
       case 'expense_add': result=expenseAdd_(body); break;
       case 'expense_update': result=expenseUpdate_(body); break;
+      case 'claim_settle': result=claimSettle_(body); break;
       case 'expense_delete': result=expenseDelete_(body); break;
       case 'transactions': result=transactions_(body); break;
       case 'finance_transaction': result=financeTransactionAdd_(body); break;
@@ -1181,6 +1183,11 @@ function expenseUpdate_(b) {
   const newSource=b.payment_source!==undefined?String(b.payment_source):String(r.payment_source||'bank');
   updateRow_('Expenses',hit.row,[r.id,newDate,r.school_id,newCategory,newAmount,newDescription,tracking,r.image_url,r.created_by,r.created_at,r.reconciled,r.approved,newSource]);
   rows_('Transactions').forEach(x=>{ if(String(x.obj.source_id)===String(r.id) && String(x.obj.kind)==='expense'){ const t=x.obj; updateRow_('Transactions',x.row,[t.id,newDate,t.school_id,t.kind,newAmount,newDescription,tracking,r.image_url,t.created_by,t.created_at,t.reconciled,t.approved,t.source_id,newSource]); }});
+  if(b.petty_cash_card!==undefined||newSource!=='petty_cash'){
+    const card=newSource==='petty_cash'?String(b.petty_cash_card||''):'';
+    patchRow_('Expenses',hit.row,{petty_cash_card:card});
+    rows_('Transactions').forEach(x=>{ if(String(x.obj.source_id)===String(r.id)&&String(x.obj.kind)==='expense') patchRow_('Transactions',x.row,{petty_cash_card:card}); });
+  }
   return {success:true};
 }
 
@@ -2250,7 +2257,7 @@ function auditAfterAction_(action,b,result) {
   sh.appendRow([nextId_('ActivityLogs'),now_(),u.id,u.username||'',u.name||'',u.role||'',u.school_id||'',action,entityType,entityId,description,JSON.stringify(auditDetails_(action,b,result))]);
 }
 function auditDescription_(action,b,r){
-  const map={student_add:'افزودن دانش‌آموز',student_update:'ویرایش دانش‌آموز',student_delete:'حذف/غیرفعال‌کردن دانش‌آموز',students_import:'ورود دانش‌آموزان از Excel',tuition_add:'ثبت بدهی/پرداخت شهریه',tuition_bulk_debt:'ثبت گروهی بدهی شهریه',tuition_update:'ویرایش رکورد شهریه',tuition_delete:'حذف رکورد شهریه',expense_add:'ثبت هزینه',expense_update:'ویرایش هزینه',expense_delete:'حذف هزینه',transaction_delete:'حذف تراکنش',transaction_review:'بررسی تراکنش',bank_reconcile:'تطبیق تراکنش‌های بانک',bank_upload:'ورود فایل بانک',cheque_add:'ثبت چک',cheque_update:'ویرایش چک',cheque_delete:'حذف چک',staff_worklog_add:'ثبت کارکرد پرسنل',staff_worklog_delete:'حذف کارکرد پرسنل',payroll_add:'ثبت پرداخت حقوق/بیمه',payroll_delete:'حذف پرداخت حقوق/بیمه',bank_account_add:'تعریف حساب بانکی',bank_account_update:'ویرایش حساب بانکی',bank_account_delete:'حذف حساب بانکی',manager_add:'افزودن مدیر',manager_update:'ویرایش مدیر',manager_delete:'حذف/غیرفعال‌کردن مدیر',manager_import_attached:'همگام‌سازی مدیران',school_add:'افزودن مدرسه',school_update:'ویرایش مدرسه',school_delete:'غیرفعال‌کردن مدرسه',message_add:'ارسال پیام به مدیران',message_delete:'حذف پیام',category_add:'افزودن دسته هزینه',category_update:'ویرایش دسته هزینه',category_delete:'غیرفعال‌کردن دسته هزینه',parsian_export:'خروجی Excel پارسیان'};
+  const map={student_add:'افزودن دانش‌آموز',student_update:'ویرایش دانش‌آموز',student_delete:'حذف/غیرفعال‌کردن دانش‌آموز',students_import:'ورود دانش‌آموزان از Excel',tuition_add:'ثبت بدهی/پرداخت شهریه',tuition_bulk_debt:'ثبت گروهی بدهی شهریه',tuition_update:'ویرایش رکورد شهریه',tuition_delete:'حذف رکورد شهریه',expense_add:'ثبت هزینه',expense_update:'ویرایش هزینه',expense_delete:'حذف هزینه',transaction_delete:'حذف تراکنش',transaction_review:'بررسی تراکنش',bank_reconcile:'تطبیق تراکنش‌های بانک',bank_upload:'ورود فایل بانک',cheque_add:'ثبت چک',cheque_update:'ویرایش چک',cheque_delete:'حذف چک',staff_worklog_add:'ثبت کارکرد پرسنل',staff_worklog_delete:'حذف کارکرد پرسنل',payroll_add:'ثبت پرداخت حقوق/بیمه',payroll_delete:'حذف پرداخت حقوق/بیمه',bank_account_add:'تعریف حساب بانکی',bank_account_update:'ویرایش حساب بانکی',bank_account_delete:'حذف حساب بانکی',manager_add:'افزودن مدیر',manager_update:'ویرایش مدیر',manager_delete:'حذف/غیرفعال‌کردن مدیر',manager_import_attached:'همگام‌سازی مدیران',school_add:'افزودن مدرسه',school_update:'ویرایش مدرسه',school_delete:'غیرفعال‌کردن مدرسه',message_add:'ارسال پیام به مدیران',message_delete:'حذف پیام',category_add:'افزودن دسته هزینه',category_update:'ویرایش دسته هزینه',category_delete:'غیرفعال‌کردن دسته هزینه',parsian_export:'خروجی Excel پارسیان',claim_settle:'تسویه طلب مدیر'};
   let d=map[action]||action;
   if(action==='tuition_bulk_debt') d+=' | '+String(r.added||0)+' نفر | '+String(r.amount||0)+' ریال | '+String(r.description||'');
   else if(action==='students_import') d+=' | '+String(r.added||0)+' اضافه | '+String(r.skipped||0)+' تکراری | '+String(r.invalid||0)+' نیازمند اصلاح';
@@ -2322,6 +2329,56 @@ function myClaim_(b){
   if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>userCanAccessSchool_(u,x.school_id));
   const total=data.reduce((n,x)=>n+(Number(x.amount)||0),0);
   return {success:true,total:total,data:data.map(x=>({id:x.id,date:x.date,school_id:x.school_id,school_name:schoolName_(x.school_id),category:x.category,amount:x.amount,description:x.description,tracking_code:x.tracking_code,image_url:x.image_url}))};
+}
+
+/* ---------- MANAGER CLAIMS (expenses a manager paid from their own pocket) ---------- */
+// An approved expense cannot be edited, so settling a claim is its own senior-only action:
+// it flips payment_source own -> own_settled on the expense and its ledger row, and keeps an audit
+// record (who was paid, when, which payment reference, which expenses) in ClaimSettlements.
+function claimSettle_(b){
+  const u=auth_(b,['senior','admin']);
+  const ids=(Array.isArray(b.expense_ids)?b.expense_ids:String(b.expense_ids||'').split(',')).map(x=>String(x).trim()).filter(Boolean);
+  if(!ids.length) throw new Error('هیچ هزینه‌ای برای تسویه انتخاب نشده است.');
+  const managerId=String(b.manager_id||'').trim();
+  if(!managerId) throw new Error('مدیر مشخص نیست.');
+  const tracking=String(b.tracking_code||'').trim();
+  if(!tracking) throw new Error('شماره پیگیری پرداخت الزامی است.');
+  const payDate=date_(b.date);
+  const seen={},picked=[];let total=0;
+  ids.forEach(id=>{
+    if(seen[id]) throw new Error('هزینه '+id+' تکراری انتخاب شده است.');
+    seen[id]=true;
+    const hit=findRow_('Expenses',id);
+    if(!hit) throw new Error('هزینه '+id+' یافت نشد.');
+    const r=hit.obj;
+    if(String(r.payment_source||'')!=='own') throw new Error('هزینه '+id+' طلب پرداخت‌نشده نیست (قبلاً تسویه شده یا از حساب شخصی ثبت نشده).');
+    if(String(r.created_by)!==managerId) throw new Error('هزینه '+id+' متعلق به این مدیر نیست.');
+    if(String(r.review_status||'')!=='approved' && !truthy_(r.approved)) throw new Error('هزینه '+id+' هنوز تأیید نشده است.');
+    total+=Number(r.amount)||0;
+    picked.push(hit);
+  });
+  if(!(total>0)) throw new Error('مبلغ تسویه معتبر نیست.');
+  picked.forEach(hit=>{
+    patchRow_('Expenses',hit.row,{payment_source:'own_settled'});
+    rows_('Transactions').forEach(x=>{
+      if(String(x.obj.source_id)===String(hit.obj.id)&&String(x.obj.kind)==='expense') patchRow_('Transactions',x.row,{payment_source:'own_settled'});
+    });
+  });
+  const schoolIds={};picked.forEach(h=>schoolIds[String(h.obj.school_id)]=true);
+  const schoolList=Object.keys(schoolIds);
+  const mgr=findRow_('Managers',managerId);
+  const id=nextId_('ClaimSettlements');
+  appendObj_('ClaimSettlements',{id:id,date:payDate,school_id:schoolList.length===1?schoolList[0]:'',manager_id:managerId,manager_name:mgr?String(mgr.obj.name||''):'',amount:total,tracking_code:tracking,expense_ids:ids.join(','),note:String(b.note||''),created_by:u.id,created_at:now_()});
+  SpreadsheetApp.flush();
+  return {success:true,id:id,total:total,count:picked.length};
+}
+
+function claimSettlements_(b){
+  const u=auth_(b);
+  let data=rows_('ClaimSettlements').map(x=>x.obj);
+  if(!isSenior_(u)) data=data.filter(x=>String(x.manager_id)===String(u.id));
+  data.sort((a,c)=>String(c.date).localeCompare(String(a.date))||(Number(c.id)-Number(a.id)));
+  return {success:true,data:data.map(x=>({id:x.id,date:x.date,school_id:x.school_id,manager_id:x.manager_id,manager_name:x.manager_name,amount:Number(x.amount)||0,tracking_code:x.tracking_code,expense_ids:String(x.expense_ids||'').split(',').filter(Boolean),note:x.note||''}))};
 }
 
 /* ---------- SUMMARY ---------- */

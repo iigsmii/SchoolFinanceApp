@@ -118,7 +118,7 @@ const requestJson = async (
   }
 };
 
-const READ_ONLY_ACTIONS = ['app_version', 'bank_rules_get'];
+const READ_ONLY_ACTIONS = ['app_version', 'bank_rules_get', 'claim_settlements'];
 
 /**
  * Sends a mutation to the Google Apps Script Web App
