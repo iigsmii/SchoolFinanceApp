@@ -74,6 +74,7 @@ export const ExpensesScreen: React.FC = () => {
     categories,
     schools,
     currentUser,
+    users,
     accentColor,
     addExpense,
     updateExpense,
@@ -109,10 +110,28 @@ export const ExpensesScreen: React.FC = () => {
   const [formJalaliDate, setFormJalaliDate] = useState(todayJalali());
   const [formTracking, setFormTracking] = useState('');
   const [formSource, setFormSource] = useState<'petty_cash' | 'bank' | 'own'>('petty_cash');
+
   const [formComment, setFormComment] = useState('');
   const [formSchoolId, setFormSchoolId] = useState<number>(
     isSenior ? schools[0]?.id || 1 : currentUser?.school_id || 1
   );
+
+  // کارت تن‌خواه ثبت‌شده برای مدیرِ همان مدرسه (یا خود کاربر اگر مدیر است)
+  const pettyCardFor = (schoolId: number | string): string => {
+    const own = (currentUser?.petty_cash_card || '').trim();
+    if (currentUser?.role === 'manager') return own;
+    const sid = Number(schoolId);
+    const mgr = (users || []).find(
+      (u) =>
+        u.role === 'manager' &&
+        u.active !== false &&
+        !!(u.petty_cash_card || '').trim() &&
+        (Number(u.school_id) === sid || (u.school_ids || []).map(Number).includes(sid))
+    );
+    return (mgr?.petty_cash_card || '').trim();
+  };
+  const formPettyCard = pettyCardFor(formSchoolId);
+  const formatCard = (c: string) => c.replace(/\D/g, '').replace(/(.{4})(?=.)/g, '$1-');
   const [formAttachment, setFormAttachment] = useState<string>('');
   const [formError, setFormError] = useState('');
 
@@ -239,7 +258,7 @@ export const ExpensesScreen: React.FC = () => {
     setFormAmount(Number(t.amount).toLocaleString('en-US'));
     setFormJalaliDate(jalaliFromGregorian(t.date));
     setFormTracking(t.tracking_code || '');
-    setFormSource((t.payment_source as any) || 'petty_cash');
+    setFormSource(t.payment_source === 'own' || t.payment_source === 'bank' ? (t.payment_source as any) : 'petty_cash');
     setFormComment(t.description || t.comment || '');
     setFormAttachment(t.attachment_url || '');
     setFormSchoolId(t.school_id);
@@ -258,6 +277,11 @@ export const ExpensesScreen: React.FC = () => {
     }
     if (!formTracking.trim()) {
       setFormError('شماره پیگیری فاکتور یا واریز الزامی است.');
+      return;
+    }
+
+    if (formSource === 'petty_cash' && !pettyCardFor(formSchoolId)) {
+      setFormError('برای این مدیر هنوز کارت تن‌خواه ثبت نشده است. از بخش مدیران کارت را ثبت کنید یا گزینه «از حساب خودم» را انتخاب کنید.');
       return;
     }
 
@@ -281,6 +305,8 @@ export const ExpensesScreen: React.FC = () => {
           expense_category_name: cat?.name || 'هزینه',
           tracking_code: formTracking.trim(),
           payment_source: formSource,
+          payment_method: formSource,
+          petty_cash_card: formSource === 'petty_cash' ? pettyCardFor(formSchoolId) : '',
           description: formComment.trim(),
           comment: formComment.trim(),
           school_id: formSchoolId,
@@ -294,6 +320,7 @@ export const ExpensesScreen: React.FC = () => {
           date: isoDate,
           tracking_code: formTracking.trim(),
           payment_source: formSource,
+          petty_cash_card: formSource === 'petty_cash' ? pettyCardFor(formSchoolId) : undefined,
           comment: formComment.trim(),
           school_id: formSchoolId,
           attachment_url: formAttachment,
@@ -667,10 +694,18 @@ export const ExpensesScreen: React.FC = () => {
                             className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
                               t.payment_source === 'own'
                                 ? 'bg-rose-100 text-rose-800'
+                                : t.payment_source === 'own_settled'
+                                ? 'bg-emerald-100 text-emerald-800'
                                 : 'bg-blue-100 text-blue-800'
                             }`}
                           >
-                            {t.payment_source === 'own' ? 'از حساب شخصی مدیر' : 'حساب بانکی مدرسه'}
+                            {t.payment_source === 'own'
+                              ? 'از حساب خودم (طلب مدیر)'
+                              : t.payment_source === 'own_settled'
+                              ? 'از حساب مدیر — تسویه شده'
+                              : t.payment_source === 'bank'
+                              ? 'حساب بانکی مدرسه'
+                              : 'کارت تن‌خواه'}
                           </span>
 
                           {/* Approval Status Badge */}
@@ -892,22 +927,27 @@ export const ExpensesScreen: React.FC = () => {
                     onChange={(e) => setFormSource(e.target.value as any)}
                     className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-bold text-[#302735] focus:outline-hidden"
                   >
-                    <option value="petty_cash">کارت تن‌خواه مدیر (تن‌خواه گردان)</option>
-                    <option value="bank">از حساب بانکی مدرسه</option>
-                    <option value="own">از حساب خودم (طلب من از مدرسه)</option>
+                    <option value="petty_cash">کارت تن‌خواه</option>
+                    <option value="own">از حساب خودم</option>
+                    {formSource === 'bank' && <option value="bank">حساب بانکی مدرسه (قدیمی)</option>}
                   </select>
 
-                  {formSource === 'petty_cash' && (
-                    <div className="mt-1.5 p-2 bg-purple-50 rounded-lg border border-purple-200 text-[11px] font-bold text-[#62205f] flex items-center gap-1.5">
-                      <CreditCard className="w-3.5 h-3.5 text-purple-700 shrink-0" />
-                      <span>
-                        کارت تن‌خواه:{' '}
-                        <span className="font-mono">
-                          {currentUser?.petty_cash_card ||
-                            schools.find((s) => s.id === formSchoolId)?.petty_cash_card ||
-                            '۶۰۳۷-۹۹۷۵-۱۱۲۲-۳۳۴۴'}
+                  {formSource === 'petty_cash' &&
+                    (formPettyCard ? (
+                      <div className="mt-1.5 p-2 bg-purple-50 rounded-lg border border-purple-200 text-[11px] font-bold text-[#62205f] flex items-center gap-1.5">
+                        <CreditCard className="w-3.5 h-3.5 text-purple-700 shrink-0" />
+                        <span>
+                          کارت تن‌خواه: <span className="font-mono" dir="ltr">{formatCard(formPettyCard)}</span>
                         </span>
-                      </span>
+                      </div>
+                    ) : (
+                      <div className="mt-1.5 p-2 bg-amber-50 rounded-lg border border-amber-300 text-[11px] font-bold text-amber-800">
+                        برای این مدیر کارت تن‌خواه ثبت نشده است.
+                      </div>
+                    ))}
+                  {formSource === 'own' && (
+                    <div className="mt-1.5 p-2 bg-rose-50 rounded-lg border border-rose-200 text-[11px] font-bold text-rose-800">
+                      این مبلغ به‌عنوان طلب مدیر از مدرسه ثبت می‌شود تا مدیر ارشد تسویه کند.
                     </div>
                   )}
                 </div>

@@ -1520,7 +1520,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (data.tracking_code !== undefined) changes.tracking_code = data.tracking_code;
     if (route.base === 'tuition' && data.payment_method !== undefined) changes.payment_method = data.payment_method;
     if (route.base === 'expense') {
-      if (data.payment_method !== undefined) changes.payment_source = data.payment_method;
+      const srcValue = data.payment_source !== undefined ? data.payment_source : data.payment_method;
+      if (srcValue !== undefined) changes.payment_source = srcValue;
+      if (data.petty_cash_card !== undefined) changes.petty_cash_card = data.petty_cash_card;
       if (data.expense_category_name !== undefined) changes.category = data.expense_category_name;
       if (data.expense_category_id !== undefined) changes.category_id = String(data.expense_category_id);
     }

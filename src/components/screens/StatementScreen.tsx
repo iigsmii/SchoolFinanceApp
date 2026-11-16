@@ -145,7 +145,7 @@ export const StatementScreen: React.FC = () => {
                       </div>
                       <div className="text-gray-500 mt-1">
                         تاریخ: {jalaliFromGregorian(t.date)} | پیگیری: {t.tracking_code || '—'} | منبع:{' '}
-                        {t.payment_source === 'own' ? 'حساب شخصی مدیر' : 'بانک مدرسه'}
+                        {t.payment_source === 'own' ? 'حساب شخصی مدیر (طلب)' : t.payment_source === 'own_settled' ? 'حساب شخصی مدیر (تسویه شده)' : t.payment_source === 'petty_cash' ? 'کارت تن‌خواه' : 'بانک مدرسه'}
                       </div>
 
                       {t.attachment_url && (
