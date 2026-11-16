@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import SchoolSelect from '../SchoolSelect';
 import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
@@ -442,18 +443,7 @@ export const ExpensesScreen: React.FC = () => {
               <Building2 className="w-4 h-4 text-purple-700" />
               <span>فیلتر مدرسه / واحد آموزشی:</span>
             </span>
-            <select
-              value={selectedSchoolFilter}
-              onChange={(e) => setSelectedSchoolFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-              className="px-3 py-1.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735] focus:outline-hidden"
-            >
-              <option value="all">همه واحدهای آموزشی ({schools.length} مرکز)</option>
-              {schools.map((sc) => (
-                <option key={sc.id} value={sc.id}>
-                  {sc.name} (کد تفصیلی: {sc.tafsili_code || sc.id})
-                </option>
-              ))}
-            </select>
+            <SchoolSelect schools={schools} value={selectedSchoolFilter} onChange={(value) => setSelectedSchoolFilter(value === 'all' ? 'all' : Number(value))} className="px-3 py-1.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735] focus:outline-hidden" includeAll allValue={"all"} allLabel={`همه واحدهای آموزشی (${schools.length} مرکز)`} optionLabel={(school) => `${school.name} (کد تفصیلی: ${school.tafsili_code || school.id})`} />
           </div>
         )}
 
@@ -970,17 +960,7 @@ export const ExpensesScreen: React.FC = () => {
               <div>
                 <label className="block text-xs font-bold text-[#341648] mb-1.5">مدرسه و واحد آموزشی</label>
                 {isSenior ? (
-                  <select
-                    value={formSchoolId}
-                    onChange={(e) => setFormSchoolId(Number(e.target.value))}
-                    className="w-full px-3 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735]"
-                  >
-                    {schools.map((sc) => (
-                      <option key={sc.id} value={sc.id}>
-                        {sc.name} (کد تفصیلی: {sc.tafsili_code || sc.id})
-                      </option>
-                    ))}
-                  </select>
+                  <SchoolSelect schools={schools} value={formSchoolId} onChange={(value) => setFormSchoolId(Number(value))} className="w-full px-3 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735]" optionLabel={(school) => `${school.name} (کد تفصیلی: ${school.tafsili_code || school.id})`} />
                 ) : (
                   <div className="text-xs font-bold text-gray-700 bg-gray-50 px-3 py-2.5 rounded-xl border border-gray-200">
                     {schools.find((s) => s.id === formSchoolId)?.name || currentUser?.school_name}
