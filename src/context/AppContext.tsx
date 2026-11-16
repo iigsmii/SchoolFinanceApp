@@ -2373,13 +2373,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         .split(/[;,،；]/).map((value) => Number(value.trim())).filter((value) => Number.isFinite(value) && value > 0);
       const primarySchoolId = assignedSchoolIds[0] || Number(backendUser.school_id || 0) || undefined;
       const matchedSchool = schools.find((school) => String(school.id) === String(primarySchoolId));
+      const authenticatedRole = backendUser.role === 'admin' ? 'senior' : backendUser.role;
+      const isSeniorAccount = authenticatedRole === 'senior';
       const authenticatedUser: User = {
         ...backendUser,
         school_id: primarySchoolId,
         school_ids: assignedSchoolIds,
         active: true,
-        role: backendUser.role === 'admin' ? 'senior' : backendUser.role,
-        school_name: backendUser.school_name || matchedSchool?.name,
+        role: authenticatedRole,
+        // A senior manager represents the whole organization, not the first/default school.
+        // Ignore any stale school_name accidentally stored on the senior account in Sheets.
+        school_name: isSeniorAccount ? undefined : (backendUser.school_name || matchedSchool?.name),
       };
 
       onProgress?.(100, 'ورود با موفقیت انجام شد! در حال انتقال...');
