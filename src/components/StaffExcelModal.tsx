@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import SchoolSelect from './SchoolSelect';
 import { useBackClose } from '../hooks/useBackClose';
 import * as XLSX from 'xlsx';
 import { StaffMember, School } from '../types';
@@ -359,17 +360,7 @@ export const StaffExcelModal: React.FC<StaffExcelModalProps> = ({
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 bg-[#fcfaff] rounded-2xl border border-[#ede5ef]">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-[#341648]">مدرسه پیش‌فرض برای موارد نامشخص:</span>
-              <select
-                value={fallbackSchoolId}
-                onChange={(e) => setFallbackSchoolId(Number(e.target.value))}
-                className="px-3 py-1.5 bg-white rounded-xl border border-gray-200 text-xs font-bold text-[#341648]"
-              >
-                {schools.map((sc) => (
-                  <option key={sc.id} value={sc.id}>
-                    {sc.name}
-                  </option>
-                ))}
-              </select>
+              <SchoolSelect schools={schools} value={fallbackSchoolId} onChange={(value) => setFallbackSchoolId(Number(value))} className="px-3 py-1.5 bg-white rounded-xl border border-gray-200 text-xs font-bold text-[#341648]" />
             </div>
 
             <button
