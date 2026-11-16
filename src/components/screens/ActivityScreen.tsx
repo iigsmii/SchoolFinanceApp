@@ -3,6 +3,36 @@ import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { Clock, Filter, Search, ChevronDown, Check, Users, UserRound } from 'lucide-react';
 
+const formatActivityDate = (value: unknown): string => {
+  if (value === null || value === undefined || value === '') return 'تاریخ نامشخص';
+
+  const raw = String(value).trim();
+  const normalized = raw
+    .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+    .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)));
+
+  // Handle ISO timestamps and common backend date-time strings.
+  const candidate = /^\d{4}-\d{2}-\d{2} \d{2}:/.test(normalized)
+    ? normalized.replace(' ', 'T')
+    : normalized;
+  const date = new Date(candidate);
+  if (Number.isNaN(date.getTime())) return raw;
+
+  const weekday = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { weekday: 'long' }).format(date);
+  const datePart = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(date);
+  const timePart = new Intl.DateTimeFormat('fa-IR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
+
+  return `${weekday}، ${datePart} — ساعت ${timePart}`;
+};
+
 export const ActivityScreen: React.FC = () => {
   const { activityLogs, currentUser, users } = useApp();
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
@@ -191,9 +221,9 @@ export const ActivityScreen: React.FC = () => {
                       </span>
                     )}
                   </div>
-                  <span className="flex shrink-0 items-center gap-1 font-mono text-[11px] text-gray-400">
+                  <span className="flex max-w-[65%] shrink-0 items-center gap-1 text-left text-[11px] leading-5 text-gray-500">
                     <Clock className="h-3.5 w-3.5" />
-                    {log.date}
+                    {formatActivityDate(log.date)}
                   </span>
                 </div>
 
