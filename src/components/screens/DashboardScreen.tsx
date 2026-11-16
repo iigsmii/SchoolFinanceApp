@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useDeferredValue } from 'react';
+import SchoolSelect from '../SchoolSelect';
 import { useApp } from '../../context/AppContext';
 import { matchesStudentSearch } from '../../utils/studentSearch';
 import { DashboardClock } from '../DashboardClock';
@@ -562,18 +563,7 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
           {isSenior ? (
             <div className="flex items-center gap-1.5 self-start sm:self-auto">
               <span className="text-xs text-gray-500 font-bold shrink-0">مرکز:</span>
-              <select
-                value={selectedFinancialSchoolId}
-                onChange={(e) => setSelectedFinancialSchoolId(Number(e.target.value))}
-                className="px-2.5 py-1.5 rounded-xl border border-gray-200 bg-[#fcfaff] text-xs font-bold text-[#341648] focus:border-[#62205f] outline-hidden"
-              >
-                <option value={0}>همه مراکز و مهدها (کل مجموعه)</option>
-                {schools.map((sc) => (
-                  <option key={sc.id} value={sc.id}>
-                    {sc.name}
-                  </option>
-                ))}
-              </select>
+              <SchoolSelect schools={schools} value={selectedFinancialSchoolId} onChange={(value) => setSelectedFinancialSchoolId(Number(value))} className="px-2.5 py-1.5 rounded-xl border border-gray-200 bg-[#fcfaff] text-xs font-bold text-[#341648] focus:border-[#62205f] outline-hidden" includeAll allValue={0} allLabel={`همه مراکز و مهدها (کل مجموعه)`} />
             </div>
           ) : (
             <div className="text-xs px-2.5 py-1 bg-purple-50 text-[#62205f] rounded-lg font-bold border border-purple-200">
