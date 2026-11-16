@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useDeferredValue } from 'react';
+import SchoolSelect from '../SchoolSelect';
 import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
@@ -1357,22 +1358,12 @@ export const TuitionScreen: React.FC = () => {
               {isSenior && (
                 <div>
                   <label className="block text-xs font-bold text-[#341648] mb-1.5">مدرسه مربوطه</label>
-                  <select
-                    value={bulkSchoolId}
-                    onChange={(e) => {
-                      const sid = Number(e.target.value);
+                  <SchoolSelect schools={schools} value={bulkSchoolId} onChange={(value) => {
+                      const sid = Number(value);
                       setBulkSchoolId(sid);
                       const targetSt = students.filter((s) => s.school_id === sid && s.active);
                       setBulkSelectedIds(new Set(targetSt.map((s) => s.id)));
-                    }}
-                    className="w-full px-4 py-2 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735]"
-                  >
-                    {schools.map((sc) => (
-                      <option key={sc.id} value={sc.id}>
-                        {sc.name}
-                      </option>
-                    ))}
-                  </select>
+                    }} className="w-full px-4 py-2 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735]" />
                 </div>
               )}
 
