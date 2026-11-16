@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useDeferredValue } from 'react';
+import SchoolSelect from '../SchoolSelect';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { matchTokens } from '../../utils/studentSearch';
@@ -454,16 +455,7 @@ export const ParsianExportScreen: React.FC = () => {
                 {isSenior && (
                   <div>
                     <label className="block text-[11px] font-bold text-gray-700 mb-1">واحد آموزشی / مدرسه:</label>
-                    <select
-                      value={selectedSchoolId}
-                      onChange={(e) => setSelectedSchoolId(Number(e.target.value))}
-                      className="w-full py-2 px-3 rounded-xl border border-gray-300 text-xs font-bold text-[#341648] bg-white"
-                    >
-                      <option value={0}>همه مدارس مجموعه ({schools.length} مرکز)</option>
-                      {schools.map((sc) => (
-                        <option key={sc.id} value={sc.id}>{sc.name}</option>
-                      ))}
-                    </select>
+                    <SchoolSelect schools={schools} value={selectedSchoolId} onChange={(value) => setSelectedSchoolId(Number(value))} className="w-full py-2 px-3 rounded-xl border border-gray-300 text-xs font-bold text-[#341648] bg-white" includeAll allValue={0} allLabel={`همه مدارس مجموعه (${schools.length} مرکز)`} />
                   </div>
                 )}
                 <div>
@@ -544,18 +536,7 @@ export const ParsianExportScreen: React.FC = () => {
                 {isSenior && (
                   <div>
                     <label className="block text-[11px] font-bold text-gray-700 mb-1">واحد آموزشی / مدرسه:</label>
-                    <select
-                      value={selectedSchoolId}
-                      onChange={(e) => setSelectedSchoolId(Number(e.target.value))}
-                      className="w-full py-2 px-3 rounded-xl border border-gray-300 text-xs font-bold text-[#341648] bg-white"
-                    >
-                      <option value={0}>همه مدارس مجموعه ({schools.length} مرکز)</option>
-                      {schools.map((sc) => (
-                        <option key={sc.id} value={sc.id}>
-                          {sc.name}
-                        </option>
-                      ))}
-                    </select>
+                    <SchoolSelect schools={schools} value={selectedSchoolId} onChange={(value) => setSelectedSchoolId(Number(value))} className="w-full py-2 px-3 rounded-xl border border-gray-300 text-xs font-bold text-[#341648] bg-white" includeAll allValue={0} allLabel={`همه مدارس مجموعه (${schools.length} مرکز)`} />
                   </div>
                 )}
 
