@@ -231,7 +231,11 @@ export const ActivityScreen: React.FC = () => {
 
                 <div className="flex justify-between gap-3 border-t border-gray-100 pt-1 text-[11px] text-gray-400">
                   <span>ثبت توسط: {log.user_name}</span>
-                  {log.school_name && <span>مدرسه: {log.school_name}</span>}
+                  {(isSenior && log.user_id === currentUser?.id) ? (
+                    <span>واحد: دفتر مرکزی مدرسة القرآن</span>
+                  ) : log.school_name ? (
+                    <span>مدرسه: {log.school_name}</span>
+                  ) : null}
                 </div>
               </div>
             ))
