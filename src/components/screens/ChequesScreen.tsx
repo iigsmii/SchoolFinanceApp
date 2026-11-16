@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import SchoolSelect from '../SchoolSelect';
 import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
@@ -632,17 +633,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                   <label className="block text-xs font-bold text-[#341648] mb-1.5">
                     مدرسه مربوطه <span className="text-rose-500">*</span>
                   </label>
-                  <select
-                    value={selectedSchoolId}
-                    onChange={(e) => setSelectedSchoolId(Number(e.target.value))}
-                    className="w-full px-3 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#341648]"
-                  >
-                    {schools.map((sc) => (
-                      <option key={sc.id} value={sc.id}>
-                        {sc.name}
-                      </option>
-                    ))}
-                  </select>
+                  <SchoolSelect schools={schools} value={selectedSchoolId} onChange={(value) => setSelectedSchoolId(Number(value))} className="w-full px-3 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#341648]" />
                 </div>
 
                 <div>
