@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import SchoolSelect from '../SchoolSelect';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { formatRial, todayJalali } from '../../utils/jalali';
@@ -163,18 +164,7 @@ export const ReportScreen: React.FC = () => {
 
           <div className="flex items-center gap-2">
             {isSenior && (
-              <select
-                value={selectedSchool}
-                onChange={(e) => setSelectedSchool(Number(e.target.value))}
-                className="py-2 px-3 rounded-xl border border-gray-300 text-xs font-bold text-[#341648] bg-white grow sm:grow-0"
-              >
-                <option value={0}>همه مدارس مجموعه ({schools.length} مرکز)</option>
-                {schools.map((sc) => (
-                  <option key={sc.id} value={sc.id}>
-                    {sc.name}
-                  </option>
-                ))}
-              </select>
+              <SchoolSelect schools={schools} value={selectedSchool} onChange={(value) => setSelectedSchool(Number(value))} className="py-2 px-3 rounded-xl border border-gray-300 text-xs font-bold text-[#341648] bg-white grow sm:grow-0" includeAll allValue={0} allLabel={`همه مدارس مجموعه (${schools.length} مرکز)`} />
             )}
 
             <button
