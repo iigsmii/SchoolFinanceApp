@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import SchoolSelect from '../SchoolSelect';
 import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
@@ -270,17 +271,7 @@ export const ManagersScreen: React.FC = () => {
                   <label className="block text-xs font-bold text-[#341648] mb-1.5">
                     مدرسه مربوطه <span className="text-rose-500">*</span>
                   </label>
-                  <select
-                    value={formSchoolId}
-                    onChange={(e) => setFormSchoolId(Number(e.target.value))}
-                    className="w-full px-4 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735]"
-                  >
-                    {schools.map((sc) => (
-                      <option key={sc.id} value={sc.id}>
-                        {sc.name}
-                      </option>
-                    ))}
-                  </select>
+                  <SchoolSelect schools={schools} value={formSchoolId} onChange={(value) => setFormSchoolId(Number(value))} className="w-full px-4 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735]" />
                 </div>
               )}
 
