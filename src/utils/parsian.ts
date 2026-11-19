@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { Transaction, Student, School, ExpenseCategory, Cheque, ParsianJournalEntry, JournalEntryRow, ParsianCodingConfig } from '../types';
+import { Transaction, Student, School, ExpenseCategory, Cheque, ParsianJournalEntry, JournalEntryRow, ParsianCodingConfig, ClaimSettlement } from '../types';
 import { jalaliFromGregorian } from './jalali';
 import { saveOrShareFile } from './fileDownload';
 
@@ -99,8 +99,11 @@ export function generateParsianJournalEntries(
   schools: School[],
   categories: ExpenseCategory[],
   cheques: Cheque[] = [],
-  codingConfig: ParsianCodingConfig = DEFAULT_PARSIAN_CODING
+  codingConfig: ParsianCodingConfig = DEFAULT_PARSIAN_CODING,
+  managers: Array<{ id: number | string; name: string }> = [],
+  settlements: ClaimSettlement[] = []
 ): ParsianJournalEntry[] {
+  const managerName = (id: unknown) => managers.find((m) => String(m.id) === String(id))?.name || `مدیر ${id ?? ''}`.trim();
   const studentMap = new Map<number, Student>();
   students.forEach((s) => studentMap.set(s.id, s));
 
@@ -350,15 +353,17 @@ export function generateParsianJournalEntries(
       const catName = t.expense_category_name || (t.expense_category_id ? categoryMap.get(String(t.expense_category_id))?.name : undefined) || 'هزینه‌های جاری و عمومی';
       const catMoeenCode = String(t.expense_category_id || '2'); // ۲ = متفرقه در کدینگ پارسیان مدارس
       const isPettyCash = t.payment_source === 'petty_cash';
+      // هزینه‌ای که مدیر از جیب خودش داده، بدهی مدرسه به مدیر است (نه خروج از بانک)
+      const isOwnPocket = t.payment_source === 'own' || t.payment_source === 'own_settled';
 
       // در پارسیان این مجموعه، هر مدرسه حساب کل هزینه اختصاصی دارد (کل ۶۸ تا ۸۱)
       const expenseKol = school?.expense_kol_code ? String(school.expense_kol_code) : String(getSchoolExpenseKol(t.school_id));
       const expenseKolName = `هزینه‌های ${schoolName}`;
 
-      const creditKol = isPettyCash ? codingConfig.kol_petty_cash : codingConfig.kol_bank; // ۱۰ یا ۱۱
-      const creditKolName = isPettyCash ? 'صندوق و تنخواه گردانها' : 'بانک ها';
+      const creditKol = isOwnPocket ? codingConfig.kol_payable : isPettyCash ? codingConfig.kol_petty_cash : codingConfig.kol_bank; // ۲۲، ۱۰ یا ۱۱
+      const creditKolName = isOwnPocket ? 'طلب مدیران (هزینه از حساب شخصی)' : isPettyCash ? 'صندوق و تنخواه گردانها' : 'بانک ها';
       const creditMoeenCode = isPettyCash ? '2' : '1'; // ۲ = تنخواه گردانها در کل ۱۰
-      const creditMoeenName = isPettyCash ? `تنخواه گردان - ${schoolName}` : `بانک اصلی - ${schoolName}`;
+      const creditMoeenName = isOwnPocket ? 'طلب مدیران از مدرسه' : isPettyCash ? `تنخواه گردان - ${schoolName}` : `بانک اصلی - ${schoolName}`;
 
       const tafsiliCode = school?.tafsili_code || t.tafsili_code || String(t.school_id);
 
@@ -392,8 +397,8 @@ export function generateParsianJournalEntries(
         kol_name: creditKolName,
         moeen_code: creditMoeenCode,
         moeen_name: creditMoeenName,
-        tafsili_code: isPettyCash ? (t.petty_cash_card || tafsiliCode) : (t.tracking_code || tafsiliCode),
-        tafsili_name: isPettyCash ? `کارت تنخواه (${t.petty_cash_card || schoolName})` : `حساب بانک ${schoolName} (تفصیلی: ${tafsiliCode})`,
+        tafsili_code: isOwnPocket ? String(t.registered_by ?? tafsiliCode) : isPettyCash ? (t.petty_cash_card || tafsiliCode) : (t.tracking_code || tafsiliCode),
+        tafsili_name: isOwnPocket ? managerName(t.registered_by) : isPettyCash ? `کارت تنخواه (${t.petty_cash_card || schoolName})` : `حساب بانک ${schoolName} (تفصیلی: ${tafsiliCode})`,
         description: `پرداخت بابت ${catName} ${t.tracking_code ? `(پیگیری: ${t.tracking_code})` : ''}`.trim(),
         debit: 0,
         credit: amount,
@@ -420,6 +425,57 @@ export function generateParsianJournalEntries(
       });
     }
   }
+
+  // اسناد تسویه‌ی طلب مدیران: بدهکار «طلب مدیر»، بستانکار بانک — به تفکیک مدرسه
+  const expenseTxByServerId = new Map<string, Transaction>();
+  transactions.forEach((t) => {
+    if (t.kind === 'هزینه' && t.id >= 100000 && t.id < 200000000) expenseTxByServerId.set(String(t.id - 100000), t);
+  });
+  [...settlements]
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    .forEach((st) => {
+      const perSchool = new Map<number, number>();
+      let known = 0;
+      st.expense_ids.forEach((eid) => {
+        const tx = expenseTxByServerId.get(String(eid));
+        if (!tx) return;
+        const amt = tx.debit || tx.amount || 0;
+        perSchool.set(tx.school_id, (perSchool.get(tx.school_id) || 0) + amt);
+        known += amt;
+      });
+      const rest = (Number(st.amount) || 0) - known;
+      if (perSchool.size === 0 && rest > 0 && st.school_id !== undefined && st.school_id !== '') {
+        const sid = Number(st.school_id);
+        perSchool.set(sid, (perSchool.get(sid) || 0) + rest);
+      }
+      const jalaliDate = jalaliFromGregorian(st.date);
+      const mName = st.manager_name || managerName(st.manager_id);
+      perSchool.forEach((amount, schoolId) => {
+        if (amount <= 0) return;
+        const school = schoolMap.get(schoolId);
+        const schoolName = school?.name || 'مرکز آموزشی';
+        const tafsiliCode = school?.tafsili_code || String(schoolId);
+        const common = { doc_number: docNumberCounter, date_jalali: jalaliDate, tracking_code: st.tracking_code, school_id: schoolId, school_name: schoolName, source_type: 'claim_settlement' as const, source_id: Number(st.id) || 0 };
+        const rows: JournalEntryRow[] = [
+          { ...common, row_number: 1, kol_code: codingConfig.kol_payable, kol_name: 'طلب مدیران (هزینه از حساب شخصی)', moeen_code: '1', moeen_name: 'طلب مدیران از مدرسه', tafsili_code: String(st.manager_id), tafsili_name: mName, description: `تسویه طلب ${mName} - ${schoolName}${st.tracking_code ? ` (پیگیری: ${st.tracking_code})` : ''}`, debit: amount, credit: 0 },
+          { ...common, row_number: 2, kol_code: codingConfig.kol_bank, kol_name: 'بانک ها', moeen_code: '1', moeen_name: `بانک اصلی - ${schoolName}`, tafsili_code: st.tracking_code || tafsiliCode, tafsili_name: `حساب بانک ${schoolName} (تفصیلی: ${tafsiliCode})`, description: `پرداخت به ${mName} بابت تسویه طلب`, debit: 0, credit: amount },
+        ];
+        entries.push({
+          doc_number: docNumberCounter++,
+          date_jalali: jalaliDate,
+          date_iso: st.date,
+          school_id: schoolId,
+          school_name: schoolName,
+          source_type: 'claim_settlement',
+          source_id: Number(st.id) || 0,
+          description: `تسویه طلب ${mName} (${amount.toLocaleString('fa-IR')} ریال) - ${schoolName}`,
+          rows,
+          total_debit: amount,
+          total_credit: amount,
+          is_balanced: true,
+        });
+      });
+    });
 
   return entries;
 }

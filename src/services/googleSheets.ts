@@ -11,6 +11,7 @@ import {
   PayrollPayment,
   BankAccount,
   SeniorMessage,
+  ClaimSettlement,
 } from '../types';
 import { buildParsianCode } from '../utils/parsian';
 import { jalaliFromGregorian, todayGregorian } from '../utils/jalali';
@@ -1295,4 +1296,9 @@ export const loadDataFromPublicGoogleSheet = async (
   }
 
   throw new Error('عدم امکان برقراری ارتباط با شیت گوگل. لطفاً اتصال اینترنت خود را بررسی فرمایید.');
+};
+
+export const apiClaimSettlements = async (): Promise<ClaimSettlement[] | null> => {
+  const res = await postToAppsScript({ action: 'claim_settlements' });
+  return res.success && Array.isArray(res.data) ? (res.data as ClaimSettlement[]) : null;
 };

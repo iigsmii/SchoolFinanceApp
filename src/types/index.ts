@@ -329,7 +329,7 @@ export interface JournalEntryRow {
   tracking_code?: string;
   school_id: number;
   school_name: string;
-  source_type: 'tuition_debt' | 'tuition_payment' | 'expense' | 'cheque' | 'discount' | 'bank_sync';
+  source_type: 'tuition_debt' | 'tuition_payment' | 'expense' | 'cheque' | 'discount' | 'bank_sync' | 'claim_settlement';
   source_id: number;
 }
 
@@ -339,7 +339,7 @@ export interface ParsianJournalEntry {
   date_iso: string;
   school_id: number;
   school_name: string;
-  source_type: 'tuition_debt' | 'tuition_payment' | 'expense' | 'cheque' | 'discount' | 'bank_sync';
+  source_type: 'tuition_debt' | 'tuition_payment' | 'expense' | 'cheque' | 'discount' | 'bank_sync' | 'claim_settlement';
   source_id: number;
   description: string;
   rows: JournalEntryRow[];
@@ -359,3 +359,16 @@ export interface ParsianCodingConfig {
   kol_payable: string;    // حساب‌های پرداختنی - پیش‌فرض 21
 }
 
+
+// تسویه طلب مدیر (پرداخت مدرسه به مدیری که هزینه را از جیب خودش داده)
+export interface ClaimSettlement {
+  id: number | string;
+  date: string; // ISO
+  school_id?: number | string;
+  manager_id: number | string;
+  manager_name?: string;
+  amount: number;
+  tracking_code?: string;
+  expense_ids: string[]; // شناسه‌ی هزینه‌ها در سرور
+  note?: string;
+}
