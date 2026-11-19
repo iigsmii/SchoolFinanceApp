@@ -24,6 +24,7 @@ import {
 } from '../../utils/parsianExports';
 import { formatRial, jalaliFromGregorian, todayJalali } from '../../utils/jalali';
 import { ParsianCodingConfig, ParsianJournalEntry } from '../../types';
+import { useClaimSettlements } from '../../hooks/useClaimSettlements';
 import {
   FileSpreadsheet,
   Download,
@@ -62,6 +63,7 @@ export const ParsianExportScreen: React.FC = () => {
     cheques,
     staffMembers,
     bankAccounts,
+    users,
     currentUser,
     accentColor,
     setCurrentScreen,
@@ -91,7 +93,7 @@ export const ParsianExportScreen: React.FC = () => {
   const [selectedSchoolId, setSelectedSchoolId] = useState<number>(
     isSenior ? 0 : currentUser?.school_id || 1
   );
-  const [filterSource, setFilterSource] = useState<'all' | 'tuition_debt' | 'tuition_payment' | 'expense' | 'discount'>('all');
+  const [filterSource, setFilterSource] = useState<'all' | 'tuition_debt' | 'tuition_payment' | 'expense' | 'discount' | 'claim_settlement'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const deferredQuery = useDeferredValue(searchQuery);
   const [startDate, setStartDate] = useState('');
@@ -102,6 +104,7 @@ export const ParsianExportScreen: React.FC = () => {
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
 
   // Generate double-entry journal vouchers
+  const { settlements: claimSettlements } = useClaimSettlements();
   const allEntries = useMemo(() => {
     // Cheque transactions are imported through the two cheque files; keeping them here too would double-post.
     return generateParsianJournalEntries(
@@ -110,9 +113,11 @@ export const ParsianExportScreen: React.FC = () => {
       schools,
       categories,
       cheques,
-      codingConfig
+      codingConfig,
+      (users || []).map((u) => ({ id: u.id, name: u.name })),
+      claimSettlements
     );
-  }, [transactions, students, schools, categories, cheques, codingConfig]);
+  }, [transactions, students, schools, categories, cheques, codingConfig, users, claimSettlements]);
 
   // Apply filters
   const filteredEntries = useMemo(() => {
@@ -572,6 +577,7 @@ export const ParsianExportScreen: React.FC = () => {
                     <option value="tuition_payment">فقط دریافتی‌های شهریه (کارتخوان/کارت/نقد)</option>
                     <option value="expense">فقط هزینه‌های جاری و تنخواه</option>
                     <option value="discount">فقط تخفیفات و بورسیه</option>
+                    <option value="claim_settlement">فقط تسویه طلب مدیران</option>
                   </select>
                 </div>
 

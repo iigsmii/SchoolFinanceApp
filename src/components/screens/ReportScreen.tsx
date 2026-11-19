@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { TuitionTrendsScreen } from './TuitionTrendsScreen';
 import { calculateTrialBalance, generateParsianJournalEntries } from '../../utils/parsian';
+import { useClaimSettlements } from '../../hooks/useClaimSettlements';
 
 export const ReportScreen: React.FC = () => {
   const {
@@ -27,6 +28,7 @@ export const ReportScreen: React.FC = () => {
     schools,
     categories,
     cheques,
+    users,
     currentUser,
     accentColor,
     setCurrentScreen,
@@ -38,6 +40,8 @@ export const ReportScreen: React.FC = () => {
     isSenior ? 0 : currentUser?.school_id || 1
   );
   const [activeTab, setActiveTab] = useState<'income_statement' | 'trial_balance' | 'overview'>('income_statement');
+
+  const { settlements: claimSettlements } = useClaimSettlements();
 
   const scopedTxs = useMemo(() => {
     return transactions.filter((t) => {
@@ -99,10 +103,14 @@ export const ReportScreen: React.FC = () => {
       students,
       schools,
       categories,
-      cheques
+      cheques,
+      undefined,
+      (users || []).map((u) => ({ id: u.id, name: u.name })),
+      claimSettlements
     );
-    return calculateTrialBalance(entries);
-  }, [scopedTxs, students, schools, categories, cheques]);
+    const scopeSchool = isSenior ? selectedSchool : currentUser?.school_id || 0;
+    return calculateTrialBalance(scopeSchool > 0 ? entries.filter((e) => e.school_id === scopeSchool) : entries);
+  }, [isSenior, selectedSchool, currentUser, scopedTxs, students, schools, categories, cheques, users, claimSettlements]);
 
   const handlePrint = () => {
     window.print();
