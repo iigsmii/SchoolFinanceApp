@@ -1,23 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { JalaliDatePicker } from '../JalaliDatePicker';
 import { useBackClose } from '../../hooks/useBackClose';
 import { postToAppsScript } from '../../services/googleSheets';
+import { useClaimSettlements } from '../../hooks/useClaimSettlements';
+import { ClaimSettlement } from '../../types';
 import { formatRial, jalaliFromGregorian, jalaliToIso, todayJalali, latinDigits } from '../../utils/jalali';
 import { Wallet, CheckCircle, Clock, Users, ChevronDown, ChevronUp, X, Banknote, History } from 'lucide-react';
-
-interface ClaimSettlement {
-  id: number | string;
-  date: string;
-  school_id?: number | string;
-  manager_id: number | string;
-  manager_name?: string;
-  amount: number;
-  tracking_code?: string;
-  expense_ids: string[];
-  note?: string;
-}
 
 // شناسه‌ی هزینه در سرور = شناسه‌ی تراکنش سمت برنامه منهای ۱۰۰٬۰۰۰
 const expenseServerId = (txId: number) => (txId >= 100000 && txId < 200000000 ? txId - 100000 : txId);
@@ -26,8 +16,7 @@ export const MyClaimScreen: React.FC = () => {
   const { transactions, currentUser, users, accentColor, syncWithGoogleSheets } = useApp();
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
 
-  const [settlements, setSettlements] = useState<ClaimSettlement[]>([]);
-  const [settlementsError, setSettlementsError] = useState('');
+  const { settlements, error: settlementsError, reload: loadSettlements } = useClaimSettlements();
   const [expandedManager, setExpandedManager] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [settleManagerId, setSettleManagerId] = useState<string | null>(null);
@@ -41,24 +30,6 @@ export const MyClaimScreen: React.FC = () => {
   useBackClose(settleManagerId !== null, () => {
     if (!paying) setSettleManagerId(null);
   });
-
-  const loadSettlements = useCallback(async () => {
-    try {
-      const res = await postToAppsScript({ action: 'claim_settlements' });
-      if (res.success && Array.isArray(res.data)) {
-        setSettlements(res.data as ClaimSettlement[]);
-        setSettlementsError('');
-      } else {
-        setSettlementsError(res.error || 'دریافت سابقه تسویه‌ها ممکن نشد.');
-      }
-    } catch {
-      setSettlementsError('دریافت سابقه تسویه‌ها ممکن نشد.');
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadSettlements();
-  }, [loadSettlements]);
 
   // هزینه‌هایی که مدیر از جیب خودش پرداخت کرده و هنوز تسویه نشده‌اند
   const claimTxs = useMemo(
@@ -102,7 +73,7 @@ export const MyClaimScreen: React.FC = () => {
 
   const visibleSettlements = useMemo(
     () =>
-      settlements.filter((s) => isSenior || String(s.manager_id) === String(currentUser?.id)),
+      settlements.filter((s: ClaimSettlement) => isSenior || String(s.manager_id) === String(currentUser?.id)),
     [settlements, isSenior, currentUser?.id]
   );
 
