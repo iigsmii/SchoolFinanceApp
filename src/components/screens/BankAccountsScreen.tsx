@@ -6,6 +6,8 @@ import { Header } from '../Header';
 import { BankAccount, Transaction, BankTransaction } from '../../types';
 import { formatRial, jalaliFromGregorian, todayJalali, latinDigits } from '../../utils/jalali';
 import { matchTokens } from '../../utils/studentSearch';
+import { isOutsideMainBank, splitSettlementBySchool } from '../../utils/claims';
+import { useClaimSettlements } from '../../hooks/useClaimSettlements';
 import {
   Landmark,
   PlusCircle,
@@ -115,6 +117,8 @@ export const BankAccountsScreen: React.FC = () => {
   // A transaction belongs to this bank account if:
   // 1. It is marked as reconciled: true
   // 2. Its school matches the account's school OR matches account number/pos terminal
+  const { settlements: claimSettlements } = useClaimSettlements();
+
   const reconciledLedger = useMemo(() => {
     const list: Array<{
       id: string;
@@ -141,6 +145,9 @@ export const BankAccountsScreen: React.FC = () => {
       if (activeAccount && tx.school_id !== activeAccount.school_id) return;
       if (!isSenior && tx.school_id !== currentUser?.school_id) return;
 
+      // هزینه‌ی «از حساب خودم» تا زمان تسویه از بانک خارج نشده؛ هزینه‌ی کارت تن‌خواه از همین حساب برداشت می‌شود
+      if (isOutsideMainBank(tx)) return;
+
       const isDeposit = tx.kind === 'شهریه' || tx.kind === 'دریافت متفرقه';
       const isWithdrawal = tx.kind === 'هزینه';
 
@@ -163,6 +170,31 @@ export const BankAccountsScreen: React.FC = () => {
         bank_account_name: matchedAccount?.name || 'حساب بانکی',
         source_kind: isDeposit ? 'واریز شهریه' : 'هزینه جاری',
         matched_id: tx.bank_transaction_id,
+      });
+    });
+
+    // Source 1b: پرداخت تسویه‌ی طلب مدیران = برداشت واقعی از حساب بانک مدرسه
+    claimSettlements.forEach((st) => {
+      splitSettlementBySchool(st, transactions).forEach((amount, schoolId) => {
+        if (amount <= 0) return;
+        if (activeAccount && schoolId !== activeAccount.school_id) return;
+        if (!isSenior && schoolId !== currentUser?.school_id) return;
+        const matchedAccount = bankAccounts.find((b) => b.school_id === schoolId) || activeAccount;
+        list.push({
+          id: `cs_${st.id}_${schoolId}`,
+          date: st.date,
+          jalali_date: jalaliFromGregorian(st.date),
+          direction: 'withdrawal',
+          title: `تسویه طلب ${st.manager_name || 'مدیر'}`,
+          party_name: st.manager_name || 'مدیر',
+          tracking_code: st.tracking_code || '',
+          pos_terminal: matchedAccount?.pos_terminal_number,
+          amount,
+          school_id: schoolId,
+          school_name: schools.find((s) => s.id === schoolId)?.name || 'مدرسه',
+          bank_account_name: matchedAccount?.name || 'حساب بانکی',
+          source_kind: 'تسویه طلب مدیر',
+        });
       });
     });
 
@@ -200,7 +232,7 @@ export const BankAccountsScreen: React.FC = () => {
 
     // Sort chronologically
     return list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-  }, [transactions, bankTransactions, activeAccount, isSenior, currentUser, bankAccounts]);
+  }, [transactions, bankTransactions, claimSettlements, schools, activeAccount, isSenior, currentUser, bankAccounts]);
 
   // Apply Search & Direction Filters
   const filteredLedger = useMemo(() => {

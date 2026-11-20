@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { splitSettlementBySchool } from './claims';
 import { Transaction, Student, School, ExpenseCategory, Cheque, ParsianJournalEntry, JournalEntryRow, ParsianCodingConfig, ClaimSettlement } from '../types';
 import { jalaliFromGregorian } from './jalali';
 import { saveOrShareFile } from './fileDownload';
@@ -360,10 +361,11 @@ export function generateParsianJournalEntries(
       const expenseKol = school?.expense_kol_code ? String(school.expense_kol_code) : String(getSchoolExpenseKol(t.school_id));
       const expenseKolName = `هزینه‌های ${schoolName}`;
 
-      const creditKol = isOwnPocket ? codingConfig.kol_payable : isPettyCash ? codingConfig.kol_petty_cash : codingConfig.kol_bank; // ۲۲، ۱۰ یا ۱۱
-      const creditKolName = isOwnPocket ? 'طلب مدیران (هزینه از حساب شخصی)' : isPettyCash ? 'صندوق و تنخواه گردانها' : 'بانک ها';
-      const creditMoeenCode = isPettyCash ? '2' : '1'; // ۲ = تنخواه گردانها در کل ۱۰
-      const creditMoeenName = isOwnPocket ? 'طلب مدیران از مدرسه' : isPettyCash ? `تنخواه گردان - ${schoolName}` : `بانک اصلی - ${schoolName}`;
+      // کارت‌های تن‌خواه به همان حساب بانک وصل‌اند؛ پس هزینه‌ی کارت هم بستانکار بانک است (نه تنخواه گردانها)
+      const creditKol = isOwnPocket ? codingConfig.kol_payable : codingConfig.kol_bank; // ۲۲ یا ۱۱
+      const creditKolName = isOwnPocket ? 'طلب مدیران (هزینه از حساب شخصی)' : 'بانک ها';
+      const creditMoeenCode = '1';
+      const creditMoeenName = isOwnPocket ? 'طلب مدیران از مدرسه' : `بانک اصلی - ${schoolName}`;
 
       const tafsiliCode = school?.tafsili_code || t.tafsili_code || String(t.school_id);
 
@@ -397,9 +399,9 @@ export function generateParsianJournalEntries(
         kol_name: creditKolName,
         moeen_code: creditMoeenCode,
         moeen_name: creditMoeenName,
-        tafsili_code: isOwnPocket ? String(t.registered_by ?? tafsiliCode) : isPettyCash ? (t.petty_cash_card || tafsiliCode) : (t.tracking_code || tafsiliCode),
-        tafsili_name: isOwnPocket ? managerName(t.registered_by) : isPettyCash ? `کارت تنخواه (${t.petty_cash_card || schoolName})` : `حساب بانک ${schoolName} (تفصیلی: ${tafsiliCode})`,
-        description: `پرداخت بابت ${catName} ${t.tracking_code ? `(پیگیری: ${t.tracking_code})` : ''}`.trim(),
+        tafsili_code: isOwnPocket ? String(t.registered_by ?? tafsiliCode) : (t.tracking_code || tafsiliCode),
+        tafsili_name: isOwnPocket ? managerName(t.registered_by) : `حساب بانک ${schoolName} (تفصیلی: ${tafsiliCode})`,
+        description: `پرداخت بابت ${catName} ${isPettyCash && t.petty_cash_card ? `(کارت تن‌خواه ${t.petty_cash_card}) ` : ''}${t.tracking_code ? `(پیگیری: ${t.tracking_code})` : ''}`.trim(),
         debit: 0,
         credit: amount,
         tracking_code: t.tracking_code,
@@ -427,27 +429,10 @@ export function generateParsianJournalEntries(
   }
 
   // اسناد تسویه‌ی طلب مدیران: بدهکار «طلب مدیر»، بستانکار بانک — به تفکیک مدرسه
-  const expenseTxByServerId = new Map<string, Transaction>();
-  transactions.forEach((t) => {
-    if (t.kind === 'هزینه' && t.id >= 100000 && t.id < 200000000) expenseTxByServerId.set(String(t.id - 100000), t);
-  });
   [...settlements]
     .sort((a, b) => String(a.date).localeCompare(String(b.date)))
     .forEach((st) => {
-      const perSchool = new Map<number, number>();
-      let known = 0;
-      st.expense_ids.forEach((eid) => {
-        const tx = expenseTxByServerId.get(String(eid));
-        if (!tx) return;
-        const amt = tx.debit || tx.amount || 0;
-        perSchool.set(tx.school_id, (perSchool.get(tx.school_id) || 0) + amt);
-        known += amt;
-      });
-      const rest = (Number(st.amount) || 0) - known;
-      if (perSchool.size === 0 && rest > 0 && st.school_id !== undefined && st.school_id !== '') {
-        const sid = Number(st.school_id);
-        perSchool.set(sid, (perSchool.get(sid) || 0) + rest);
-      }
+      const perSchool = splitSettlementBySchool(st, transactions);
       const jalaliDate = jalaliFromGregorian(st.date);
       const mName = st.manager_name || managerName(st.manager_id);
       perSchool.forEach((amount, schoolId) => {
