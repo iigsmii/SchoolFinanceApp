@@ -1036,7 +1036,8 @@ export const loadDataFromAppsScript = async (
     const amountNum = num(e.amount);
     const dateStr = dateFromExcelSerial(e.date) || todayGregorian();
     const scId = Number(e.school_id) || 1;
-    const desc = e.description || 'هزینه مدرسه';
+    // Sheet cells can contain numbers/booleans as well as text. Normalize before string checks.
+    const desc = String(e.description ?? 'هزینه مدرسه');
     const isFee = desc.includes('کارمزد') || desc.includes('پایا') || desc.includes('ساتنا');
     const reviewStatus = reviewOf(e, isFee);
     const imgUrl = e.image_url || e.attachment_url || e.attachment || '';
