@@ -863,7 +863,10 @@ export const loadDataFromAppsScript = async (
   }
 
   // Neither request got any answer: the connection is the problem, not the data.
-  if (!rawData && !serverAnswered && lastNet) return failResult(lastNet.message, lastNet.kind);
+  if (!rawData && !serverAnswered && lastNet) {
+    diagnostics.push(`هیچ‌یک از درخواست‌های sync پاسخ HTTP معتبر ندادند؛ آخرین وضعیت: ${lastNet.kind}`);
+    return failResult(lastNet.message, lastNet.kind);
+  }
 
   // 3. Fallback to separate endpoints if unified sync wasn't deployed yet
   if (!rawData || (!Array.isArray(rawData.students) && !Array.isArray(rawData.tuition))) {
