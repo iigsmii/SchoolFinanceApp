@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { Clock, Filter, Search, ChevronDown, Check, Users, UserRound } from 'lucide-react';
@@ -39,6 +39,12 @@ export const ActivityScreen: React.FC = () => {
   const [selectedManager, setSelectedManager] = useState<string>(isSenior ? 'all' : 'mine');
   const [managerPickerOpen, setManagerPickerOpen] = useState(false);
   const [managerSearch, setManagerSearch] = useState('');
+  const [activityPage, setActivityPage] = useState(0);
+  const ACTIVITY_PAGE_SIZE = 50;
+
+  useEffect(() => {
+    setActivityPage(0);
+  }, [selectedManager]);
 
   // Build the list from both the Managers sheet and the audit log itself.
   // This keeps inactive/older managers selectable and recovers managers whose
@@ -103,6 +109,12 @@ export const ActivityScreen: React.FC = () => {
     if (selectedManager === 'mine') return log.user_id === currentUser?.id;
     return log.user_id === Number(selectedManager);
   }), [activityLogs, currentUser?.id, isSenior, selectedManager]);
+
+  const activityPageCount = Math.max(1, Math.ceil(displayedLogs.length / ACTIVITY_PAGE_SIZE));
+  const visibleLogs = displayedLogs.slice(
+    activityPage * ACTIVITY_PAGE_SIZE,
+    (activityPage + 1) * ACTIVITY_PAGE_SIZE
+  );
 
   const chooseManager = (value: string) => {
     setSelectedManager(value);
@@ -199,7 +211,7 @@ export const ActivityScreen: React.FC = () => {
 
         <div className="space-y-3">
           <div className="text-xs font-semibold text-gray-500">
-            ثبت رویدادها و تراکنش‌ها ({displayedLogs.length.toLocaleString('fa-IR')} مورد):
+            نمایش {displayedLogs.length === 0 ? 0 : activityPage * ACTIVITY_PAGE_SIZE + 1} تا {Math.min((activityPage + 1) * ACTIVITY_PAGE_SIZE, displayedLogs.length)} از {displayedLogs.length.toLocaleString('fa-IR')} رویداد:
           </div>
 
           {displayedLogs.length === 0 ? (
@@ -207,7 +219,7 @@ export const ActivityScreen: React.FC = () => {
               هنوز فعالیتی ثبت نشده است.
             </div>
           ) : (
-            displayedLogs.map((log) => (
+            visibleLogs.map((log) => (
               <div
                 key={log.id}
                 className="space-y-1.5 rounded-2xl border border-[#e5dde8] bg-white p-4 text-xs shadow-sm"
@@ -239,6 +251,13 @@ export const ActivityScreen: React.FC = () => {
                 </div>
               </div>
             ))
+          )}
+          {displayedLogs.length > ACTIVITY_PAGE_SIZE && (
+            <div className="flex items-center justify-center gap-3 rounded-2xl border border-[#e5dde8] bg-white p-3">
+              <button type="button" onClick={() => setActivityPage((page) => Math.max(0, page - 1))} disabled={activityPage === 0} className="rounded-xl border border-[#e5dde8] px-4 py-2 text-xs font-bold text-[#341648] disabled:cursor-not-allowed disabled:opacity-40">صفحه قبل</button>
+              <span className="text-xs font-semibold text-gray-600">صفحه {(activityPage + 1).toLocaleString('fa-IR')} از {activityPageCount.toLocaleString('fa-IR')}</span>
+              <button type="button" onClick={() => setActivityPage((page) => Math.min(activityPageCount - 1, page + 1))} disabled={activityPage >= activityPageCount - 1} className="rounded-xl border border-[#e5dde8] px-4 py-2 text-xs font-bold text-[#341648] disabled:cursor-not-allowed disabled:opacity-40">صفحه بعد</button>
+            </div>
           )}
         </div>
       </main>
