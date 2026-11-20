@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useDeferredValue } from 'react';
+import React, { useState, useMemo, useDeferredValue, useEffect } from 'react';
 import SchoolSelect from '../SchoolSelect';
 import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
@@ -46,6 +46,8 @@ export const StudentsScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const deferredQuery = useDeferredValue(searchQuery);
   const [filterNeedsFix, setFilterNeedsFix] = useState(false);
+  const [studentPage, setStudentPage] = useState(0);
+  const STUDENT_PAGE_SIZE = 50;
   const [selectedSchoolFilter, setSelectedSchoolFilter] = useState<number>(
     isSenior ? 0 : currentUser?.school_id || 1
   );
@@ -300,6 +302,9 @@ export const StudentsScreen: React.FC = () => {
     });
   }, [students, selectedSchoolFilter, filterNeedsFix, deferredQuery]);
 
+  useEffect(() => { setStudentPage(0); }, [selectedSchoolFilter, filterNeedsFix, deferredQuery]);
+  const studentPageCount = Math.max(1, Math.ceil(filteredStudents.length / STUDENT_PAGE_SIZE));
+  const visibleStudents = useMemo(() => filteredStudents.slice(studentPage * STUDENT_PAGE_SIZE, (studentPage + 1) * STUDENT_PAGE_SIZE), [filteredStudents, studentPage]);
   const needsFixCount = students.filter((s) => s.needs_fix).length;
 
   return (
@@ -393,7 +398,7 @@ export const StudentsScreen: React.FC = () => {
               دانش‌آموزی با این مشخصات یافت نشد.
             </div>
           ) : (
-            filteredStudents.map((s) => (
+            visibleStudents.map((s) => (
               <div
                 key={s.id}
                 onClick={() => openEditModal(s)}
@@ -462,6 +467,16 @@ export const StudentsScreen: React.FC = () => {
             ))
           )}
         </div>
+        {filteredStudents.length > STUDENT_PAGE_SIZE && (
+          <div className="flex items-center justify-between gap-3 bg-white border border-[#e5dde8] rounded-2xl p-3 text-xs">
+            <span className="text-gray-500">نمایش {studentPage * STUDENT_PAGE_SIZE + 1} تا {Math.min((studentPage + 1) * STUDENT_PAGE_SIZE, filteredStudents.length)} از {filteredStudents.length} دانش‌آموز</span>
+            <div className="flex items-center gap-2">
+              <button type="button" disabled={studentPage === 0} onClick={() => setStudentPage(p => Math.max(0, p - 1))} className="px-3 py-2 rounded-lg border border-gray-200 disabled:opacity-40">قبلی</button>
+              <span className="font-bold text-[#341648]">{studentPage + 1} / {studentPageCount}</span>
+              <button type="button" disabled={studentPage >= studentPageCount - 1} onClick={() => setStudentPage(p => Math.min(studentPageCount - 1, p + 1))} className="px-3 py-2 rounded-lg border border-gray-200 disabled:opacity-40">بعدی</button>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Add / Edit Student Modal */}
