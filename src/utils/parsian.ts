@@ -361,10 +361,11 @@ export function generateParsianJournalEntries(
       const expenseKol = school?.expense_kol_code ? String(school.expense_kol_code) : String(getSchoolExpenseKol(t.school_id));
       const expenseKolName = `هزینه‌های ${schoolName}`;
 
-      const creditKol = isOwnPocket ? codingConfig.kol_payable : isPettyCash ? codingConfig.kol_petty_cash : codingConfig.kol_bank; // ۲۲، ۱۰ یا ۱۱
-      const creditKolName = isOwnPocket ? 'طلب مدیران (هزینه از حساب شخصی)' : isPettyCash ? 'صندوق و تنخواه گردانها' : 'بانک ها';
-      const creditMoeenCode = isPettyCash ? '2' : '1'; // ۲ = تنخواه گردانها در کل ۱۰
-      const creditMoeenName = isOwnPocket ? 'طلب مدیران از مدرسه' : isPettyCash ? `تنخواه گردان - ${schoolName}` : `بانک اصلی - ${schoolName}`;
+      // کارت‌های تن‌خواه به همان حساب بانک وصل‌اند؛ پس هزینه‌ی کارت هم بستانکار بانک است (نه تنخواه گردانها)
+      const creditKol = isOwnPocket ? codingConfig.kol_payable : codingConfig.kol_bank; // ۲۲ یا ۱۱
+      const creditKolName = isOwnPocket ? 'طلب مدیران (هزینه از حساب شخصی)' : 'بانک ها';
+      const creditMoeenCode = '1';
+      const creditMoeenName = isOwnPocket ? 'طلب مدیران از مدرسه' : `بانک اصلی - ${schoolName}`;
 
       const tafsiliCode = school?.tafsili_code || t.tafsili_code || String(t.school_id);
 
@@ -398,9 +399,9 @@ export function generateParsianJournalEntries(
         kol_name: creditKolName,
         moeen_code: creditMoeenCode,
         moeen_name: creditMoeenName,
-        tafsili_code: isOwnPocket ? String(t.registered_by ?? tafsiliCode) : isPettyCash ? (t.petty_cash_card || tafsiliCode) : (t.tracking_code || tafsiliCode),
-        tafsili_name: isOwnPocket ? managerName(t.registered_by) : isPettyCash ? `کارت تنخواه (${t.petty_cash_card || schoolName})` : `حساب بانک ${schoolName} (تفصیلی: ${tafsiliCode})`,
-        description: `پرداخت بابت ${catName} ${t.tracking_code ? `(پیگیری: ${t.tracking_code})` : ''}`.trim(),
+        tafsili_code: isOwnPocket ? String(t.registered_by ?? tafsiliCode) : (t.tracking_code || tafsiliCode),
+        tafsili_name: isOwnPocket ? managerName(t.registered_by) : `حساب بانک ${schoolName} (تفصیلی: ${tafsiliCode})`,
+        description: `پرداخت بابت ${catName} ${isPettyCash && t.petty_cash_card ? `(کارت تن‌خواه ${t.petty_cash_card}) ` : ''}${t.tracking_code ? `(پیگیری: ${t.tracking_code})` : ''}`.trim(),
         debit: 0,
         credit: amount,
         tracking_code: t.tracking_code,
