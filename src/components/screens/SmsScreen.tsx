@@ -996,8 +996,7 @@ export const SmsScreen: React.FC = () => {
                   <div className="h-full bg-purple-700 transition-all" style={{ width: `${batchProgress.total ? batchProgress.processed / batchProgress.total * 100 : 0}%` }} />
                 </div>
               </div>
-            
-            </div>
+            )}
 
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
