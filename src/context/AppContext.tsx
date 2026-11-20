@@ -1072,13 +1072,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }, 1200);
         return true;
       }
-      if (gasResult?.errorKind) {
-        failure = { kind: gasResult.errorKind, message: gasResult.error || NET_MESSAGES.server };
+      if (gasResult && gasResult.success !== true) {
+        // Preserve the detailed error returned by the sync service even when an older
+        // backend/client path omits errorKind. Never replace it with the generic message.
+        failure = {
+          kind: gasResult.errorKind || 'server',
+          message: String(gasResult.error || 'سرور پاسخ همگام‌سازی معتبر برنگرداند.'),
+        };
       }
     } catch (e: any) {
       console.warn('Apps Script sync attempt notice:', e);
       const c = classifyFetchError(e);
-      failure = { kind: c.kind, message: c.message };
+      const detail = String(e?.message || '').trim();
+      failure = { kind: c.kind, message: detail ? `خطا در مرحله دریافت اطلاعات از Apps Script: ${detail}` : c.message };
     }
 
     // 3) Direct Google Sheet export / fallback (read-only snapshot). Only worth trying when the
