@@ -811,7 +811,7 @@ export const loadDataFromAppsScript = async (
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action: 'sync', token: authToken, owner: OWNER_EMAIL }),
       mode: 'cors',
-    }, 25000);
+    }, 75000);
     serverAnswered = true;
     const json = r.data;
     if (r.ok && json && (json.success || Array.isArray(json.students) || Array.isArray(json.data))) {
