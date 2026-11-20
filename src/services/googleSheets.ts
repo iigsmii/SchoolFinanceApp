@@ -786,11 +786,13 @@ export const loadDataFromAppsScript = async (
   webAppUrl: string = DEFAULT_WEBAPP_URL
 ): Promise<SheetLoadResult & { staff: StaffMember[] }> => {
   const cleanUrl = webAppUrl.trim().replace(/\/+$/, '');
+  const diagnostics: string[] = [];
   const failResult = (error: string, errorKind?: NetErrorKind | 'auth') => ({
     success: false, students: [], schools: [], transactions: [], cheques: [], categories: [],
     managers: [], bankTransactions: [], staff: [],
     stats: { studentsCount: 0, transactionsCount: 0, chequesCount: 0, expensesCount: 0 },
-    error, errorKind,
+    error: diagnostics.length ? `${error} [جزئیات فنی: ${diagnostics.join(' | ')}]` : error,
+    errorKind,
   });
   const isAuthMessage = (msg: unknown) => /نشست|وارد سامانه/.test(String(msg || ''));
 
@@ -805,6 +807,7 @@ export const loadDataFromAppsScript = async (
   let serverAnswered = false;
 
   // 1. Try POST action: 'sync' with the authenticated session token.
+  const postStartedAt = Date.now();
   try {
     const r = await requestJson(cleanUrl, {
       method: 'POST',
@@ -814,13 +817,18 @@ export const loadDataFromAppsScript = async (
     }, 75000);
     serverAnswered = true;
     const json = r.data;
+    diagnostics.push(`POST sync: HTTP ${r.status}, ${Date.now() - postStartedAt}ms${r.parseFailed ? ', پاسخ غیر JSON' : ''}`);
     if (r.ok && json && (json.success || Array.isArray(json.students) || Array.isArray(json.data))) {
       rawData = json;
     } else if (json && json.success === false && isAuthMessage(json.error)) {
+      diagnostics.push('سرور درخواست را دریافت کرد اما نشست را نپذیرفت');
       return failResult(String(json.error), 'auth');
+    } else {
+      diagnostics.push(`پاسخ POST قابل استفاده نبود${json?.error ? `: ${String(json.error).slice(0,180)}` : ''}`);
     }
-  } catch (err) {
+  } catch (err: any) {
     lastNet = classifyFetchError(err);
+    diagnostics.push(`POST sync ناموفق: ${err?.name || 'Error'}؛ ${String(err?.message || lastNet.message).slice(0,180)}؛ ${Date.now() - postStartedAt}ms`);
     console.warn('Apps Script POST sync notice:', err);
   }
 
@@ -829,6 +837,7 @@ export const loadDataFromAppsScript = async (
 
   // 2. Fallback to GET action: 'sync'
   if (!rawData) {
+    const getStartedAt = Date.now();
     try {
       const r = await requestJson(
         `${cleanUrl}?action=sync&token=${encodeURIComponent(authToken)}&owner=${encodeURIComponent(OWNER_EMAIL)}`,
@@ -837,13 +846,18 @@ export const loadDataFromAppsScript = async (
       );
       serverAnswered = true;
       const json = r.data;
+      diagnostics.push(`GET sync: HTTP ${r.status}, ${Date.now() - getStartedAt}ms${r.parseFailed ? ', پاسخ غیر JSON' : ''}`);
       if (r.ok && json && (json.success || Array.isArray(json.students))) {
         rawData = json;
       } else if (json && json.success === false && isAuthMessage(json.error)) {
+        diagnostics.push('سرور GET نشست را نپذیرفت');
         return failResult(String(json.error), 'auth');
+      } else {
+        diagnostics.push(`پاسخ GET قابل استفاده نبود${json?.error ? `: ${String(json.error).slice(0,180)}` : ''}`);
       }
-    } catch (err) {
+    } catch (err: any) {
       lastNet = classifyFetchError(err);
+      diagnostics.push(`GET sync ناموفق: ${err?.name || 'Error'}؛ ${String(err?.message || lastNet.message).slice(0,180)}؛ ${Date.now() - getStartedAt}ms`);
       console.warn('Apps Script GET sync notice:', err);
     }
   }
