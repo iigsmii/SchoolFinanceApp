@@ -870,16 +870,27 @@ export const loadDataFromAppsScript = async (
     // Older deployments may not support the unified sync endpoint. Bound every
     // fallback request so the UI can never remain stuck at 65% indefinitely.
     const fetchFallback = async (action: string): Promise<any | null> => {
+      const startedAt = Date.now();
       try {
         const r = await requestJson(
           `${cleanUrl}?action=${action}&token=${encodeURIComponent(authToken)}&owner=${encodeURIComponent(OWNER_EMAIL)}`,
           {},
           15000
         );
-        if (!r.ok || r.parseFailed) return null;
         const json = r.data;
-        return json && (json.success !== false) && Array.isArray(json.data) ? json : null;
-      } catch (_) {
+        diagnostics.push(`GET ${action}: HTTP ${r.status}, ${Date.now() - startedAt}ms${r.parseFailed ? ', پاسخ غیر JSON' : ''}`);
+        if (!r.ok || r.parseFailed) return null;
+        if (json?.success === false) {
+          diagnostics.push(`GET ${action} رد شد: ${String(json.error || 'بدون توضیح').slice(0,160)}`);
+          return null;
+        }
+        if (!Array.isArray(json?.data)) {
+          diagnostics.push(`GET ${action}: آرایه data در پاسخ وجود ندارد`);
+          return null;
+        }
+        return json;
+      } catch (err: any) {
+        diagnostics.push(`GET ${action} ناموفق: ${err?.name || 'Error'}؛ ${String(err?.message || 'خطای شبکه').slice(0,160)}؛ ${Date.now() - startedAt}ms`);
         return null;
       }
     };
@@ -894,7 +905,7 @@ export const loadDataFromAppsScript = async (
     // Never report an empty successful sync when the students endpoint failed:
     // that could replace valid local data with empty arrays.
     if (!studentsRes) {
-      return failResult('پاسخ سرور همگام‌سازی دریافت نشد؛ لطفاً دوباره تلاش کنید.', 'server');
+      return failResult('دریافت فهرست دانش‌آموزان از سرور ناموفق بود؛ جزئیات هر مسیر در ادامه آمده است.', 'server');
     }
 
     rawData = {
