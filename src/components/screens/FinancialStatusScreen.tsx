@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { isOwnPocketSource } from '../../utils/claims';
 import SchoolSelect from '../SchoolSelect';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
@@ -66,6 +67,7 @@ export const FinancialStatusScreen: React.FC = () => {
     let totalExpenses = 0;
     let pettyCashExpenses = 0;
     let bankExpenses = 0;
+    let ownPocketExpenses = 0;
     const expenseByCategory: Record<string, number> = {};
 
     scopedTxs.forEach((t) => {
@@ -78,6 +80,8 @@ export const FinancialStatusScreen: React.FC = () => {
         totalExpenses += amt;
         if (t.payment_source === 'petty_cash') {
           pettyCashExpenses += amt;
+        } else if (isOwnPocketSource(t.payment_source)) {
+          ownPocketExpenses += amt;
         } else {
           bankExpenses += amt;
         }
@@ -105,6 +109,7 @@ export const FinancialStatusScreen: React.FC = () => {
       totalExpenses,
       pettyCashExpenses,
       bankExpenses,
+      ownPocketExpenses,
       netBalance,
       catData,
     };
@@ -251,6 +256,10 @@ export const FinancialStatusScreen: React.FC = () => {
             <div className="border-r border-gray-200 pr-4">
               <span className="text-gray-400 block text-[10px]">هزینه مستقیم حساب بانک:</span>
               <span className="font-mono font-bold text-gray-800">{formatRial(summary.bankExpenses)} ریال</span>
+            </div>
+            <div className="border-r border-gray-200 pr-4">
+              <span className="text-gray-400 block text-[10px]">هزینه از حساب شخصی مدیران:</span>
+              <span className="font-mono font-bold text-gray-800">{formatRial(summary.ownPocketExpenses)} ریال</span>
             </div>
           </div>
         </div>

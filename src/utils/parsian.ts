@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { splitSettlementBySchool } from './claims';
 import { Transaction, Student, School, ExpenseCategory, Cheque, ParsianJournalEntry, JournalEntryRow, ParsianCodingConfig, ClaimSettlement } from '../types';
 import { jalaliFromGregorian } from './jalali';
 import { saveOrShareFile } from './fileDownload';
@@ -427,27 +428,10 @@ export function generateParsianJournalEntries(
   }
 
   // اسناد تسویه‌ی طلب مدیران: بدهکار «طلب مدیر»، بستانکار بانک — به تفکیک مدرسه
-  const expenseTxByServerId = new Map<string, Transaction>();
-  transactions.forEach((t) => {
-    if (t.kind === 'هزینه' && t.id >= 100000 && t.id < 200000000) expenseTxByServerId.set(String(t.id - 100000), t);
-  });
   [...settlements]
     .sort((a, b) => String(a.date).localeCompare(String(b.date)))
     .forEach((st) => {
-      const perSchool = new Map<number, number>();
-      let known = 0;
-      st.expense_ids.forEach((eid) => {
-        const tx = expenseTxByServerId.get(String(eid));
-        if (!tx) return;
-        const amt = tx.debit || tx.amount || 0;
-        perSchool.set(tx.school_id, (perSchool.get(tx.school_id) || 0) + amt);
-        known += amt;
-      });
-      const rest = (Number(st.amount) || 0) - known;
-      if (perSchool.size === 0 && rest > 0 && st.school_id !== undefined && st.school_id !== '') {
-        const sid = Number(st.school_id);
-        perSchool.set(sid, (perSchool.get(sid) || 0) + rest);
-      }
+      const perSchool = splitSettlementBySchool(st, transactions);
       const jalaliDate = jalaliFromGregorian(st.date);
       const mName = st.manager_name || managerName(st.manager_id);
       perSchool.forEach((amount, schoolId) => {
