@@ -64,10 +64,10 @@ if "NativeSmsPlugin" not in source:
         "import com.getcapacitor.BridgeActivity;",
         "import com.getcapacitor.BridgeActivity;" + nl + "import com.iigsmii.schoolfinance.NativeSmsPlugin;"
     )
-    pattern = r"(public class MainActivity extends BridgeActivity \\{)"
-    replacement = r"\\1" + nl + "    @Override" + nl + "    public void onCreate(android.os.Bundle savedInstanceState) {" + nl + "        registerPlugin(NativeSmsPlugin.class);" + nl + "        super.onCreate(savedInstanceState);" + nl + "    }"
-    source, count = re.subn(pattern, replacement, source, count=1)
-    if count != 1:
-        raise SystemExit("Could not register NativeSmsPlugin in MainActivity")
+    class_line = "public class MainActivity extends BridgeActivity {"
+    registration = class_line + nl + "    @Override" + nl + "    public void onCreate(android.os.Bundle savedInstanceState) {" + nl + "        registerPlugin(NativeSmsPlugin.class);" + nl + "        super.onCreate(savedInstanceState);" + nl + "    }"
+    if class_line not in source:
+        raise SystemExit("Could not find MainActivity class declaration")
+    source = source.replace(class_line, registration, 1)
 activity.write_text(source)
 print("Native SMS plugin and SEND_SMS permission installed.")
