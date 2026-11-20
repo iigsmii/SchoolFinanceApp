@@ -265,6 +265,20 @@ export interface PayrollPayment {
   created_at: string;
 }
 
+export interface AnnouncementSmsLog {
+  id: string;
+  campaign: string;
+  phone: string;
+  student_name: string;
+  school_name: string;
+  grade: string;
+  recipient: 'mother' | 'father';
+  status: 'accepted' | 'failed';
+  error?: string;
+  sent_at: string;
+  sent_by: string;
+}
+
 export type ScreenType =
   | 'dashboard'
   | 'finance_overview'
@@ -290,6 +304,7 @@ export type ScreenType =
   | 'export'
   | 'messages'
   | 'sms_reminders'
+  | 'announcements'
   | 'staff'
   | 'feedback';
 
