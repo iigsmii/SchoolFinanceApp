@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useDeferredValue } from 'react';
+import React, { useState, useMemo, useDeferredValue, useEffect } from 'react';
 import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { normalizeSearchText, matchTokens } from '../../utils/studentSearch';
@@ -41,6 +41,12 @@ export const TransactionsScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const deferredQuery = useDeferredValue(searchQuery);
   const [filterAccount, setFilterAccount] = useState('all');
+  const [transactionPage, setTransactionPage] = useState(0);
+  const TRANSACTION_PAGE_SIZE = 50;
+
+  useEffect(() => {
+    setTransactionPage(0);
+  }, [filterAccount, filterKind, filterStatus, deferredQuery]);
   const [selectedAttachment, setSelectedAttachment] = useState<{ url: string; title: string } | null>(null);
   useBackClose(!!selectedAttachment, () => setSelectedAttachment(null));
 
@@ -107,6 +113,12 @@ export const TransactionsScreen: React.FC = () => {
       return byDate !== 0 ? byDate : Number(b.id) - Number(a.id);
     });
   }, [scopedTxs, filterAccount, filterKind, filterStatus, deferredQuery]);
+
+  const transactionPageCount = Math.max(1, Math.ceil(filtered.length / TRANSACTION_PAGE_SIZE));
+  const visibleTransactions = filtered.slice(
+    transactionPage * TRANSACTION_PAGE_SIZE,
+    (transactionPage + 1) * TRANSACTION_PAGE_SIZE
+  );
 
   const handleApprove = async (txId: number) => {
     setIsSubmittingReview(true);
@@ -246,7 +258,7 @@ export const TransactionsScreen: React.FC = () => {
         {/* Transactions List */}
         <div className="space-y-3">
           <div className="text-xs text-gray-500 font-semibold flex items-center justify-between">
-            <span>نمایش: {filtered.length} تراکنش</span>
+            <span>نمایش {filtered.length === 0 ? 0 : transactionPage * TRANSACTION_PAGE_SIZE + 1} تا {Math.min((transactionPage + 1) * TRANSACTION_PAGE_SIZE, filtered.length)} از {filtered.length.toLocaleString('fa-IR')} تراکنش</span>
           </div>
 
           {filtered.length === 0 ? (
@@ -254,7 +266,7 @@ export const TransactionsScreen: React.FC = () => {
               تراکنشی با این شرایط پیدا نشد.
             </div>
           ) : (
-            filtered.map((t) => {
+            visibleTransactions.map((t) => {
               const isDebt = t.kind === 'شهریه_بدهی';
               const isExpense = t.kind === 'هزینه';
               const isPayment = t.kind === 'شهریه';
@@ -469,6 +481,13 @@ export const TransactionsScreen: React.FC = () => {
                 </div>
               );
             })
+          )}
+          {filtered.length > TRANSACTION_PAGE_SIZE && (
+            <div className="flex items-center justify-center gap-3 rounded-2xl border border-[#e5dde8] bg-white p-3">
+              <button type="button" onClick={() => setTransactionPage((page) => Math.max(0, page - 1))} disabled={transactionPage === 0} className="rounded-xl border border-[#e5dde8] px-4 py-2 text-xs font-bold text-[#341648] disabled:cursor-not-allowed disabled:opacity-40">صفحه قبل</button>
+              <span className="text-xs font-semibold text-gray-600">صفحه { (transactionPage + 1).toLocaleString('fa-IR') } از {transactionPageCount.toLocaleString('fa-IR')}</span>
+              <button type="button" onClick={() => setTransactionPage((page) => Math.min(transactionPageCount - 1, page + 1))} disabled={transactionPage >= transactionPageCount - 1} className="rounded-xl border border-[#e5dde8] px-4 py-2 text-xs font-bold text-[#341648] disabled:cursor-not-allowed disabled:opacity-40">صفحه بعد</button>
+            </div>
           )}
         </div>
       </main>
