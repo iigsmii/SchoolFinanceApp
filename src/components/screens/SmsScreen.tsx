@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useDeferredValue } from 'react';
+import React, { useState, useMemo, useDeferredValue, useEffect } from 'react';
 import SchoolSelect from '../SchoolSelect';
 import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
@@ -73,6 +73,10 @@ export const SmsScreen: React.FC = () => {
   const [isBatchConfirmOpen, setIsBatchConfirmOpen] = useState(false);
   useBackClose(isBatchConfirmOpen, () => setIsBatchConfirmOpen(false));
   const [batchResult, setBatchResult] = useState<{ sentCount: number; failedCount: number } | null>(null);
+  const [isSendingBatch, setIsSendingBatch] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ processed: number; total: number } | null>(null);
+  const [debtorPage, setDebtorPage] = useState(0);
+  const DEBTOR_PAGE_SIZE = 50;
 
   // Settings State
   const [provider, setProvider] = useState(smsConfig.provider);
@@ -109,6 +113,10 @@ export const SmsScreen: React.FC = () => {
       return true;
     });
   }, [students, selectedSchoolId, targetGrade, targetRecipient, deferredQuery, getStudentBalance, filterType, transactions]);
+
+  useEffect(() => { setDebtorPage(0); }, [selectedSchoolId, targetGrade, targetRecipient, deferredQuery, filterType]);
+  const debtorPageCount = Math.max(1, Math.ceil(filteredStudents.length / DEBTOR_PAGE_SIZE));
+  const visibleDebtors = useMemo(() => filteredStudents.slice(debtorPage * DEBTOR_PAGE_SIZE, (debtorPage + 1) * DEBTOR_PAGE_SIZE), [filteredStudents, debtorPage]);
 
   // Multi-select for Batch SMS
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
@@ -192,12 +200,30 @@ export const SmsScreen: React.FC = () => {
     alert(res.message);
   };
 
-  const handleExecuteBatch = () => {
+  const handleExecuteBatch = async () => {
+    if (isSendingBatch) return;
     const targetIds = selectedStudentIds.length > 0 ? selectedStudentIds : filteredStudents.map((s) => s.id);
-    const result = sendBatchSmsReminders(targetIds);
-    setBatchResult(result);
-    setIsBatchConfirmOpen(false);
-    setTimeout(() => setBatchResult(null), 6000);
+    setIsSendingBatch(true);
+    setBatchProgress({ processed: 0, total: targetIds.length });
+    setBatchResult(null);
+    let sentCount = 0;
+    let failedCount = 0;
+    try {
+      for (let start = 0; start < targetIds.length; start += 50) {
+        const chunk = targetIds.slice(start, start + 50);
+        const result = sendBatchSmsReminders(chunk);
+        sentCount += result.sentCount;
+        failedCount += result.failedCount;
+        setBatchProgress({ processed: Math.min(start + chunk.length, targetIds.length), total: targetIds.length });
+        if (start + 50 < targetIds.length) await new Promise(resolve => setTimeout(resolve, 40));
+      }
+      setBatchResult({ sentCount, failedCount });
+      setIsBatchConfirmOpen(false);
+      setTimeout(() => setBatchResult(null), 6000);
+    } finally {
+      setIsSendingBatch(false);
+      setBatchProgress(null);
+    }
   };
 
   const handleSaveSettings = (e: React.FormEvent) => {
@@ -459,7 +485,7 @@ export const SmsScreen: React.FC = () => {
                 </div>
               ) : (
                 <div className="divide-y divide-gray-100">
-                  {filteredStudents.map((st) => {
+                  {visibleDebtors.map((st) => {
                     const balance = getStudentBalance(st.id);
                     const overdue = calculateStudentOverdue(st, transactions);
                     const fatherPhone = st.father_phone || st.phone;
@@ -568,6 +594,16 @@ export const SmsScreen: React.FC = () => {
                       </div>
                     );
                   })}
+                </div>
+              )}
+              {filteredStudents.length > DEBTOR_PAGE_SIZE && (
+                <div className="flex items-center justify-between gap-3 border-t border-gray-100 p-3 text-xs">
+                  <span className="text-gray-500">نمایش {debtorPage * DEBTOR_PAGE_SIZE + 1} تا {Math.min((debtorPage + 1) * DEBTOR_PAGE_SIZE, filteredStudents.length)} از {filteredStudents.length} بدهکار</span>
+                  <div className="flex items-center gap-2">
+                    <button type="button" disabled={debtorPage === 0} onClick={() => setDebtorPage(p => Math.max(0, p - 1))} className="px-3 py-2 rounded-lg border border-gray-200 disabled:opacity-40">قبلی</button>
+                    <span className="font-bold text-[#341648]">{debtorPage + 1} / {debtorPageCount}</span>
+                    <button type="button" disabled={debtorPage >= debtorPageCount - 1} onClick={() => setDebtorPage(p => Math.min(debtorPageCount - 1, p + 1))} className="px-3 py-2 rounded-lg border border-gray-200 disabled:opacity-40">بعدی</button>
+                  </div>
                 </div>
               )}
             </div>
@@ -950,22 +986,36 @@ export const SmsScreen: React.FC = () => {
             <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-[11px] text-amber-900">
               پیامک برای تمام شماره‌های معتبر ارسال خواهد شد و گزارش در کارتابل پیامک‌ها ثبت می‌شود.
             </div>
+            {isSendingBatch && batchProgress && (
+              <div className="rounded-xl border border-purple-200 bg-purple-50 p-3 space-y-2">
+                <div className="flex justify-between text-xs font-bold text-purple-900">
+                  <span>پردازش مرحله‌ای پیامک‌ها (بسته‌های ۵۰تایی)</span>
+                  <span>{batchProgress.processed} از {batchProgress.total}</span>
+                </div>
+                <div className="h-2 rounded-full bg-purple-100 overflow-hidden">
+                  <div className="h-full bg-purple-700 transition-all" style={{ width: `${batchProgress.total ? batchProgress.processed / batchProgress.total * 100 : 0}%` }} />
+                </div>
+              </div>
+            
+            </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setIsBatchConfirmOpen(false)}
-                className="px-4 py-2 rounded-xl border border-gray-300 text-xs font-bold text-gray-600"
+                onClick={() => !isSendingBatch && setIsBatchConfirmOpen(false)}
+                disabled={isSendingBatch}
+                className="px-4 py-2 rounded-xl border border-gray-300 text-xs font-bold text-gray-600 disabled:opacity-40"
               >
                 انصراف
               </button>
               <button
                 type="button"
                 onClick={handleExecuteBatch}
-                className="px-5 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-95"
+                disabled={isSendingBatch}
+                className="px-5 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold flex items-center gap-1.5 shadow-md active:scale-95 disabled:opacity-50"
               >
                 <Send className="w-4 h-4" />
-                <span>شروع ارسال پیامک‌ها</span>
+                <span>{isSendingBatch ? 'در حال پردازش...' : 'شروع ارسال پیامک‌ها'}</span>
               </button>
             </div>
           </div>
