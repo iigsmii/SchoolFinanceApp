@@ -349,24 +349,25 @@ export const SmsScreen: React.FC = () => {
                 <div>
                   <select
                     value={targetGrade}
-                    onChange={(e) => setTargetGrade(e.target.value)}
+                    onChange={(e) => {
+                      setTargetGrade(e.target.value);
+                      setSelectedStudentIds([]);
+                    }}
                     className="w-full py-2.5 px-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735] focus:outline-hidden"
                   >
                     <option value="all">پایه: همه پایه‌ها</option>
-                    <option value="پیش یک">پیش یک</option>
-                    <option value="پیش دو">پیش دو</option>
-                    <option value="اول">کلاس اول</option>
-                    <option value="دوم">کلاس دوم</option>
-                    <option value="سوم">کلاس سوم</option>
-                    <option value="چهارم">کلاس چهارم</option>
-                    <option value="پنجم">کلاس پنجم</option>
-                    <option value="ششم">کلاس ششم</option>
+                    {Array.from(new Set(students
+                      .filter((student) => student.active !== false && (selectedSchoolId === 0 || Number(student.school_id) === Number(selectedSchoolId)))
+                      .map((student) => String(student.grade || '').trim())
+                      .filter(Boolean)))
+                      .sort((a, b) => a.localeCompare(b, 'fa'))
+                      .map((grade) => <option key={grade} value={grade}>پایه {grade}</option>)}
                   </select>
                 </div>
 
                 {/* School Selector (for Senior Admin) */}
                 {isSenior ? (
-                  <SchoolSelect schools={schools} value={selectedSchoolId} onChange={(value) => setSelectedSchoolId(Number(value))} className="py-2.5 px-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735]" includeAll allValue={0} allLabel={`همه مراکز آموزشی`} />
+                  <SchoolSelect schools={schools} value={selectedSchoolId} onChange={(value) => { setSelectedSchoolId(Number(value)); setTargetGrade('all'); setSelectedStudentIds([]); }} className="py-2.5 px-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735]" includeAll allValue={0} allLabel={`همه مراکز آموزشی`} />
                 ) : (
                   <div className="py-2.5 px-3 bg-gray-50 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 flex items-center truncate">
                     {currentUser?.school_name || 'مرکز شما'}
