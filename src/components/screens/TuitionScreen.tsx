@@ -143,6 +143,7 @@ export const TuitionScreen: React.FC = () => {
   const [bulkJalaliDate, setBulkJalaliDate] = useState(todayJalali());
   const [bulkDesc, setBulkDesc] = useState('');
   const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkGrade, setBulkGrade] = useState<string>('all');
   const [bulkFilterQuery, setBulkFilterQuery] = useState('');
 
   // Handle student search results with deferred query to keep Persian typing instant
@@ -218,6 +219,7 @@ export const TuitionScreen: React.FC = () => {
     const targetSid = isSenior ? schools[0]?.id || 1 : currentUser?.school_id || 1;
     setBulkSchoolId(targetSid);
     const targetStudents = students.filter((s) => Number(s.school_id) === Number(targetSid) && s.active !== false);
+    setBulkGrade('all');
     setBulkSelectedIds(new Set(targetStudents.map((s) => s.id)));
     setBulkAmount('');
     setBulkJalaliDate(todayJalali());
@@ -437,7 +439,12 @@ export const TuitionScreen: React.FC = () => {
 
   // Bulk dialog school filtered students
   const bulkSchoolStudents = students.filter((s) => Number(s.school_id) === Number(bulkSchoolId) && s.active !== false);
-  const displayedBulkStudents = bulkSchoolStudents.filter((st) =>
+  const bulkGradeOptions = Array.from(new Set(bulkSchoolStudents.map((s) => String(s.grade || '').trim()).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b, 'fa'));
+  const gradeBulkStudents = bulkGrade === 'all'
+    ? bulkSchoolStudents
+    : bulkSchoolStudents.filter((s) => String(s.grade || '').trim() === bulkGrade);
+  const displayedBulkStudents = gradeBulkStudents.filter((st) =>
     matchesStudentSearch(st, bulkFilterQuery)
   );
 
@@ -1361,11 +1368,33 @@ export const TuitionScreen: React.FC = () => {
                   <SchoolSelect schools={schools} value={bulkSchoolId} onChange={(value) => {
                       const sid = Number(value);
                       setBulkSchoolId(sid);
-                      const targetSt = students.filter((s) => s.school_id === sid && s.active);
+                      setBulkGrade('all');
+                      const targetSt = students.filter((s) => Number(s.school_id) === sid && s.active !== false);
                       setBulkSelectedIds(new Set(targetSt.map((s) => s.id)));
                     }} className="w-full px-4 py-2 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735]" />
                 </div>
               )}
+
+              {/* Grade-specific student selection */}
+              <div className="mb-3">
+                <label className="block text-xs font-bold text-[#341648] mb-1.5">انتخاب پایه تحصیلی</label>
+                <select
+                  value={bulkGrade}
+                  onChange={(e) => {
+                    const grade = e.target.value;
+                    setBulkGrade(grade);
+                    const target = grade === 'all'
+                      ? bulkSchoolStudents
+                      : bulkSchoolStudents.filter((student) => String(student.grade || '').trim() === grade);
+                    setBulkSelectedIds(new Set(target.map((student) => student.id)));
+                    setBulkFilterQuery('');
+                  }}
+                  className="w-full px-3 py-2.5 text-xs font-bold rounded-xl border border-[#e5dde8] bg-white text-[#302735]"
+                >
+                  <option value="all">همه پایه‌ها</option>
+                  {bulkGradeOptions.map((grade) => <option key={grade} value={grade}>پایه {grade}</option>)}
+                </select>
+              </div>
 
               {/* Student Multi-Select List */}
               <div className="flex flex-col border border-[#e5dde8] rounded-2xl p-3 bg-[#fcfaff]">
@@ -1373,17 +1402,17 @@ export const TuitionScreen: React.FC = () => {
                   <label className="flex items-center gap-2 font-bold cursor-pointer select-none">
                     <input
                       type="checkbox"
-                      checked={bulkSelectedIds.size === bulkSchoolStudents.length && bulkSchoolStudents.length > 0}
+                      checked={gradeBulkStudents.length > 0 && gradeBulkStudents.every((student) => bulkSelectedIds.has(student.id))}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setBulkSelectedIds(new Set(bulkSchoolStudents.map((s) => s.id)));
+                          setBulkSelectedIds(new Set(gradeBulkStudents.map((s) => s.id)));
                         } else {
                           setBulkSelectedIds(new Set());
                         }
                       }}
                       className="rounded text-[#62205f]"
                     />
-                    <span>انتخاب همه ({bulkSchoolStudents.length} دانش‌آموز)</span>
+                    <span>انتخاب همه ({gradeBulkStudents.length} دانش‌آموز)</span>
                   </label>
                   <span className="font-semibold text-gray-500">انتخاب: {bulkSelectedIds.size} نفر</span>
                 </div>
