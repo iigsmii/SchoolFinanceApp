@@ -145,8 +145,8 @@ export const BankAccountsScreen: React.FC = () => {
       if (activeAccount && tx.school_id !== activeAccount.school_id) return;
       if (!isSenior && tx.school_id !== currentUser?.school_id) return;
 
-      // کارت تن‌خواه حساب جداست و هزینه‌ی «از حساب خودم» تا زمان تسویه از بانک خارج نشده است
-      if (isOutsideMainBank(tx.payment_source)) return;
+      // هزینه‌ی «از حساب خودم» تا زمان تسویه از بانک خارج نشده؛ هزینه‌ی کارت تن‌خواه از همین حساب برداشت می‌شود
+      if (isOutsideMainBank(tx)) return;
 
       const isDeposit = tx.kind === 'شهریه' || tx.kind === 'دریافت متفرقه';
       const isWithdrawal = tx.kind === 'هزینه';

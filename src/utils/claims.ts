@@ -3,8 +3,14 @@ import { ClaimSettlement, Transaction } from '../types';
 /** هزینه‌ای که مدیر از جیب خودش پرداخت کرده (چه تسویه‌نشده، چه تسویه‌شده) — پولش مستقیم از بانک مدرسه خارج نشده است. */
 export const isOwnPocketSource = (source?: string) => source === 'own' || source === 'own_settled';
 
-/** هزینه‌هایی که از حساب بانکِ اصلی مدرسه کم نمی‌شوند: کارت تن‌خواه (حساب جدا) و طلب مدیر (تا زمان تسویه). */
-export const isOutsideMainBank = (source?: string) => source === 'petty_cash' || isOwnPocketSource(source);
+/**
+ * آیا این تراکنش روی موجودی حساب بانک اصلی اثر ندارد؟
+ * - هزینه‌ی «از حساب خودم»: پولی از بانک خارج نشده؛ برداشت واقعی هنگام تسویه ثبت می‌شود.
+ * - واریز به کارت تن‌خواه: همه‌ی کارت‌های تن‌خواه به همان حساب بانک وصل‌اند، پس جابه‌جایی داخلی است.
+ * هزینه‌ی کارت تن‌خواه برداشت واقعی از همان حساب است و حساب می‌شود.
+ */
+export const isOutsideMainBank = (tx: { kind?: string; payment_source?: string }) =>
+  isOwnPocketSource(tx.payment_source) || (tx.kind !== 'هزینه' && tx.payment_source === 'petty_cash');
 
 /**
  * مبلغ هر تسویه را به تفکیک مدرسه برمی‌گرداند (بر اساس هزینه‌های انتخاب‌شده در تسویه).
