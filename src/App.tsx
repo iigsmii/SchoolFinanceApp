@@ -20,6 +20,7 @@ import { MessagesScreen } from './components/screens/MessagesScreen';
 import { ActivityScreen } from './components/screens/ActivityScreen';
 import { SettingsScreen } from './components/screens/SettingsScreen';
 import { SmsScreen } from './components/screens/SmsScreen';
+import { AnnouncementsScreen } from './components/screens/AnnouncementsScreen';
 import { StaffScreen } from './components/screens/StaffScreen';
 import { ParsianExportScreen } from './components/screens/ParsianExportScreen';
 import { BankAccountsScreen } from './components/screens/BankAccountsScreen';
@@ -156,6 +157,8 @@ export const App: React.FC = () => {
         return <ActivityScreen />;
       case 'sms_reminders':
         return <SmsScreen />;
+      case 'announcements':
+        return <AnnouncementsScreen />;
       case 'staff':
         return <StaffScreen />;
       case 'google_settings':
