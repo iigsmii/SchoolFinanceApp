@@ -2,15 +2,17 @@
 """Install the native direct-SMS Capacitor bridge after cap sync."""
 from pathlib import Path
 import re
-root=Path("android/app/src/main")
-manifest=root/"AndroidManifest.xml"
-text=manifest.read_text()
-if "android.permission.SEND_SMS" not in text:
-    text=text.replace("<manifest", '<manifest xmlns:android="http://schemas.android.com/apk/res/android"',1) if 'xmlns:android=' not in text.splitlines()[1] else text
-    text=text.replace("<application", '    <uses-permission android:name="android.permission.SEND_SMS" />\\n    <application',1)
-manifest.write_text(text)
-java=root/"java/com/iigsmii/schoolfinance/NativeSmsPlugin.java"
-java.parent.mkdir(parents=True,exist_ok=True)
+
+root = Path("android/app/src/main")
+nl = chr(10)
+manifest = root / "AndroidManifest.xml"
+content = manifest.read_text()
+if "android.permission.SEND_SMS" not in content:
+    content = content.replace("<application", '    <uses-permission android:name="android.permission.SEND_SMS" />' + nl + '    <application', 1)
+manifest.write_text(content)
+
+java = root / "java/com/iigsmii/schoolfinance/NativeSmsPlugin.java"
+java.parent.mkdir(parents=True, exist_ok=True)
 java.write_text("""package com.iigsmii.schoolfinance;
 import android.Manifest;
 import android.content.pm.PackageManager;
@@ -27,37 +29,45 @@ public class NativeSmsPlugin extends Plugin {
   requestPermissionForAlias("sms", call, "permissionResult");
  }
  @PermissionCallback private void permissionResult(PluginCall call) {
-  JSObject result=new JSObject();
+  JSObject result = new JSObject();
   result.put("granted", getPermissionState("sms") == PermissionState.GRANTED);
   call.resolve(result);
  }
  @PluginMethod public void send(PluginCall call) {
-  String phone=call.getString("phone","");
-  String message=call.getString("message","");
+  String phone = call.getString("phone", "");
+  String message = call.getString("message", "");
   if (getContext().checkSelfPermission(Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
    call.reject("مجوز ارسال پیامک صادر نشده است."); return;
   }
   if (phone.isEmpty() || message.isEmpty()) { call.reject("شماره یا متن پیام خالی است."); return; }
   try {
    SmsManager manager;
-   if (android.os.Build.VERSION.SDK_INT >= 31) manager=getContext().getSystemService(SmsManager.class);
-   else manager=SmsManager.getDefault();
-   ArrayList<String> parts=manager.divideMessage(message);
-   if (parts.size()>1) manager.sendMultipartTextMessage(phone,null,parts,null,null);
-   else manager.sendTextMessage(phone,null,message,null,null);
-   JSObject result=new JSObject(); result.put("accepted",true); call.resolve(result);
-  } catch (Exception e) { call.reject("ارسال توسط سیستم اندروید انجام نشد: "+e.getMessage(),e); }
+   if (android.os.Build.VERSION.SDK_INT >= 31) manager = getContext().getSystemService(SmsManager.class);
+   else manager = SmsManager.getDefault();
+   if (manager == null) { call.reject("سرویس پیامک اندروید در دسترس نیست."); return; }
+   ArrayList<String> parts = manager.divideMessage(message);
+   if (parts.size() > 1) manager.sendMultipartTextMessage(phone, null, parts, null, null);
+   else manager.sendTextMessage(phone, null, message, null, null);
+   JSObject result = new JSObject(); result.put("accepted", true); call.resolve(result);
+  } catch (Exception e) { call.reject("ارسال توسط سیستم اندروید انجام نشد: " + e.getMessage(), e); }
  }
 }
 """)
-activity=root/"java/com/iigsmii/schoolfinance/MainActivity.java"
-if not activity.exists():
-    matches=list(root.glob("java/**/MainActivity.java"))
-    if not matches: raise SystemExit("MainActivity.java not found after Capacitor sync")
-    activity=matches[0]
-a=activity.read_text()
-if "NativeSmsPlugin" not in a:
-    a=a.replace("import com.getcapacitor.BridgeActivity;", "import com.getcapacitor.BridgeActivity;\\nimport com.iigsmii.schoolfinance.NativeSmsPlugin;")
-    a=re.sub(r'(public class MainActivity extends BridgeActivity \\{)', r'\\1\\n    @Override\\n    public void onCreate(android.os.Bundle savedInstanceState) {\\n        registerPlugin(NativeSmsPlugin.class);\\n        super.onCreate(savedInstanceState);\\n    }', a, count=1)
-activity.write_text(a)
+
+activities = list(root.glob("java/**/MainActivity.java"))
+if not activities:
+    raise SystemExit("MainActivity.java not found after Capacitor sync")
+activity = activities[0]
+source = activity.read_text()
+if "NativeSmsPlugin" not in source:
+    source = source.replace(
+        "import com.getcapacitor.BridgeActivity;",
+        "import com.getcapacitor.BridgeActivity;" + nl + "import com.iigsmii.schoolfinance.NativeSmsPlugin;"
+    )
+    pattern = r"(public class MainActivity extends BridgeActivity \\{)"
+    replacement = r"\\1" + nl + "    @Override" + nl + "    public void onCreate(android.os.Bundle savedInstanceState) {" + nl + "        registerPlugin(NativeSmsPlugin.class);" + nl + "        super.onCreate(savedInstanceState);" + nl + "    }"
+    source, count = re.subn(pattern, replacement, source, count=1)
+    if count != 1:
+        raise SystemExit("Could not register NativeSmsPlugin in MainActivity")
+activity.write_text(source)
 print("Native SMS plugin and SEND_SMS permission installed.")
