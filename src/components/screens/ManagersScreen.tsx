@@ -39,8 +39,8 @@ export const ManagersScreen: React.FC = () => {
     } finally { setCardsLoading(false); }
   };
   useEffect(() => { void reloadPettyCashCards(); }, []);
-  const saveManagerCards = async (nextCards: any[]) => {
-    if (cardsSaving) return;
+  const saveManagerCards = async (nextCards: any[]): Promise<boolean> => {
+    if (cardsSaving) return false;
     setCardsSaving(true);
     setCardsError('');
     try {
@@ -62,26 +62,48 @@ export const ManagersScreen: React.FC = () => {
       });
       if (!saved?.success) throw new Error(saved?.error || 'ذخیره کارت‌ها در Google Sheets ناموفق بود.');
       setPettyCashCards(Array.isArray(saved.rules?.pettyCashCards) ? saved.rules.pettyCashCards : normalizedCards);
+      return true;
     } catch (error: any) {
       setCardsError(error?.message || 'ذخیره کارت‌های تن‌خواه انجام نشد.');
+      return false;
     } finally { setCardsSaving(false); }
   };
-  const addCardForManager = (manager: User) => {
-    const value = window.prompt('شماره کارت تن‌خواه ۱۶ رقمی:');
-    if (value === null) return;
-    const card = normalizeCard(value);
-    if (card.length !== 16) { setCardsError('شماره کارت باید دقیقاً ۱۶ رقم باشد.'); return; }
-    if (pettyCashCards.some((item) => normalizeCard(item.card) === card)) { setCardsError('این شماره کارت قبلاً ثبت شده است.'); return; }
-    const accountOptions = bankAccounts.map((account) => account.name).join('، ');
-    const accountName = window.prompt('نام دقیق حساب بانکی برای اتصال (در صورت تمایل خالی بگذارید):\n' + accountOptions, '');
-    if (accountName === null) return;
-    const account = accountName.trim() ? bankAccounts.find((item) => normalizeManager(item.name) === normalizeManager(accountName)) : undefined;
-    if (accountName.trim() && !account) { setCardsError('حساب بانکی واردشده در فهرست حساب‌ها پیدا نشد.'); return; }
-    saveManagerCards([...pettyCashCards, {
-      card, managerId: String(manager.id), managerName: manager.name,
-      schoolId: Number(manager.school_id || 0), bankAccountId: Number(account?.id || 0),
-      accountSuffix: account ? normalizeCard(account.account_number).slice(-3) : '', active: true,
-    }]);
+  // کارت تن‌خواه همیشه باید به یکی از حساب‌های بانکیِ از قبل تعریف‌شده وصل باشد.
+  const [cardDialog, setCardDialog] = useState<{ manager: User; original: string; number: string; accountId: number } | null>(null);
+  const [cardDialogError, setCardDialogError] = useState('');
+  useBackClose(cardDialog !== null, () => { if (!cardsSaving) setCardDialog(null); });
+  const openCardDialog = (manager: User, card?: any, legacyNumber?: string) => {
+    setCardDialogError('');
+    const number = card ? normalizeCard(card.card) : normalizeCard(legacyNumber || '');
+    let accountId = Number(card?.bankAccountId || 0);
+    if (card && !accountId) {
+      const suffix = String(card.accountSuffix || '').replace(/\D/g, '');
+      const bySuffix = suffix ? bankAccounts.filter((a) => normalizeCard(a.account_number).endsWith(suffix)) : [];
+      if (bySuffix.length === 1) accountId = Number(bySuffix[0].id); // پیشنهاد؛ مدیر ارشد باید تأیید کند
+    }
+    setCardDialog({ manager, original: card ? normalizeCard(card.card) : '', number, accountId });
+  };
+  const saveCardDialog = async () => {
+    if (!cardDialog) return;
+    const number = normalizeCard(cardDialog.number);
+    const account = bankAccounts.find((a) => Number(a.id) === Number(cardDialog.accountId));
+    if (number.length !== 16) { setCardDialogError('شماره کارت باید دقیقاً ۱۶ رقم باشد.'); return; }
+    if (!account) { setCardDialogError('حساب بانکی را از فهرست حساب‌های تعریف‌شده انتخاب کنید.'); return; }
+    if (pettyCashCards.some((item) => normalizeCard(item.card) === number && normalizeCard(item.card) !== cardDialog.original)) {
+      setCardDialogError('این شماره کارت قبلاً ثبت شده است.');
+      return;
+    }
+    const m = cardDialog.manager;
+    const entry = {
+      card: number, managerId: String(m.id), managerName: m.name,
+      schoolId: Number(m.school_id || 0), bankAccountId: Number(account.id),
+      accountSuffix: normalizeCard(account.account_number).slice(-3), active: true,
+    };
+    const next = cardDialog.original
+      ? pettyCashCards.map((item) => (normalizeCard(item.card) === cardDialog.original ? { ...item, ...entry } : item))
+      : [...pettyCashCards, entry];
+    if (await saveManagerCards(next)) setCardDialog(null);
+    else setCardDialogError('ذخیره انجام نشد؛ پیام خطا بالای صفحه نمایش داده شده است.');
   };
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -243,27 +265,23 @@ export const ManagersScreen: React.FC = () => {
                             ...item, managerId: String(m.id), managerName: m.name, bankAccountId: accountId,
                             accountSuffix: account ? normalizeCard(account.account_number).slice(-3) : item.accountSuffix,
                           } : item));
-                        }} className="max-w-[190px] rounded-lg border border-blue-200 bg-white px-2 py-1 text-[11px]">
-                          <option value={0}>بدون اتصال</option>
+                        }} className={`max-w-[190px] rounded-lg border bg-white px-2 py-1 text-[11px] ${Number(card.bankAccountId || 0) ? 'border-blue-200' : 'border-amber-400 ring-1 ring-amber-300'}`}>
+                          {!Number(card.bankAccountId || 0) && <option value={0} disabled>— حساب بانکی را انتخاب کنید —</option>}
                           {bankAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} ({String(account.account_number || '').slice(-4)})</option>)}
                         </select>
                       </label>
-                      <button type="button" disabled={cardsSaving} onClick={() => {
-                        const value = window.prompt('شماره کارت ۱۶ رقمی:', card.card);
-                        if (value === null) return;
-                        const nextNumber = normalizeCard(value);
-                        if (nextNumber.length !== 16) { setCardsError('شماره کارت باید دقیقاً ۱۶ رقم باشد.'); return; }
-                        if (pettyCashCards.some((item) => normalizeCard(item.card) === nextNumber && normalizeCard(item.card) !== normalizeCard(card.card))) { setCardsError('این شماره کارت قبلاً ثبت شده است.'); return; }
-                        saveManagerCards(pettyCashCards.map((item) => normalizeCard(item.card) === normalizeCard(card.card) ? { ...item, card: nextNumber, managerId: String(m.id), managerName: m.name } : item));
-                      }} className="rounded-lg bg-white border border-blue-200 px-2 py-1 font-bold">ویرایش</button>
+                      <button type="button" disabled={cardsSaving} onClick={() => openCardDialog(m, card)} className="rounded-lg bg-white border border-blue-200 px-2 py-1 font-bold">ویرایش</button>
                       <button type="button" disabled={cardsSaving} onClick={() => {
                         if (window.confirm('کارت ' + card.card + ' حذف شود؟')) saveManagerCards(pettyCashCards.filter((item) => normalizeCard(item.card) !== normalizeCard(card.card)));
                       }} className="rounded-lg bg-rose-50 border border-rose-200 text-rose-700 px-2 py-1 font-bold">حذف</button>
                     </div>;
                   })}
-                  <button type="button" disabled={cardsSaving} onClick={() => addCardForManager(m)} className="rounded-lg bg-blue-700 text-white px-3 py-2 text-[11px] font-bold disabled:opacity-50">+ افزودن کارت تن‌خواه</button>
+                  <button type="button" disabled={cardsSaving} onClick={() => openCardDialog(m)} className="rounded-lg bg-blue-700 text-white px-3 py-2 text-[11px] font-bold disabled:opacity-50">+ افزودن کارت تن‌خواه</button>
                   {managerCards(m).length === 0 && m.petty_cash_card && (
-                    <span className="rounded-lg bg-blue-50 border border-blue-100 px-2.5 py-1.5 text-[11px] text-blue-900">کارت {m.petty_cash_card} · حساب {m.petty_cash_bank || 'تعیین نشده'}</span>
+                    <span className="flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 border border-amber-300 px-2.5 py-1.5 text-[11px] text-amber-900">
+                      کارت {m.petty_cash_card} · به حساب بانکی وصل نشده است
+                      <button type="button" disabled={cardsSaving} onClick={() => openCardDialog(m, undefined, m.petty_cash_card)} className="rounded-md bg-amber-600 text-white px-2 py-0.5 font-bold">اتصال به حساب</button>
+                    </span>
                   )}
                   {cardsLoading && <span className="text-[10px] text-gray-400">در حال دریافت کارت‌ها…</span>}
                   {cardsSaving && <span className="text-[10px] text-blue-700">در حال ذخیره…</span>}
@@ -298,6 +316,51 @@ export const ManagersScreen: React.FC = () => {
       </main>
 
       {/* Add / Edit Manager Modal */}
+      {cardDialog && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4">
+          <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col max-h-[92vh] supports-[height:100dvh]:max-h-[92dvh]">
+            <div className="p-4 border-b border-[#ede5ef] flex items-center justify-between shrink-0">
+              <div className="font-bold text-[#341648] text-sm">
+                {cardDialog.original ? 'ویرایش کارت تن‌خواه' : 'افزودن کارت تن‌خواه'} — {cardDialog.manager.name}
+              </div>
+              <button type="button" aria-label="بستن" disabled={cardsSaving} onClick={() => setCardDialog(null)} className="p-1"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-[#341648] mb-1.5">شماره کارت (۱۶ رقم)</label>
+                <input type="tel" inputMode="numeric" autoComplete="off" dir="ltr" value={cardDialog.number}
+                  onChange={(e) => setCardDialog({ ...cardDialog, number: normalizeCard(e.target.value).slice(0, 16) })}
+                  placeholder="6037..." className="w-full px-4 py-2.5 rounded-xl border border-[#e5dde8] text-sm font-mono text-left" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-[#341648] mb-1.5">حساب بانکی متصل <span className="text-rose-500">*</span></label>
+                {bankAccounts.length === 0 ? (
+                  <div className="text-xs rounded-xl bg-amber-50 border border-amber-300 text-amber-900 p-3">
+                    هنوز هیچ حساب بانکی تعریف نشده است. ابتدا از بخش «حساب‌های بانکی» حساب را تعریف کنید.
+                  </div>
+                ) : (
+                  <select value={cardDialog.accountId} onChange={(e) => setCardDialog({ ...cardDialog, accountId: Number(e.target.value) || 0 })}
+                    className="w-full px-3 py-2.5 rounded-xl border border-[#e5dde8] text-sm bg-white">
+                    <option value={0} disabled>— انتخاب از حساب‌های تعریف‌شده —</option>
+                    {bankAccounts.filter((a) => a.is_active !== false || Number(a.id) === cardDialog.accountId).map((a) => (
+                      <option key={a.id} value={a.id}>{a.name} ({String(a.account_number || '').slice(-4)})</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              {cardDialogError && <div className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-3">{cardDialogError}</div>}
+            </div>
+            <div className="p-4 border-t border-[#ede5ef] shrink-0 flex justify-end gap-2">
+              <button type="button" disabled={cardsSaving} onClick={() => setCardDialog(null)} className="px-4 py-2.5 rounded-xl border border-[#e5dde8] text-xs font-bold text-gray-600">انصراف</button>
+              <button type="button" disabled={cardsSaving || bankAccounts.length === 0} onClick={() => void saveCardDialog()}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white disabled:opacity-50" style={{ backgroundColor: accentColor }}>
+                {cardsSaving ? 'در حال ذخیره…' : 'ذخیره'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center overflow-y-auto overscroll-contain bg-black/50 backdrop-blur-xs p-3 sm:p-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-[#e5dde8] max-h-[calc(100dvh-1.5rem)] sm:max-h-[92vh] overflow-y-auto overscroll-contain my-auto">
@@ -395,17 +458,9 @@ export const ManagersScreen: React.FC = () => {
 
               <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-3 space-y-3">
                 <h4 className="text-xs font-bold text-amber-900">اطلاعات کارت تن‌خواه مدیر</h4>
-                <div>
-                  <label className="block text-xs font-bold text-[#341648] mb-1.5">شماره کارت تن‌خواه</label>
-                  <input type="tel" inputMode="numeric" autoComplete="off" value={formPettyCashCard}
-                    onChange={(e) => setFormPettyCashCard(e.target.value.replace(/[^0-9۰-۹٠-٩]/g, ''))}
-                    placeholder="شماره کارت ۱۶ رقمی" className="w-full px-4 py-2.5 bg-white rounded-xl border border-[#e5dde8] text-sm font-mono text-left" dir="ltr" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-[#341648] mb-1.5">بانک صادرکننده کارت</label>
-                  <input type="text" value={formPettyCashBank} onChange={(e) => setFormPettyCashBank(e.target.value)}
-                    placeholder="نام بانک" className="w-full px-4 py-2.5 bg-white rounded-xl border border-[#e5dde8] text-sm" />
-                </div>
+                <p className="text-[11px] leading-5 text-amber-900">
+                  شماره کارت تن‌خواه را بعد از ذخیره‌ی مدیر، با دکمه‌ی «+ افزودن کارت تن‌خواه» در لیست مدیران ثبت کنید؛ هر کارت باید به یکی از حساب‌های بانکی تعریف‌شده وصل شود.
+                </p>
                 <div>
                   <label className="block text-xs font-bold text-[#341648] mb-1.5">شماره شبا (اختیاری)</label>
                   <input type="tel" inputMode="numeric" autoComplete="off" value={formPettyCashShaba}
