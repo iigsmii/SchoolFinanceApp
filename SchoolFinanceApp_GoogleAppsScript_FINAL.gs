@@ -206,7 +206,7 @@ function doGet(e) {
     if(action==='my_claim') return json_(myClaim_(b));
     if(action==='app_version') return json_(appVersion_(b));
     if(action==='activity_logs')return json_(activityLogs_(b));
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.24.4',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.24.5',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
@@ -245,7 +245,7 @@ function doPost(e) {
     if (action === 'sync' || action === 'all') return json_(syncPayload_(body));
 
     // POST carries tokens in its body, but read-only actions do not need a write lock.
-    const reads={claim_settlements:claimSettlements_,cheques_all:chequesAll_,staff_worklogs:staffWorkLogs_,payroll:payroll_,bank_accounts:bankAccounts_,schools:schools_,staff:staff_,students:students_,tuition:tuition_,expenses:expenses_,transactions:transactions_,bank:bank_,bank_review:bankReview_,bank_rules_get:bankRulesGet_,categories:categories_,messages:messages_,managers:managers_,cheques:cheques_,cheque_list:chequeList_,cheque_alerts:chequeAlerts_,summary:summary_,my_claim:myClaim_,app_version:appVersion_,activity_logs:activityLogs_,parsian_export:parsianExport_,parsian_school_map:parsianSchoolMap_,parsian_student_accounts:parsianStudentAccounts_,attachment_read:attachmentRead_};
+    const reads={claim_settlements:claimSettlements_,cheques_all:chequesAll_,staff_worklogs:staffWorkLogs_,payroll:payroll_,bank_accounts:bankAccounts_,schools:schools_,staff:staff_,students:students_,tuition:tuition_,expenses:expenses_,transactions:transactions_,bank:bank_,bank_review:bankReview_,bank_rules_get:bankRulesGet_,my_petty_cash_cards:myPettyCashCards_,categories:categories_,messages:messages_,managers:managers_,cheques:cheques_,cheque_list:chequeList_,cheque_alerts:chequeAlerts_,summary:summary_,my_claim:myClaim_,app_version:appVersion_,activity_logs:activityLogs_,parsian_export:parsianExport_,parsian_school_map:parsianSchoolMap_,parsian_student_accounts:parsianStudentAccounts_,attachment_read:attachmentRead_};
     if(reads[action])return json_(reads[action](body));
     lock.waitLock(30000);locked=true;writeLockHeld_=true;
     ensureStructure_();
@@ -1557,6 +1557,26 @@ function bankRulesGet_(b){
   }
   catch(e){return {success:false,error:'قواعد تطبیق ذخیره‌شده قابل خواندن نیست؛ مدیر ارشد باید آن را اصلاح کند.'};}
 }
+function myPettyCashCards_(b){
+  const user=auth_(b);
+  const hit=rows_('Settings').find(x=>String(x.obj.key||'')==='bank_reconciliation_rules');
+  let rules=defaultBankRules_();
+  if(hit){
+    try{
+      const saved=JSON.parse(String(hit.obj.value||'{}'));
+      rules=Object.assign({},rules,saved,{pettyCashCards:Array.isArray(saved.pettyCashCards)?saved.pettyCashCards:rules.pettyCashCards});
+    }catch(e){throw new Error('فهرست کارت‌های تن‌خواه قابل خواندن نیست؛ مدیر ارشد باید تنظیمات را بررسی کند.');}
+  }
+  const normalize=name=>String(name||'').replace(/[يى]/g,'ی').replace(/ك/g,'ک').replace(/[()（）]/g,'').replace(/\\s+/g,'').trim().toLowerCase();
+  const managerName=normalize(user.name);
+  const cards=(Array.isArray(rules.pettyCashCards)?rules.pettyCashCards:[]).filter(card=>{
+    if(!card || card.active===false) return false;
+    if(card.managerId!==undefined && card.managerId!==null && String(card.managerId)!=='') return String(card.managerId)===String(user.id);
+    const owner=normalize(card.managerName);
+    return owner && managerName && (owner===managerName || owner.indexOf(managerName)===0 || managerName.indexOf(owner)===0);
+  });
+  return {success:true,cards:cards};
+}
 function bankRulesSave_(b){
   auth_(b,['senior','admin']);
   const rules=b.rules;
@@ -1840,7 +1860,7 @@ function syncPayload_(b){
     const bankData=(bank_(b)||{}).data||[];
     return {
       success:true,
-      backend_version:'2.24.4',
+      backend_version:'2.24.5',
       students:(students_(b)||{}).data||[],
       schools:(schools_(b)||{}).data||[],
       staff:(staff_(b)||{}).data||[],
