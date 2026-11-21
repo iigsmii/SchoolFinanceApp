@@ -114,19 +114,27 @@ export const ExpensesScreen: React.FC = () => {
   const [formSource, setFormSource] = useState<'petty_cash' | 'bank' | 'own'>('petty_cash');
   const [configuredPettyCards, setConfiguredPettyCards] = useState<any[]>([]);
   const [pettyCardsLoaded, setPettyCardsLoaded] = useState(false);
+  const [pettyCardsError, setPettyCardsError] = useState('');
   const [selectedPettyCard, setSelectedPettyCard] = useState('');
 
+  const reloadMyPettyCashCards = async () => {
+    setPettyCardsLoaded(false);
+    setPettyCardsError('');
+    try {
+      const res: any = await postToAppsScript({ action: 'my_petty_cash_cards' });
+      if (!res?.success || !Array.isArray(res.cards)) throw new Error(res?.error || 'سرور فهرست کارت‌های این مدیر را برنگرداند.');
+      setConfiguredPettyCards(res.cards.filter((card: any) => card && card.active !== false && String(card.active).toLowerCase() !== 'false'));
+    } catch (error: any) {
+      setPettyCardsError(error?.message || 'دریافت کارت تن‌خواه از سرور ناموفق بود.');
+      const legacy = String(currentUser?.petty_cash_card || '').replace(/\\D/g, '');
+      if (legacy.length === 16) setConfiguredPettyCards([{ card: legacy, managerId: String(currentUser?.id || ''), managerName: currentUser?.name || '', active: true, legacy: true }]);
+    } finally { setPettyCardsLoaded(true); }
+  };
+
   useEffect(() => {
-    let active = true;
-    void postToAppsScript({ action: 'my_petty_cash_cards' }).then((res: any) => {
-      if (!active) return;
-      if (res?.success && Array.isArray(res.cards)) {
-        setConfiguredPettyCards(res.cards.filter((card: any) => card && card.active !== false));
-      }
-      setPettyCardsLoaded(true);
-    }).catch(() => { if (active) setPettyCardsLoaded(true); });
-    return () => { active = false; };
-  }, []);
+    if (!currentUser?.id) return;
+    void reloadMyPettyCashCards();
+  }, [currentUser?.id, currentUser?.name, currentUser?.role]);
 
   const [formComment, setFormComment] = useState('');
   const [formSchoolId, setFormSchoolId] = useState<number>(
@@ -135,19 +143,29 @@ export const ExpensesScreen: React.FC = () => {
 
   // کارت‌ها از منبع مشترک تنظیمات بانکی خوانده می‌شوند؛ فیلد قدیمی مدیر فقط fallback است.
   const normalizeManager = (value: unknown) => String(value || '')
-    .replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[()（）]/g, '')
-    .replace(/\s+/g, '').trim();
+    .replace(/[يى]/g, 'ی').replace(/ك/g, 'ک')
+    .replace(/[\\u064B-\\u065F\\u0670]/g, '').replace(/[()（）ـ]/g, '')
+    .replace(/[\\s\\u200c\\u200f\\-_.،,:;]+/g, '').trim().toLowerCase();
   const cardsForManager = (manager: any): string[] => {
     if (!manager) return [];
     const aliases = [manager.name, manager.username].map(normalizeManager).filter(Boolean);
     return configuredPettyCards
       .filter((card) => {
-        const idMatch = card.managerId !== undefined && card.managerId !== null && String(card.managerId) !== '' && String(card.managerId) === String(manager.id);
-        const owner = normalizeManager(card.managerName);
-        const nameMatch = owner && normalizeManager(manager.name) && owner === normalizeManager(manager.name);
-        return idMatch || nameMatch;
+        const cardManagerId = card.managerId ?? card.manager_id ?? '';
+        const idMatch = String(cardManagerId) !== '' && String(cardManagerId) === String(manager.id);
+        const owner = normalizeManager(card.managerName ?? card.manager_name);
+        const managerName = normalizeManager(manager.name);
+        const managerUsername = normalizeManager(manager.username);
+        const nameMatch = owner && managerName && (
+          owner === managerName || owner.startsWith(managerName) || owner.endsWith(managerName) ||
+          managerName.startsWith(owner) || managerName.endsWith(owner)
+        );
+        const usernameMatch = owner && managerUsername && (
+          owner === managerUsername || owner.startsWith(managerUsername) || owner.endsWith(managerUsername)
+        );
+        return idMatch || nameMatch || usernameMatch;
       })
-      .map((card) => String(card.card || '').replace(/\D/g, ''))
+      .map((card) => String(card.card ?? card.card_number ?? '').replace(/\\D/g, ''))
       .filter((card: string) => card.length === 16);
   };
   const pettyCardsFor = (schoolId: number | string): string[] => {
@@ -982,7 +1000,8 @@ export const ExpensesScreen: React.FC = () => {
                       </div>
                     ) : (
                       <div className="mt-1.5 p-2 bg-amber-50 rounded-lg border border-amber-300 text-[11px] font-bold text-amber-800">
-                        {!pettyCardsLoaded ? 'در حال دریافت کارت‌های تن‌خواه...' : 'برای این مدیر کارت تن‌خواه ثبت نشده است.'}
+                        {!pettyCardsLoaded ? 'در حال دریافت کارت‌های تن‌خواه...' : pettyCardsError ? ('خطا در دریافت کارت‌ها: ' + pettyCardsError) : 'برای این مدیر کارت تن‌خواه ثبت نشده است.'}
+                        {pettyCardsLoaded && pettyCardsError && <button type="button" onClick={() => void reloadMyPettyCashCards()} className="mr-2 underline">تلاش مجدد</button>}
                       </div>
                     ))}
                   {formSource === 'own' && (
