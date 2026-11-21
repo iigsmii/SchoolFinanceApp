@@ -89,18 +89,26 @@ export const ManagersScreen: React.FC = () => {
     const account = bankAccounts.find((a) => Number(a.id) === Number(cardDialog.accountId));
     if (number.length !== 16) { setCardDialogError('شماره کارت باید دقیقاً ۱۶ رقم باشد.'); return; }
     if (!account) { setCardDialogError('حساب بانکی را از فهرست حساب‌های تعریف‌شده انتخاب کنید.'); return; }
-    if (pettyCashCards.some((item) => normalizeCard(item.card) === number && normalizeCard(item.card) !== cardDialog.original)) {
-      setCardDialogError('این شماره کارت قبلاً ثبت شده است.');
-      return;
-    }
     const m = cardDialog.manager;
+    // کارتی که قبلاً در قوانین ثبت شده (مثلاً بدون اتصال به حساب) فقط به همین مدیر وصل می‌شود؛
+    // فقط اگر صراحتاً برای مدیر دیگری ثبت شده باشد خطا می‌دهیم.
+    const existing = pettyCashCards.find((item) => normalizeCard(item.card) === number && normalizeCard(item.card) !== cardDialog.original);
+    if (existing && cardDialog.original) { setCardDialogError('این شماره کارت قبلاً ثبت شده است.'); return; }
+    if (existing) {
+      const ownerId = existing.managerId !== undefined && existing.managerId !== null ? String(existing.managerId) : '';
+      if (ownerId && ownerId !== String(m.id) && !managerCards(m).includes(existing)) {
+        setCardDialogError(`این شماره کارت قبلاً برای «${existing.managerName || 'مدیر دیگر'}» ثبت شده است؛ ابتدا از همان مدیر حذفش کنید.`);
+        return;
+      }
+    }
+    const original = cardDialog.original || (existing ? normalizeCard(existing.card) : '');
     const entry = {
       card: number, managerId: String(m.id), managerName: m.name,
       schoolId: Number(m.school_id || 0), bankAccountId: Number(account.id),
       accountSuffix: normalizeCard(account.account_number).slice(-3), active: true,
     };
-    const next = cardDialog.original
-      ? pettyCashCards.map((item) => (normalizeCard(item.card) === cardDialog.original ? { ...item, ...entry } : item))
+    const next = original
+      ? pettyCashCards.map((item) => (normalizeCard(item.card) === original ? { ...item, ...entry } : item))
       : [...pettyCashCards, entry];
     if (await saveManagerCards(next)) setCardDialog(null);
     else setCardDialogError('ذخیره انجام نشد؛ پیام خطا بالای صفحه نمایش داده شده است.');
