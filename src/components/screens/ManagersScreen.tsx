@@ -160,7 +160,11 @@ export const ManagersScreen: React.FC = () => {
                   <span>مدرسه: {m.school_name || 'همه مدارس (مرکزی)'}</span>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {pettyCashCards.filter((card) => String(card.managerName || '').trim() === String(m.name || '').trim()).map((card) => {
+                  {pettyCashCards.filter((card) => {
+                    const owner = String(m.name || '').replace(/\s+/g, '');
+                    const cardOwner = String(card.managerName || '').replace(/\s+/g, '');
+                    return owner && (cardOwner === owner || cardOwner.startsWith(owner));
+                  }).map((card) => {
                     const linkedAccount = bankAccounts.find((account) => Number(account.id) === Number(card.bankAccountId)) || bankAccounts.find((account) => {
                       const suffix = String(card.accountSuffix || '').replace(/\D/g, '');
                       return suffix && String(account.account_number || '').replace(/\D/g, '').endsWith(suffix);
@@ -169,7 +173,11 @@ export const ManagersScreen: React.FC = () => {
                       کارت <b className="font-mono" dir="ltr">{card.card}</b> · متصل به: <b>{linkedAccount?.name || 'حساب بانکی تعیین نشده'}</b>
                     </span>;
                   })}
-                  {!pettyCashCards.some((card) => String(card.managerName || '').trim() === String(m.name || '').trim()) && m.petty_cash_card && (
+                  {!pettyCashCards.some((card) => {
+                    const owner = String(m.name || '').replace(/\s+/g, '');
+                    const cardOwner = String(card.managerName || '').replace(/\s+/g, '');
+                    return owner && (cardOwner === owner || cardOwner.startsWith(owner));
+                  }) && m.petty_cash_card && (
                     <span className="rounded-lg bg-blue-50 border border-blue-100 px-2.5 py-1.5 text-[11px] text-blue-900">کارت {m.petty_cash_card} · حساب {m.petty_cash_bank || 'تعیین نشده'}</span>
                   )}
                 </div>
