@@ -126,7 +126,7 @@ export const ExpensesScreen: React.FC = () => {
       setConfiguredPettyCards(res.cards.filter((card: any) => card && card.active !== false && String(card.active).toLowerCase() !== 'false'));
     } catch (error: any) {
       setPettyCardsError(error?.message || 'دریافت کارت تن‌خواه از سرور ناموفق بود.');
-      const legacy = String(currentUser?.petty_cash_card || '').replace(/\\D/g, '');
+      const legacy = String(currentUser?.petty_cash_card || '').replace(/\D/g, '');
       if (legacy.length === 16) setConfiguredPettyCards([{ card: legacy, managerId: String(currentUser?.id || ''), managerName: currentUser?.name || '', active: true, legacy: true }]);
     } finally { setPettyCardsLoaded(true); }
   };
@@ -144,8 +144,8 @@ export const ExpensesScreen: React.FC = () => {
   // کارت‌ها از منبع مشترک تنظیمات بانکی خوانده می‌شوند؛ فیلد قدیمی مدیر فقط fallback است.
   const normalizeManager = (value: unknown) => String(value || '')
     .replace(/[يى]/g, 'ی').replace(/ك/g, 'ک')
-    .replace(/[\\u064B-\\u065F\\u0670]/g, '').replace(/[()（）ـ]/g, '')
-    .replace(/[\\s\\u200c\\u200f\\-_.،,:;]+/g, '').trim().toLowerCase();
+    .replace(/[\u064B-\u065F\u0670]/g, '').replace(/[()（）ـ]/g, '')
+    .replace(/[\s\u200c\u200f\-_.،,:;]+/g, '').trim().toLowerCase();
   const cardsForManager = (manager: any): string[] => {
     if (!manager) return [];
     const aliases = [manager.name, manager.username].map(normalizeManager).filter(Boolean);
@@ -165,7 +165,7 @@ export const ExpensesScreen: React.FC = () => {
         );
         return idMatch || nameMatch || usernameMatch;
       })
-      .map((card) => String(card.card ?? card.card_number ?? '').replace(/\\D/g, ''))
+      .map((card) => String(card.card ?? card.card_number ?? '').replace(/\D/g, ''))
       .filter((card: string) => card.length === 16);
   };
   const pettyCardsFor = (schoolId: number | string): string[] => {
