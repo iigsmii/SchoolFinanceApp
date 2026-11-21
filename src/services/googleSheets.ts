@@ -840,12 +840,13 @@ export const loadDataFromAppsScript = async (
     for (let attempt = 0; attempt < 2; attempt++) {
       const startedAt = Date.now();
       try {
+        const partTimeoutMs = part.key === 'transactions' ? 90000 : 60000;
         const r = await requestJson(cleanUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({ action: part.action, token: authToken, owner: OWNER_EMAIL }),
           mode: 'cors',
-        }, 45000);
+        }, partTimeoutMs);
         const json = r.data;
         if (r.ok && json && json.success !== false && Array.isArray(json.data)) {
           out.data = json.data;
@@ -872,10 +873,12 @@ export const loadDataFromAppsScript = async (
   // so run a few parts at a time: the important ones first, the big bank table last.
   const queue = PARTS.filter((p) => !p.seniorOnly || isSeniorRole).sort((a, b) => Number(!!b.core) - Number(!!a.core) || Number(a.key === 'bank') - Number(b.key === 'bank'));
   const outcomes: PartOutcome[] = [];
+  // Keep Apps Script concurrency modest; the transaction reader has a larger budget
+  // because it enriches each ledger row with student/expense metadata.
   const worker = async () => {
     for (let part = queue.shift(); part; part = queue.shift()) outcomes.push(await fetchPart(part));
   };
-  await Promise.all(Array.from({ length: 5 }, worker));
+  await Promise.all(Array.from({ length: 3 }, worker));
   const authFail = outcomes.find((o) => o.auth);
   if (authFail) return failResult(authFail.auth!, 'auth');
 
