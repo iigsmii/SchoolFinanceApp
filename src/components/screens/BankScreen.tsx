@@ -113,10 +113,10 @@ export const BankScreen: React.FC = () => {
   const [selectedSchoolId, setSelectedSchoolId] = useState<number>(
     isSenior ? 0 : currentUser?.school_id || 0
   );
-  const [selectedBankAccountId, setSelectedBankAccountId] = useState<number>(() => bankAccounts[0]?.id || 0);
-  const selectedBankAccount = bankAccounts.find((account) => Number(account.id) === Number(selectedBankAccountId)) || bankAccounts[0] || null;
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState<number>(() => bankAccounts[0]?.id || -1);
+  const selectedBankAccount = selectedBankAccountId > 0 ? bankAccounts.find((account) => Number(account.id) === Number(selectedBankAccountId)) || null : null;
   useEffect(() => {
-    if (!selectedBankAccountId && bankAccounts.length) setSelectedBankAccountId(bankAccounts[0].id);
+    if (selectedBankAccountId === -1 && bankAccounts.length) setSelectedBankAccountId(bankAccounts[0].id);
   }, [bankAccounts, selectedBankAccountId]);
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -1329,7 +1329,8 @@ export const BankScreen: React.FC = () => {
             {/* Independent bank account selector */}
             {isSenior && (
               <select value={selectedBankAccountId} onChange={(e) => setSelectedBankAccountId(Number(e.target.value))} className="text-xs py-2 px-3 rounded-xl bg-purple-50 border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400 font-bold">
-                {!bankAccounts.length && <option value={0}>ابتدا حساب بانکی تعریف کنید</option>}
+                {selectedBankAccountId === -1 && <option value={-1}>ابتدا حساب بانکی تعریف کنید</option>}
+                <option value={0}>همه حساب‌ها (نمایش یکجا)</option>
                 {bankAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} — {account.bank_name}</option>)}
               </select>
             )}
