@@ -1258,14 +1258,40 @@ function financeTransactionAdd_(b) {
 function transactions_(b) {
   const u=auth_(b);
   let data=rows_('Transactions').map(x=>x.obj);
-  if(u.role!=='senior') data=data.filter(x=>userCanAccessSchool_(u,x.school_id));
-  if(b.student_id) data=data.filter(x=>{if(x.kind!=='payment'&&x.kind!=='debt')return false;const hit=findRow_('Tuition',x.source_id); return String(hit&&hit.obj.student_id)===String(b.student_id); });
+  if(u.role!=='senior' && u.role!=='admin') data=data.filter(x=>userCanAccessSchool_(u,x.school_id));
+  const students=rows_('Students').map(x=>x.obj);
+  const tuition=rows_('Tuition').map(x=>x.obj);
+  const expenses=rows_('Expenses').map(x=>x.obj);
+  const schools=rows_('Schools').map(x=>x.obj);
+  // Build lookup maps once. Calling schoolName_/findRow_ inside the row loop caused
+  // repeated Google Sheets reads and made the transaction endpoint exceed 45 seconds.
+  const studentById=new Map(students.map(x=>[String(x.id),x]));
+  const tuitionById=new Map(tuition.map(x=>[String(x.id),x]));
+  const expenseById=new Map(expenses.map(x=>[String(x.id),x]));
+  const schoolNameById=new Map(schools.map(x=>[String(x.id),String(x.name||x.id)]));
+  if(b.student_id) data=data.filter(x=>{
+    if(x.kind!=='payment'&&x.kind!=='debt') return false;
+    const q=tuitionById.get(String(x.source_id));
+    return String(q&&q.student_id)===String(b.student_id);
+  });
   if(b.kind_query) data=data.filter(x=>b.kind_query==='هزینه' ? String(x.kind)==='expense' : (b.kind_query==='شهریه' ? String(x.kind)==='payment' : String(x.kind)===b.kind_query));
-  const students=rows_('Students').map(x=>x.obj); const tuition=rows_('Tuition').map(x=>x.obj); const expenses=rows_('Expenses').map(x=>x.obj);
   data=data.map(t=>{
-    const out=Object.assign({},t); out.school_name=schoolName_(t.school_id); out.attachment_url=t.image_url||'';
-    if(String(t.kind)==='payment'||String(t.kind)==='debt') { const q=tuition.find(x=>String(x.id)===String(t.source_id)); if(q){out.student_id=q.student_id; out.payment_method=q.payment_source||t.payment_source||''; const st=students.find(x=>String(x.id)===String(q.student_id)); if(st){out.student_name=st.name;out.student_grade=st.grade;}} }
-    if(String(t.kind)==='expense') { const e=expenses.find(x=>String(x.id)===String(t.source_id)); if(e){out.expense_category_name=e.category; out.payment_source=e.payment_source||t.payment_source||'bank';} } else out.payment_source=t.payment_source||'';
+    const out=Object.assign({},t);
+    out.school_name=schoolNameById.get(String(t.school_id))||String(t.school_id||'');
+    out.attachment_url=t.image_url||'';
+    if(String(t.kind)==='payment'||String(t.kind)==='debt') {
+      const q=tuitionById.get(String(t.source_id));
+      if(q){
+        out.student_id=q.student_id;
+        out.payment_method=q.payment_source||t.payment_source||'';
+        const st=studentById.get(String(q.student_id));
+        if(st){out.student_name=st.name;out.student_grade=st.grade;}
+      }
+    }
+    if(String(t.kind)==='expense') {
+      const e=expenseById.get(String(t.source_id));
+      if(e){out.expense_category_name=e.category;out.payment_source=e.payment_source||t.payment_source||'bank';}
+    } else out.payment_source=t.payment_source||'';
     return out;
   });
   return {success:true,data:data};
@@ -1593,14 +1619,22 @@ function myPettyCashCards_(b){
       rules=Object.assign({},rules,saved,{pettyCashCards:Array.isArray(saved.pettyCashCards)?saved.pettyCashCards:rules.pettyCashCards});
     }catch(e){throw new Error('فهرست کارت‌های تن‌خواه قابل خواندن نیست؛ مدیر ارشد باید تنظیمات را بررسی کند.');}
   }
-  const normalize=name=>String(name||'').replace(/[يى]/g,'ی').replace(/ك/g,'ک').replace(/[()（）]/g,'').replace(/\\s+/g,'').trim().toLowerCase();
+  const normalize=name=>String(name||'').replace(/[يى]/g,'ی').replace(/ك/g,'ک').replace(/[()（）]/g,'').replace(/\s+/g,'').trim().toLowerCase();
   const managerName=normalize(user.name);
   const cards=(Array.isArray(rules.pettyCashCards)?rules.pettyCashCards:[]).filter(card=>{
     if(!card || card.active===false) return false;
-    if(card.managerId!==undefined && card.managerId!==null && String(card.managerId)!=='') return String(card.managerId)===String(user.id);
     const owner=normalize(card.managerName);
-    return owner && managerName && (owner===managerName || owner.indexOf(managerName)===0 || managerName.indexOf(owner)===0);
+    const idMatch=card.managerId!==undefined && card.managerId!==null && String(card.managerId)!=='' && String(card.managerId)===String(user.id);
+    const nameMatch=owner && managerName && owner===managerName;
+    return idMatch || nameMatch;
   });
+  // Backward compatibility: older installations may still have the card only in the
+  // manager row, not in bank_reconciliation_rules.
+  const managerRow=findRow_('Managers',user.id);
+  const legacyCard=digits_(managerRow&&managerRow.obj.petty_cash_card||'');
+  if(legacyCard.length===16 && !cards.some(card=>digits_(card.card||'')===legacyCard)){
+    cards.push({card:legacyCard,managerId:String(user.id),managerName:String(user.name||''),schoolId:Number(user.school_id||0),active:true,legacy:true});
+  }
   return {success:true,cards:cards};
 }
 function bankRulesSave_(b){
