@@ -69,16 +69,16 @@ export const DEFAULT_POS_TERMINALS = [
 
 // Standard 10 Bank Saderat Petty Cash Cards
 export const DEFAULT_SADERAT_CARDS = [
-  { card: '6037691263260770', managerName: 'محمدرضا آقاسی', schoolId: 1, accountSuffix: '002', active: true },
-  { card: '6037691263260788', managerName: 'محمد عربی', schoolId: 2, accountSuffix: '002', active: true },
-  { card: '6037691263260796', managerName: 'آرزو میرزایی', schoolId: 3, accountSuffix: '002', active: true },
-  { card: '6037691263260804', managerName: 'فریبا سبزواری', schoolId: 4, accountSuffix: '002', active: true },
-  { card: '6037691263357071', managerName: 'علی هاشمیان (تنخواه و حسابداری مرکزی)', schoolId: 1, accountSuffix: '002', active: true },
-  { card: '6037691990633877', managerName: 'کارت متصل به حساب ۰۰۲', schoolId: 0, accountSuffix: '002', active: true },
-  { card: '6037691261822589', managerName: 'مجید آقابزرگی (تنخواه مرکزی)', schoolId: 1, accountSuffix: '001', active: true },
-  { card: '6037691263357089', managerName: 'سید محمدرضا گلزاری', schoolId: 1, accountSuffix: '001', active: true },
-  { card: '6037691263357097', managerName: 'مجید آقابزرگی', schoolId: 1, accountSuffix: '001', active: true },
-  { card: '6037697090013308', managerName: 'کارت متصل به حساب ۰۰۱', schoolId: 0, accountSuffix: '001', active: true },
+  { card: '6037691263260770', managerName: 'محمدرضا آقاسی', schoolId: 1, accountSuffix: '002', bankAccountId: 0, active: true },
+  { card: '6037691263260788', managerName: 'محمد عربی', schoolId: 2, accountSuffix: '002', bankAccountId: 0, active: true },
+  { card: '6037691263260796', managerName: 'آرزو میرزایی', schoolId: 3, accountSuffix: '002', bankAccountId: 0, active: true },
+  { card: '6037691263260804', managerName: 'فریبا سبزواری', schoolId: 4, accountSuffix: '002', bankAccountId: 0, active: true },
+  { card: '6037691263357071', managerName: 'علی هاشمیان (تنخواه و حسابداری مرکزی)', schoolId: 1, accountSuffix: '002', bankAccountId: 0, active: true },
+  { card: '6037691990633877', managerName: 'کارت متصل به حساب ۰۰۲', schoolId: 0, accountSuffix: '002', bankAccountId: 0, active: true },
+  { card: '6037691261822589', managerName: 'مجید آقابزرگی (تنخواه مرکزی)', schoolId: 1, accountSuffix: '001', bankAccountId: 0, active: true },
+  { card: '6037691263357089', managerName: 'سید محمدرضا گلزاری', schoolId: 1, accountSuffix: '001', bankAccountId: 0, active: true },
+  { card: '6037691263357097', managerName: 'مجید آقابزرگی', schoolId: 1, accountSuffix: '001', bankAccountId: 0, active: true },
+  { card: '6037697090013308', managerName: 'کارت متصل به حساب ۰۰۱', schoolId: 0, accountSuffix: '001', bankAccountId: 0, active: true },
 ];
 
 export const BankScreen: React.FC = () => {
@@ -86,6 +86,7 @@ export const BankScreen: React.FC = () => {
     transactions,
     students,
     bankTransactions,
+    bankAccounts,
     schools,
     users,
     currentUser,
@@ -112,6 +113,11 @@ export const BankScreen: React.FC = () => {
   const [selectedSchoolId, setSelectedSchoolId] = useState<number>(
     isSenior ? 0 : currentUser?.school_id || 0
   );
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState<number>(() => bankAccounts[0]?.id || 0);
+  const selectedBankAccount = bankAccounts.find((account) => Number(account.id) === Number(selectedBankAccountId)) || bankAccounts[0] || null;
+  useEffect(() => {
+    if (!selectedBankAccountId && bankAccounts.length) setSelectedBankAccountId(bankAccounts[0].id);
+  }, [bankAccounts, selectedBankAccountId]);
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const [streamFilter, setStreamFilter] = useState<'all' | 'pos' | 'petty' | 'fees' | 'other'>('all');
@@ -170,6 +176,7 @@ export const BankScreen: React.FC = () => {
           card: String(c.card || ''),
           managerName: String(c.managerName || ''),
           accountSuffix: String(c.accountSuffix || ''),
+          bankAccountId: Number(c.bankAccountId || 0),
           schoolId: Number(c.schoolId || 0),
           active: c.active !== false
         })) : null;
@@ -209,7 +216,7 @@ export const BankScreen: React.FC = () => {
       rules: {
         version: 1,
         posTerminals: newTerminals.map((p) => ({ terminal: normalizeTerminal(p.terminal), schoolId: Number(p.schoolId || 0), schoolName: p.schoolName || schools.find((sc) => sc.id === Number(p.schoolId || 0))?.name || '' })),
-        pettyCashCards: newCards.map((c) => ({ card: normalizeCard(c.card), managerName: c.managerName, accountSuffix: String(c.accountSuffix || ''), schoolId: Number(c.schoolId || 0), active: c.active !== false })),
+        pettyCashCards: newCards.map((c) => ({ card: normalizeCard(c.card), managerName: c.managerName, accountSuffix: String(c.accountSuffix || ''), bankAccountId: Number(c.bankAccountId || 0), schoolId: Number(c.schoolId || 0), active: c.active !== false })),
       }
     }).then((res) => {
       if (res?.success) {
@@ -299,10 +306,9 @@ export const BankScreen: React.FC = () => {
       return 'pos';
     }
 
-    const cardNum = normalizeCard(row.source_card_number || row.card_number || row.destination_card_number);
-    if (cardNum && pettyCashCards.some((c) => normalizeCard(c.card) === cardNum)) {
-      return 'petty';
-    }
+    const cardNum = row.direction === 'withdrawal' ? normalizeCard(row.source_card_number || row.card_number) : '';
+    const matchedPettyCard = cardNum ? pettyCashCards.find((c) => normalizeCard(c.card) === cardNum && (!Number(c.bankAccountId) || !selectedBankAccount || Number(c.bankAccountId) === Number(selectedBankAccount.id))) : undefined;
+    if (matchedPettyCard) return 'petty';
 
     return 'other';
   };
@@ -326,9 +332,9 @@ export const BankScreen: React.FC = () => {
       }
 
       // Infer manager & school from petty card
-      const cardNum = normalizeCard(row.source_card_number || row.card_number || row.destination_card_number);
+      const cardNum = row.direction === 'withdrawal' ? normalizeCard(row.source_card_number || row.card_number) : '';
       if (cardNum) {
-        const foundCard = pettyCashCards.find((c) => normalizeCard(c.card) === cardNum);
+        const foundCard = pettyCashCards.find((c) => normalizeCard(c.card) === cardNum && (!Number(c.bankAccountId) || !selectedBankAccount || Number(c.bankAccountId) === Number(selectedBankAccount.id)));
         if (foundCard) {
           matchedManagerName = foundCard.managerName;
           if (foundCard.schoolId && !matchedSchoolId) {
@@ -346,7 +352,7 @@ export const BankScreen: React.FC = () => {
         matchedManagerName,
       };
     });
-  }, [bankTransactions, effectivePosTerminals, pettyCashCards, schools]);
+  }, [bankTransactions, effectivePosTerminals, pettyCashCards, schools, selectedBankAccountId, bankAccounts]);
 
   // Role-based visibility filter
   const visibleBankRows = useMemo(() => {
@@ -358,6 +364,16 @@ export const BankScreen: React.FC = () => {
         const matchesSchool = b.matchedSchoolId === currentUser.school_id;
         const matchesCard = Boolean(userCard && rowCard && userCard === rowCard);
         if (!matchesSchool && !matchesCard) return false;
+      }
+
+      // Bank-account scope: each account has an independent reconciliation view.
+      if (selectedBankAccount) {
+        const rowAccount = String(b.bank_account || '').trim();
+        const accountNumber = String(selectedBankAccount.account_number || '').trim();
+        const accountSuffix = accountNumber.replace(/\D/g, '').slice(-3);
+        const rowSuffix = String(b.account_suffix || '').replace(/\D/g, '');
+        const belongsToAccount = rowAccount === accountNumber || rowAccount === String(selectedBankAccount.id) || rowAccount === String(selectedBankAccount.name || '') || (!!accountSuffix && rowSuffix === accountSuffix);
+        if (!belongsToAccount) return false;
       }
 
       // School filter dropdown
@@ -411,7 +427,7 @@ export const BankScreen: React.FC = () => {
 
       return true;
     });
-  }, [enrichedBankRows, isSenior, currentUser, selectedSchoolId, streamFilter, statusFilter, dateFilter, deferredSearchQuery]);
+  }, [enrichedBankRows, isSenior, currentUser, selectedSchoolId, selectedBankAccountId, selectedBankAccount, streamFilter, statusFilter, dateFilter, deferredSearchQuery]);
 
   // Subsets
   const unmatchedRows = useMemo(() => visibleBankRows.filter((r) => !r.reconciled), [visibleBankRows]);
@@ -803,6 +819,7 @@ export const BankScreen: React.FC = () => {
 
   // EXCEL DAILY FILE UPLOAD HANDLER
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedBankAccount) { alert('ابتدا حساب بانکی موردنظر را از فهرست حساب‌ها انتخاب کنید.'); e.target.value = ''; return; }
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -901,7 +918,8 @@ export const BankScreen: React.FC = () => {
           const tracking = String(findVal(['شمارهپیگیری', 'کدپیگیری', 'پیگیری', 'سند', 'tracking', 'trace']) || '').trim();
           const ref = String(findVal(['شمارهارجاع', 'کدارجاع', 'شمارهمرجع', 'rrn', 'ref']) || '').trim();
           const terminal = normalizeTerminal(findVal(['پایانه', 'ترمینال', 'terminal']));
-          const card = normalizeCard(findVal(['کارت', 'کارتخرید', 'card']));
+          const sourceCard = normalizeCard(findVal(['شمارهکارتبرداشت', 'کارتبرداشت', 'کارت مبدا', 'کارت مبدأ', 'sourcecard', 'شمارهکارت', 'کارت']));
+          const card = sourceCard || normalizeCard(findVal(['کارت', 'کارتخرید', 'card']));
           const desc = String(findVal(['شرح', 'توضیحات', 'بابت', 'desc']) || '').trim();
           const feeAmt = toAmount(findVal(['کارمزد', 'fee']));
 
@@ -931,7 +949,9 @@ export const BankScreen: React.FC = () => {
             reference_number: ref,
             terminal_number: terminal,
             card_number: card,
-            bank_account: isPos ? `پوز شاپرک ${terminal}` : 'بانک صادرات',
+            source_card_number: direction === 'withdrawal' ? (sourceCard || card) : undefined,
+            account_suffix: String(selectedBankAccount.account_number || '').replace(/\D/g, '').slice(-3),
+            bank_account: String(selectedBankAccount.account_number || selectedBankAccount.name),
             description: desc || (isPos ? `واریز پایانه پوز ${terminal}` : direction === 'withdrawal' ? 'برداشت بانکی' : 'واریزی بانکی'),
             direction,
             fee_amount: feeAmt || undefined,
@@ -1047,7 +1067,7 @@ export const BankScreen: React.FC = () => {
             <div className="space-y-2 max-w-2xl">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-amber-300 text-xs font-bold">
                 <Landmark className="w-3.5 h-3.5" />
-                <span>حساب‌های جاری و تن‌خواه بانک صادرات ایران · پایانه‌های پوز ۷ شعبه</span>
+                <span>تطبیق مستقل حساب: {selectedBankAccount?.name || 'حساب انتخاب‌نشده'} · کارت‌های تن‌خواه و پایانه‌های پوز</span>
               </div>
               <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
                 سامانه هوشمند پایش و تطبیق صورتحساب‌های بانکی
@@ -1305,6 +1325,14 @@ export const BankScreen: React.FC = () => {
               className="min-w-[220px] flex-1 max-w-md"
               buttonLabel="جستجو"
             />
+
+            {/* Independent bank account selector */}
+            {isSenior && (
+              <select value={selectedBankAccountId} onChange={(e) => setSelectedBankAccountId(Number(e.target.value))} className="text-xs py-2 px-3 rounded-xl bg-purple-50 border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400 font-bold">
+                {!bankAccounts.length && <option value={0}>ابتدا حساب بانکی تعریف کنید</option>}
+                {bankAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} — {account.bank_name}</option>)}
+              </select>
+            )}
 
             {/* School Selector (for Senior) */}
             {isSenior && (
@@ -1974,9 +2002,9 @@ export const BankScreen: React.FC = () => {
               <div className="flex items-center justify-between border-b border-gray-100 pb-3">
                 <div className="flex items-center gap-2">
                   <CreditCard className="w-5 h-5 text-blue-700" />
-                  <h3 className="font-black text-gray-900 text-base">کارت‌های تن‌خواه بانک صادرات ایران ({pettyCashCards.length} کارت)</h3>
+                  <h3 className="font-black text-gray-900 text-base">کارت‌های تن‌خواه مدیران ({pettyCashCards.length} کارت)</h3>
                 </div>
-                <button type="button" onClick={() => { const v = window.prompt('شماره کارت تن‌خواه جدید (۱۶ رقم):'); if (v === null) return; const card = normalizeCard(v); if (card.length !== 16) { setBannerNotice({text:'شماره کارت باید ۱۶ رقم باشد.',type:'error'}); return; } if (pettyCashCards.some((x) => normalizeCard(x.card) === card)) { setBannerNotice({text:'این شماره کارت قبلاً ثبت شده است.',type:'error'}); return; } const managerName = window.prompt('نام مدیر / دارنده کارت:'); if (managerName === null || !managerName.trim()) return; const accountSuffix = window.prompt('سه رقم انتهایی حساب (۰۰۱ یا ۰۰۲):','002'); if (accountSuffix === null) return; saveTerminalsAndCards(posTerminals, [...pettyCashCards, {card, managerName:managerName.trim(), schoolId:0, accountSuffix:accountSuffix.trim(), active:true}]); }} className="px-3 py-2 rounded-xl bg-blue-700 text-white text-xs font-bold">+ افزودن کارت</button>
+                <button type="button" onClick={() => { const v = window.prompt('شماره کارت تن‌خواه جدید (۱۶ رقم):'); if (v === null) return; const card = normalizeCard(v); if (card.length !== 16) { setBannerNotice({text:'شماره کارت باید ۱۶ رقم باشد.',type:'error'}); return; } if (pettyCashCards.some((x) => normalizeCard(x.card) === card)) { setBannerNotice({text:'این شماره کارت قبلاً ثبت شده است.',type:'error'}); return; } const managerName = window.prompt('نام مدیر / دارنده کارت:'); if (managerName === null || !managerName.trim()) return; const accountSuffix = window.prompt('سه رقم انتهایی حساب (۰۰۱ یا ۰۰۲):','002'); if (accountSuffix === null) return; saveTerminalsAndCards(posTerminals, [...pettyCashCards, {card, managerName:managerName.trim(), schoolId:0, accountSuffix:accountSuffix.trim(), bankAccountId:0, active:true}]); }} className="px-3 py-2 rounded-xl bg-blue-700 text-white text-xs font-bold">+ افزودن کارت</button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -2002,7 +2030,7 @@ export const BankScreen: React.FC = () => {
                       if (accountSuffix === null) return;
                       if (!['001', '002', '۰۰۱', '۰۰۲'].includes(accountSuffix.trim())) { setBannerNotice({text:'حساب باید ۰۰۱ یا ۰۰۲ باشد.',type:'error'}); return; }
                       const normalizedSuffix = accountSuffix.trim().replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
-                      saveTerminalsAndCards(posTerminals, [...pettyCashCards, { card, managerName: group.managerName, schoolId: first?.schoolId || 0, accountSuffix: normalizedSuffix, active: true }]);
+                      saveTerminalsAndCards(posTerminals, [...pettyCashCards, { card, managerName: group.managerName, schoolId: first?.schoolId || 0, accountSuffix: normalizedSuffix, bankAccountId: Number(first?.bankAccountId || 0), active: true }]);
                     }} className="w-full px-3 py-2 rounded-lg bg-blue-700 text-white text-xs font-bold">+ افزودن کارت برای این مدیر</button>
                     <div className="space-y-2">
                       {group.cards.map((card) => (
@@ -2011,6 +2039,17 @@ export const BankScreen: React.FC = () => {
                             <span className="font-mono font-black text-blue-900 text-xs tracking-wider" dir="ltr">{card.card.replace(/(\d{4})/g, '$1-').slice(0, 19)}</span>
                             <span className="shrink-0 px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-bold">حساب {card.accountSuffix}</span>
                           </div>
+                          <label className="block space-y-1 text-[11px] font-bold text-gray-600">
+                            <span>حساب بانکی متصل به این کارت</span>
+                            <select value={Number(card.bankAccountId || 0)} onChange={(e) => {
+                              const accountId = Number(e.target.value) || 0;
+                              const account = bankAccounts.find((item) => Number(item.id) === accountId);
+                              saveTerminalsAndCards(posTerminals, pettyCashCards.map((item) => item.card === card.card ? { ...item, bankAccountId: accountId, accountSuffix: account ? String(account.account_number || '').replace(/\D/g, '').slice(-3) : item.accountSuffix } : item));
+                            }} className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs">
+                              <option value={0}>بدون اتصال به حساب</option>
+                              {bankAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} — {account.bank_name} ({String(account.account_number || '').slice(-4)})</option>)}
+                            </select>
+                          </label>
                           <div className="flex gap-2">
                             <button type="button" onClick={() => {
                               const v = window.prompt('شماره کارت ۱۶ رقمی:', card.card);
