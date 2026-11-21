@@ -1620,8 +1620,8 @@ function myPettyCashCards_(b){
     }catch(e){throw new Error('فهرست کارت‌های تن‌خواه قابل خواندن نیست؛ مدیر ارشد باید تنظیمات را بررسی کند.');}
   }
   const normalize=name=>String(name||'').replace(/[يى]/g,'ی').replace(/ك/g,'ک')
-    .replace(/[\\u064B-\\u065F\\u0670]/g,'').replace(/[()（）ـ]/g,'')
-    .replace(/[\\s\\u200c\\u200f\\-_.،,:;]+/g,'').trim().toLowerCase();
+    .replace(/[\u064B-\u065F\u0670]/g,'').replace(/[()（）ـ]/g,'')
+    .replace(/[\s\u200c\u200f\-_.،,:;]+/g,'').trim().toLowerCase();
   const managerName=normalize(user.name), managerUsername=normalize(user.username);
   const managerSchoolIds=String(user.school_id||'').split(/[;,،；]/).map(v=>Number(v.trim())).filter(v=>Number.isFinite(v)&&v>0);
   const managerRows=rows_('Managers').filter(row=>{
