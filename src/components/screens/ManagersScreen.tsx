@@ -1,13 +1,22 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import SchoolSelect from '../SchoolSelect';
 import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { User } from '../../types';
+import { postToAppsScript } from '../../services/googleSheets';
 import { UserPlus, UserCog, Edit2, Trash2, X, Check, School } from 'lucide-react';
 
 export const ManagersScreen: React.FC = () => {
-  const { users, schools, addManager, updateManager, deleteManager, accentColor } = useApp();
+  const { users, schools, bankAccounts, addManager, updateManager, deleteManager, accentColor } = useApp();
+  const [pettyCashCards, setPettyCashCards] = useState<any[]>([]);
+  useEffect(() => {
+    let active = true;
+    void postToAppsScript({ action: 'bank_rules_get' }).then((res: any) => {
+      if (active && res?.success && Array.isArray(res.rules?.pettyCashCards)) setPettyCashCards(res.rules.pettyCashCards);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   useBackClose(isModalOpen, () => setIsModalOpen(false));
@@ -149,6 +158,20 @@ export const ManagersScreen: React.FC = () => {
                 <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-x-4">
                   <span>نام کاربری: <span className="font-mono font-bold text-gray-700">{m.username}</span></span>
                   <span>مدرسه: {m.school_name || 'همه مدارس (مرکزی)'}</span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {pettyCashCards.filter((card) => String(card.managerName || '').trim() === String(m.name || '').trim()).map((card) => {
+                    const linkedAccount = bankAccounts.find((account) => Number(account.id) === Number(card.bankAccountId)) || bankAccounts.find((account) => {
+                      const suffix = String(card.accountSuffix || '').replace(/\D/g, '');
+                      return suffix && String(account.account_number || '').replace(/\D/g, '').endsWith(suffix);
+                    });
+                    return <span key={card.card} className="rounded-lg bg-blue-50 border border-blue-100 px-2.5 py-1.5 text-[11px] text-blue-900">
+                      کارت <b className="font-mono" dir="ltr">{card.card}</b> · متصل به: <b>{linkedAccount?.name || 'حساب بانکی تعیین نشده'}</b>
+                    </span>;
+                  })}
+                  {!pettyCashCards.some((card) => String(card.managerName || '').trim() === String(m.name || '').trim()) && m.petty_cash_card && (
+                    <span className="rounded-lg bg-blue-50 border border-blue-100 px-2.5 py-1.5 text-[11px] text-blue-900">کارت {m.petty_cash_card} · حساب {m.petty_cash_bank || 'تعیین نشده'}</span>
+                  )}
                 </div>
               </div>
 
