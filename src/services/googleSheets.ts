@@ -119,7 +119,7 @@ const requestJson = async (
   }
 };
 
-const READ_ONLY_ACTIONS = ['app_version', 'bank_rules_get', 'claim_settlements'];
+const READ_ONLY_ACTIONS = ['app_version', 'bank_rules_get', 'my_petty_cash_cards', 'claim_settlements'];
 
 /**
  * Sends a mutation to the Google Apps Script Web App
@@ -127,7 +127,7 @@ const READ_ONLY_ACTIONS = ['app_version', 'bank_rules_get', 'claim_settlements']
 export const postToAppsScript = async (
   payload: Record<string, any>,
   webAppUrl: string = DEFAULT_WEBAPP_URL
-): Promise<{ success: boolean; network?: boolean; kind?: NetErrorKind; needs_review?: boolean; review_status?: string; error?: string; data?: any; id?: number; ids?: any[]; attachment_url?: string; url?: string; count?: number; skipped?: number; message?: string; matched?: number; unmatched?: number; rules?: any; configured?: boolean }> => {
+): Promise<{ success: boolean; network?: boolean; kind?: NetErrorKind; needs_review?: boolean; review_status?: string; error?: string; data?: any; id?: number; ids?: any[]; attachment_url?: string; url?: string; count?: number; skipped?: number; message?: string; matched?: number; unmatched?: number; rules?: any; cards?: any[]; configured?: boolean }> => {
   try {
     const url = webAppUrl.trim();
     if (!url) return { success: false, error: 'آدرس وب‌اپ تعریف نشده است.' };
