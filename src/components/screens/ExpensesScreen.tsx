@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import SchoolSelect from '../SchoolSelect';
 import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
@@ -35,6 +35,7 @@ import {
 import { ReceiptImageUploader } from '../ReceiptImageUploader';
 import { AttachmentImg } from '../AttachmentImg';
 import { openAttachment } from '../../services/attachments';
+import { postToAppsScript } from '../../services/googleSheets';
 
 const amountInTomanWords = (rawAmount: string): string => {
   const amount = Number(latinDigits(rawAmount).replace(/[^0-9]/g, ''));
@@ -111,26 +112,61 @@ export const ExpensesScreen: React.FC = () => {
   const [formJalaliDate, setFormJalaliDate] = useState(todayJalali());
   const [formTracking, setFormTracking] = useState('');
   const [formSource, setFormSource] = useState<'petty_cash' | 'bank' | 'own'>('petty_cash');
+  const [configuredPettyCards, setConfiguredPettyCards] = useState<any[]>([]);
+  const [pettyCardsLoaded, setPettyCardsLoaded] = useState(false);
+  const [selectedPettyCard, setSelectedPettyCard] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    void postToAppsScript({ action: 'bank_rules_get' }).then((res: any) => {
+      if (!active) return;
+      if (res?.success && Array.isArray(res.rules?.pettyCashCards)) {
+        setConfiguredPettyCards(res.rules.pettyCashCards.filter((card: any) => card && card.active !== false));
+      }
+      setPettyCardsLoaded(true);
+    }).catch(() => { if (active) setPettyCardsLoaded(true); });
+    return () => { active = false; };
+  }, []);
 
   const [formComment, setFormComment] = useState('');
   const [formSchoolId, setFormSchoolId] = useState<number>(
     isSenior ? schools[0]?.id || 1 : currentUser?.school_id || 1
   );
 
-  // کارت تن‌خواه ثبت‌شده برای مدیرِ همان مدرسه (یا خود کاربر اگر مدیر است)
-  const pettyCardFor = (schoolId: number | string): string => {
-    const own = (currentUser?.petty_cash_card || '').trim();
-    if (currentUser?.role === 'manager') return own;
-    const sid = Number(schoolId);
-    const mgr = (users || []).find(
-      (u) =>
-        u.role === 'manager' &&
-        u.active !== false &&
-        !!(u.petty_cash_card || '').trim() &&
-        (Number(u.school_id) === sid || (u.school_ids || []).map(Number).includes(sid))
-    );
-    return (mgr?.petty_cash_card || '').trim();
+  // کارت‌ها از منبع مشترک تنظیمات بانکی خوانده می‌شوند؛ فیلد قدیمی مدیر فقط fallback است.
+  const normalizeManager = (value: unknown) => String(value || '')
+    .replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[()（）]/g, '')
+    .replace(/\s+/g, '').trim();
+  const cardsForManager = (manager: any): string[] => {
+    if (!manager) return [];
+    const aliases = [manager.name, manager.username].map(normalizeManager).filter(Boolean);
+    return configuredPettyCards
+      .filter((card) => {
+        const owner = normalizeManager(card.managerName);
+        return owner && aliases.some((alias) => owner === alias || owner.startsWith(alias) || alias.startsWith(owner));
+      })
+      .map((card) => String(card.card || '').replace(/\D/g, ''))
+      .filter((card: string) => card.length === 16);
   };
+  const pettyCardsFor = (schoolId: number | string): string[] => {
+    const sid = Number(schoolId);
+    const manager = currentUser?.role === 'manager'
+      ? currentUser
+      : (users || []).find((u) =>
+          u.role === 'manager' && u.active !== false &&
+          (Number(u.school_id) === sid || (u.school_ids || []).map(Number).includes(sid))
+        );
+    const configured = cardsForManager(manager);
+    if (configured.length) return Array.from(new Set(configured));
+    const legacy = String(manager?.petty_cash_card || '').replace(/\D/g, '');
+    return legacy.length === 16 ? [legacy] : [];
+  };
+  const pettyCardFor = (schoolId: number | string): string => {
+    const cards = pettyCardsFor(schoolId);
+    if (selectedPettyCard && cards.includes(selectedPettyCard)) return selectedPettyCard;
+    return cards[0] || '';
+  };
+  const formPettyCards = pettyCardsFor(formSchoolId);
   const formPettyCard = pettyCardFor(formSchoolId);
   const formatCard = (c: string) => c.replace(/\D/g, '').replace(/(.{4})(?=.)/g, '$1-');
   const [formAttachment, setFormAttachment] = useState<string>('');
@@ -231,6 +267,7 @@ export const ExpensesScreen: React.FC = () => {
     setFormJalaliDate(todayJalali());
     setFormTracking('');
     setFormSource('petty_cash');
+    setSelectedPettyCard('');
     setFormComment('');
     setFormAttachment('');
     setFormSchoolId(isSenior ? schools[0]?.id || 1 : currentUser?.school_id || 1);
@@ -260,6 +297,7 @@ export const ExpensesScreen: React.FC = () => {
     setFormJalaliDate(jalaliFromGregorian(t.date));
     setFormTracking(t.tracking_code || '');
     setFormSource(t.payment_source === 'own' || t.payment_source === 'bank' ? (t.payment_source as any) : 'petty_cash');
+    setSelectedPettyCard(String(t.petty_cash_card || '').replace(/\D/g, ''));
     setFormComment(t.description || t.comment || '');
     setFormAttachment(t.attachment_url || '');
     setFormSchoolId(t.school_id);
@@ -282,7 +320,9 @@ export const ExpensesScreen: React.FC = () => {
     }
 
     if (formSource === 'petty_cash' && !pettyCardFor(formSchoolId)) {
-      setFormError('برای این مدیر هنوز کارت تن‌خواه ثبت نشده است. از بخش مدیران کارت را ثبت کنید یا گزینه «از حساب خودم» را انتخاب کنید.');
+      setFormError(pettyCardsLoaded
+        ? 'برای این مدیر کارتی در تنظیمات تن‌خواه پیدا نشد. نام مدیر در بخش کارت‌های تن‌خواه را با نام کاربری او یکسان کنید.'
+        : 'در حال دریافت اطلاعات کارت تن‌خواه هستیم؛ چند لحظه دیگر دوباره ثبت کنید.');
       return;
     }
 
@@ -924,15 +964,23 @@ export const ExpensesScreen: React.FC = () => {
 
                   {formSource === 'petty_cash' &&
                     (formPettyCard ? (
-                      <div className="mt-1.5 p-2 bg-purple-50 rounded-lg border border-purple-200 text-[11px] font-bold text-[#62205f] flex items-center gap-1.5">
-                        <CreditCard className="w-3.5 h-3.5 text-purple-700 shrink-0" />
-                        <span>
-                          کارت تن‌خواه: <span className="font-mono" dir="ltr">{formatCard(formPettyCard)}</span>
-                        </span>
+                      <div className="mt-1.5 p-2 bg-purple-50 rounded-lg border border-purple-200 text-[11px] font-bold text-[#62205f] space-y-2">
+                        {formPettyCards.length > 1 && (
+                          <label className="block space-y-1">
+                            <span>انتخاب کارت تن‌خواه</span>
+                            <select value={formPettyCard} onChange={(e) => setSelectedPettyCard(e.target.value)} className="w-full rounded-lg border border-purple-200 bg-white px-2 py-2 font-mono text-xs" dir="ltr">
+                              {formPettyCards.map((card) => <option key={card} value={card}>{formatCard(card)}</option>)}
+                            </select>
+                          </label>
+                        )}
+                        <div className="flex items-center gap-1.5">
+                          <CreditCard className="w-3.5 h-3.5 text-purple-700 shrink-0" />
+                          <span>کارت تن‌خواه: <span className="font-mono" dir="ltr">{formatCard(formPettyCard)}</span></span>
+                        </div>
                       </div>
                     ) : (
                       <div className="mt-1.5 p-2 bg-amber-50 rounded-lg border border-amber-300 text-[11px] font-bold text-amber-800">
-                        برای این مدیر کارت تن‌خواه ثبت نشده است.
+                        {!pettyCardsLoaded ? 'در حال دریافت کارت‌های تن‌خواه...' : 'برای این مدیر کارت تن‌خواه ثبت نشده است.'}
                       </div>
                     ))}
                   {formSource === 'own' && (
