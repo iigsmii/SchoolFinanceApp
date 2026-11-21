@@ -349,15 +349,8 @@ export const ExpensesScreen: React.FC = () => {
       if (result.length === 0 && sc?.petty_cash_card) {
         pushCard(sc.petty_cash_card, sc.name);
       }
-      // If the selected school still has no dedicated card, allow selecting from central/other active petty cash cards.
-      if (result.length === 0) {
-        configuredPettyCards.forEach((c) =>
-          pushCard(c.card ?? c.card_number, c.managerName || c.manager_name || 'کارت تن‌خواه مجموعه')
-        );
-        (users || [])
-          .filter((u) => u.active !== false && u.petty_cash_card)
-          .forEach((u) => pushCard(u.petty_cash_card, u.name));
-      }
+      // Do not fall back to cards from unrelated managers/schools.
+      // An empty result should remain empty rather than exposing the entire organization's card list.
     }
 
     // Preserve card on an existing expense when editing.
