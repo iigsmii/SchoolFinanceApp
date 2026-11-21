@@ -1619,17 +1619,19 @@ function myPettyCashCards_(b){
       rules=Object.assign({},rules,saved,{pettyCashCards:Array.isArray(saved.pettyCashCards)?saved.pettyCashCards:rules.pettyCashCards});
     }catch(e){throw new Error('فهرست کارت‌های تن‌خواه قابل خواندن نیست؛ مدیر ارشد باید تنظیمات را بررسی کند.');}
   }
-  const normalize=name=>String(name||'').replace(/[يى]/g,'ی').replace(/ك/g,'ک').replace(/[()（）]/g,'').replace(/\s+/g,'').trim().toLowerCase();
-  const managerName=normalize(user.name);
+  const normalize=name=>String(name||'').replace(/[يى]/g,'ی').replace(/ك/g,'ک')
+    .replace(/[\\u064B-\\u065F\\u0670]/g,'').replace(/[()（）ـ]/g,'')
+    .replace(/[\\s\\u200c\\u200f\\-_.،,:;]+/g,'').trim().toLowerCase();
+  const managerName=normalize(user.name), managerUsername=normalize(user.username);
   const cards=(Array.isArray(rules.pettyCashCards)?rules.pettyCashCards:[]).filter(card=>{
-    if(!card || card.active===false) return false;
-    const owner=normalize(card.managerName);
-    const idMatch=card.managerId!==undefined && card.managerId!==null && String(card.managerId)!=='' && String(card.managerId)===String(user.id);
-    const nameMatch=owner && managerName && owner===managerName;
-    return idMatch || nameMatch;
-  });
-  // Backward compatibility: older installations may still have the card only in the
-  // manager row, not in bank_reconciliation_rules.
+    if(!card || card.active===false || String(card.active).toLowerCase()==='false') return false;
+    const owner=normalize(card.managerName||card.manager_name);
+    const cardManagerId=card.managerId!==undefined?card.managerId:(card.manager_id!==undefined?card.manager_id:'');
+    const idMatch=String(cardManagerId)!=='' && String(cardManagerId)===String(user.id);
+    const nameMatch=owner && managerName && (owner===managerName || owner.indexOf(managerName)>=0 || managerName.indexOf(owner)>=0);
+    const usernameMatch=owner && managerUsername && (owner===managerUsername || owner.indexOf(managerUsername)>=0 || managerUsername.indexOf(owner)>=0);
+    return idMatch || nameMatch || usernameMatch;
+  }).map(card=>Object.assign({},card,{card:digits_(card.card||card.card_number||'')}));
   const managerRow=findRow_('Managers',user.id);
   const legacyCard=digits_(managerRow&&managerRow.obj.petty_cash_card||'');
   if(legacyCard.length===16 && !cards.some(card=>digits_(card.card||'')===legacyCard)){
@@ -1938,7 +1940,7 @@ function syncPayload_(b){
     const bankData=(bank_(b)||{}).data||[];
     return {
       success:true,
-      backend_version:'2.24.7',
+      backend_version:'2.24.8',
       students:(students_(b)||{}).data||[],
       schools:(schools_(b)||{}).data||[],
       staff:(staff_(b)||{}).data||[],
@@ -2432,7 +2434,7 @@ function appVersion_(b){
     notes:settings['android_update_notes']||'',
     force_update:String(settings['android_force_update']||'false').toLowerCase()==='true',
     release_enabled:String(settings['android_release_enabled']||'false').toLowerCase()==='true',
-    backend_version:'2.24.7'
+    backend_version:'2.24.8'
   };
 }
 
