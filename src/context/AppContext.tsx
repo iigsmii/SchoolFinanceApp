@@ -1933,7 +1933,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     setUsers((prev) => [...prev, newUser]);
     queue('manager_add', { ...buildManagerPayload({ ...newUser, ...(password ? { password } : {}) }, 'add'), id: undefined }, { type: 'manager', id: newId });
-    logActivity('افزودن مدیر جدید', `ثبت مدیر ${m.name} برای ${sc?.name || 'مدرسه'}`, 'manager', newId);
+    logActivity('افزودن مدیر جدید', `ثبت مدیر ${m.name} برای ${assignedNames.join('، ') || 'مدرسه'}`, 'manager', newId);
   };
 
   const updateManager = (id: number, m: Partial<User>) => {
