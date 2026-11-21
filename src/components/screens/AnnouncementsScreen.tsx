@@ -44,7 +44,8 @@ export const AnnouncementsScreen: React.FC = () => {
       const phones = recipient === 'both' ? [{phone: student.mother_phone,who:'mother' as const},{phone: student.father_phone || student.phone,who:'father' as const}] : recipient === 'mother' ? [{phone: student.mother_phone,who:'mother' as const}] : [{phone: student.father_phone || student.phone,who:'father' as const}];
       phones.forEach(x => { const phone = normalizePhone(x.phone); if (/^09\d{9}$/.test(phone)) rows.push({student,phone,who:x.who}); });
     });
-    return rows.filter((x,i,all)=>all.findIndex(y=>y.phone===x.phone && y.student.id===x.student.id)===i);
+    // یک والد با چند فرزند در این فیلتر فقط یک پیام دریافت می‌کند.
+    return rows.filter((x,i,all)=>all.findIndex(y=>y.phone===x.phone)===i);
   }, [filteredStudents, selectedStudentIds, recipient]);
 
   const saveLog = (entry: AnnouncementSmsLog) => {
