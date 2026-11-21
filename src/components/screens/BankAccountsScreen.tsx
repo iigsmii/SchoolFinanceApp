@@ -345,7 +345,7 @@ export const BankAccountsScreen: React.FC = () => {
         bank_name: formBankName,
         branch_name: formBranch.trim() || undefined,
         account_number: cleanAccountNo,
-        card_number: formCardNumber.trim() || undefined,
+        card_number: formCardNumber.trim(), // Empty string explicitly clears the saved bank card number.
         sheba_number: formSheba.trim() || undefined,
         school_id: formSchoolId,
         school_name: sc?.name,
