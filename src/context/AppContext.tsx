@@ -35,7 +35,7 @@ import {
   INITIAL_BANK_ACCOUNTS,
   INITIAL_FEEDBACKS,
 } from '../data/initialData';
-import { buildParsianCode } from '../utils/parsian';
+import { buildParsianCode, setSchoolRegistry } from '../utils/parsian';
 import { jalaliFromGregorian, todayGregorian, todayJalali } from '../utils/jalali';
 import { calculateStudentOverdue, DEFAULT_SMS_TEMPLATE, formatSmsTemplate } from '../utils/debt';
 import {
@@ -1956,6 +1956,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     })();
     logActivity('حذف مدیر', `حذف مدیر شناسه ${id}`, 'manager', id);
   };
+
+  // حساب‌های پارسیان از روی همین فهرستِ همگام‌شده با شیت خوانده می‌شوند (نه جدول بر اساس شماره).
+  setSchoolRegistry(schools);
 
   const addSchool = (s: Omit<School, 'id'>) => {
     const newId = nextTempId();

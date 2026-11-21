@@ -16,6 +16,7 @@ export interface ParsianKolAccount {
 
 export interface SchoolParsianMapping {
   school_id: number;
+  school_code: string; // کد مدرسه در شیت؛ تطبیق با مدرسه‌ها بر اساس همین کد انجام می‌شود
   school_name: string;
   tuition_kol: string;
   tuition_moeen: string;
@@ -33,6 +34,7 @@ export interface SchoolParsianMapping {
 export const SCHOOL_PARSIAN_MAPPINGS: SchoolParsianMapping[] = [
   {
     school_id: 1,
+    school_code: 'NOOR1',
     school_name: 'دبستان غیر دولتی نور ۱',
     tuition_kol: '67',
     tuition_moeen: '3',
@@ -48,6 +50,7 @@ export const SCHOOL_PARSIAN_MAPPINGS: SchoolParsianMapping[] = [
   },
   {
     school_id: 2,
+    school_code: 'NOOR2',
     school_name: 'دبستان غیر دولتی نور ۲',
     tuition_kol: '67',
     tuition_moeen: '4',
@@ -63,6 +66,7 @@ export const SCHOOL_PARSIAN_MAPPINGS: SchoolParsianMapping[] = [
   },
   {
     school_id: 3,
+    school_code: 'TEBYAN1',
     school_name: 'دبستان غیر دولتی تبیان ۱',
     tuition_kol: '67',
     tuition_moeen: '1',
@@ -78,6 +82,7 @@ export const SCHOOL_PARSIAN_MAPPINGS: SchoolParsianMapping[] = [
   },
   {
     school_id: 4,
+    school_code: 'TEBYAN2',
     school_name: 'دبستان غیر دولتی تبیان ۲',
     tuition_kol: '67',
     tuition_moeen: '2',
@@ -93,6 +98,7 @@ export const SCHOOL_PARSIAN_MAPPINGS: SchoolParsianMapping[] = [
   },
   {
     school_id: 5,
+    school_code: 'MAHD1',
     school_name: 'مهدالرضا(ع) شعبه مرکزی صبح',
     tuition_kol: '67',
     tuition_moeen: '10',
@@ -108,6 +114,7 @@ export const SCHOOL_PARSIAN_MAPPINGS: SchoolParsianMapping[] = [
   },
   {
     school_id: 6,
+    school_code: 'MAHD2',
     school_name: 'مهدالرضا(ع) شعبه مرکزی عصر',
     tuition_kol: '67',
     tuition_moeen: '11',
@@ -123,6 +130,7 @@ export const SCHOOL_PARSIAN_MAPPINGS: SchoolParsianMapping[] = [
   },
   {
     school_id: 7,
+    school_code: 'MAHD3',
     school_name: 'مهدالرضا(ع) شعبه ابراهیم خلیل',
     tuition_kol: '67',
     tuition_moeen: '12',
@@ -138,6 +146,7 @@ export const SCHOOL_PARSIAN_MAPPINGS: SchoolParsianMapping[] = [
   },
   {
     school_id: 8,
+    school_code: 'MAHD5',
     school_name: 'مهدالرضا(ع) شعبه منظریه',
     tuition_kol: '67',
     tuition_moeen: '9',
@@ -153,6 +162,7 @@ export const SCHOOL_PARSIAN_MAPPINGS: SchoolParsianMapping[] = [
   },
   {
     school_id: 9,
+    school_code: 'MAHD4',
     school_name: 'مهدالرضا(ع) شعبه سروستان',
     tuition_kol: '67',
     tuition_moeen: '14',
@@ -168,6 +178,7 @@ export const SCHOOL_PARSIAN_MAPPINGS: SchoolParsianMapping[] = [
   },
   {
     school_id: 10,
+    school_code: '',
     school_name: 'مهدالرضا(ع) شعبه تبیان ۲',
     tuition_kol: '67',
     tuition_moeen: '2',
@@ -183,6 +194,7 @@ export const SCHOOL_PARSIAN_MAPPINGS: SchoolParsianMapping[] = [
   },
   {
     school_id: 11,
+    school_code: 'MAHD6',
     school_name: 'مهدالرضا(ع) شعبه برهان',
     tuition_kol: '67',
     tuition_moeen: '13',

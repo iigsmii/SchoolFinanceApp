@@ -1024,10 +1024,10 @@ export const ParsianExportScreen: React.FC = () => {
                     </thead>
                     <tbody className="divide-y divide-gray-100 font-medium">
                       {SCHOOL_PARSIAN_MAPPINGS.map((m) => {
-                        const sc = schools.find((s) => s.id === m.school_id);
+                        const sc = schools.find((s) => !!m.school_code && String(s.code || '').toUpperCase() === m.school_code);
                         return (
                           <tr key={m.school_id} className="hover:bg-purple-50/30">
-                            <td className="py-3 px-3 font-mono font-bold text-gray-500">{m.school_id}</td>
+                            <td className="py-3 px-3 font-mono font-bold text-gray-500">{sc ? sc.id : '—'}</td>
                             <td className="py-3 px-3 font-bold text-[#341648]">
                               <div className="flex items-center gap-1.5">
                                 <SchoolIcon className="w-3.5 h-3.5 text-purple-600 shrink-0" />

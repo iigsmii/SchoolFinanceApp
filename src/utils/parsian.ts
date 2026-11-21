@@ -15,64 +15,57 @@ export const DEFAULT_PARSIAN_CODING: ParsianCodingConfig = {
   kol_payable: '22',    // اسناد پرداختنی
 };
 
+// حساب‌ها بر اساس «کد مدرسه» (NOOR1, MAHD1, ...) که از شیت همگام می‌شود تعیین می‌شوند، نه شماره‌ی مدرسه؛
+// بنابراین تغییر/جابه‌جایی مدرسه در شیت یا گوشی روی حسابداری اثری نمی‌گذارد.
+interface SchoolAccounts { tuition: number; expense: number; income: number }
+export const SCHOOL_ACCOUNTS_BY_CODE: Record<string, SchoolAccounts> = {
+  NOOR1: { tuition: 3, expense: 68, income: 1 },
+  NOOR2: { tuition: 4, expense: 69, income: 2 },
+  TEBYAN1: { tuition: 1, expense: 70, income: 3 },
+  TEBYAN2: { tuition: 2, expense: 71, income: 4 },
+  MAHD1: { tuition: 10, expense: 73, income: 10 }, // مرکزی صبح
+  MAHD2: { tuition: 11, expense: 75, income: 8 },  // مرکزی عصر
+  MAHD3: { tuition: 12, expense: 76, income: 5 },  // ابراهیم خلیل
+  MAHD4: { tuition: 14, expense: 78, income: 7 },  // سروستان
+  MAHD5: { tuition: 9, expense: 74, income: 9 },   // منظریه
+  MAHD6: { tuition: 13, expense: 77, income: 6 },
+};
+
+let schoolRegistry = new Map<number, School>();
+/** Called by AppContext whenever the synced school list changes. */
+export function setSchoolRegistry(list: School[]) {
+  schoolRegistry = new Map(list.map((s) => [Number(s.id), s]));
+}
+function schoolAccounts(schoolId: number): { school?: School; acc?: SchoolAccounts } {
+  const school = schoolRegistry.get(Number(schoolId));
+  const code = String(school?.code || '').trim().toUpperCase();
+  return { school, acc: SCHOOL_ACCOUNTS_BY_CODE[code] };
+}
+
 /**
  * Returns Moeen account number under Kol 67 (گردش حساب شهریه دانش آموزان)
  */
 export function getSchoolMoeen(schoolId: number): number {
-  switch (schoolId) {
-    case 1: return 3;  // دبستان نور ۱ (Moeen 3)
-    case 2: return 4;  // دبستان نور ۲ (Moeen 4)
-    case 3: return 1;  // دبستان تبیان ۱ (Moeen 1)
-    case 4: return 2;  // دبستان تبیان ۲ (Moeen 2)
-    case 5: return 10; // مهد مرکزی صبح (Moeen 10)
-    case 6: return 11; // مهد مرکزی عصر (Moeen 11)
-    case 7: return 12; // مهد ابراهیم خلیل (Moeen 12)
-    case 8: return 9;  // مهد منظریه (Moeen 9)
-    case 9: return 14; // مهد سروستان (Moeen 14)
-    case 10: return 2; // مهد تبیان ۲ (مشترک / Moeen 2)
-    case 11: return 13;// مهد کوچه برهان (Moeen 13)
-    default: return (schoolId % 14) || 1;
-  }
+  const { school, acc } = schoolAccounts(schoolId);
+  if (acc) return acc.tuition;
+  return Number(school?.moeen_code) || (schoolId % 14) || 1;
 }
 
 /**
  * Returns exact Kol account number for a school's separate expenses (هزینه‌های تفکیک‌شده هر واحد آموزشی)
  */
 export function getSchoolExpenseKol(schoolId: number): number {
-  switch (schoolId) {
-    case 1: return 68; // هزینه‌های دبستان نور ۱
-    case 2: return 69; // هزینه‌های دبستان نور ۲
-    case 3: return 70; // هزینه‌های دبستان تبیان ۱
-    case 4: return 71; // هزینه‌های دبستان تبیان ۲
-    case 5: return 73; // هزینه‌های پیش دبستانی نوبت صبح مدرسه القران
-    case 6: return 75; // هزینه‌های پیش دبستانی نوبت عصر مدرسه القران
-    case 7: return 76; // هزینه‌های پیش دبستانی ابراهیم خلیل
-    case 8: return 74; // هزینه‌های پیش دبستانی منظریه
-    case 9: return 78; // هزینه‌های پیش دبستانی سروستان
-    case 10: return 81;// هزینه‌های مهدالرضا
-    case 11: return 77;// هزینه‌های پیش دبستانی کوچه برهان
-    default: return 50;// هزینه‌های عمومی کل مجموعه
-  }
+  const { school, acc } = schoolAccounts(schoolId);
+  return Number(school?.expense_kol_code) || acc?.expense || 50; // 50 = هزینه‌های عمومی کل مجموعه
 }
 
 /**
- * Returns Moeen account number under Kol 40 (درآمدهای مردمی وخیرین)
+ * Returns Moeen account number under Kol 40 (درآمدهای مردمی وخیرین).
+ * ستون moeen_code شیت همین معین درآمد است و بر جدول پیش‌فرض اولویت دارد.
  */
 export function getSchoolIncomeMoeen(schoolId: number): number {
-  switch (schoolId) {
-    case 1: return 1;  // درآمد شهریه دبستان نور 1
-    case 2: return 2;  // درآمد شهریه دبستان نور 2
-    case 3: return 3;  // درآمد شهریه دبستان تبیان 1
-    case 4: return 4;  // درآمد شهریه دبستان تبیان 2
-    case 5: return 10; // درآمد شهریه پیش دبستانی صبح مدرسه القران
-    case 6: return 8;  // درآمد شهریه پیش دبستانی نوبت عصر مدرسه القران
-    case 7: return 5;  // درآمد شهریه پیش دبستانی ابراهیم خلیل
-    case 8: return 9;  // درآمد شهریه پیش دبستانی منظریه
-    case 9: return 7;  // درآمد شهریه پیش دبستانی سروستان
-    case 10: return 4; // درآمد شعب تبیان
-    case 11: return 6; // درآمد شهریه پیش دبستانی کوچه برهان
-    default: return (schoolId % 14) || 1;
-  }
+  const { school, acc } = schoolAccounts(schoolId);
+  return Number(school?.income_moeen_code) || Number(school?.moeen_code) || acc?.income || (schoolId % 14) || 1;
 }
 
 export function buildParsianCode(nationalId: string, schoolId: number): {

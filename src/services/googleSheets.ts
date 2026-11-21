@@ -368,7 +368,7 @@ export const apiSaveManager = async (manager: Partial<User> & { id?: number }, a
 export const buildSchoolPayload = (school: Partial<School> & { id?: number }, action: 'add' | 'update' | 'delete' = 'update') => ({
     action: action === 'add' ? 'school_add' : action === 'delete' ? 'school_delete' : 'school_update',
     id: school.id, name: school.name, code: school.code, type: school.type,
-    moeen_code: school.moeen_code, tafsili_code: school.tafsili_code, petty_cash_card: school.petty_cash_card, pos_terminal_number: school.pos_terminal_number, active: school.active,
+    moeen_code: school.moeen_code, expense_kol_code: school.expense_kol_code, income_moeen_code: school.income_moeen_code, tafsili_code: school.tafsili_code, petty_cash_card: school.petty_cash_card, pos_terminal_number: school.pos_terminal_number, active: school.active,
 });
 export const apiSaveSchool = async (school: Partial<School> & { id?: number }, action: 'add' | 'update' | 'delete' = 'update') =>
   postToAppsScript(buildSchoolPayload(school, action));
@@ -938,6 +938,8 @@ export const loadDataFromAppsScript = async (
     petty_cash_card: sc.petty_cash_card || '',
     type: sc.type || '',
     moeen_code: sc.moeen_code || '',
+    expense_kol_code: sc.expense_kol_code || '',
+    income_moeen_code: sc.income_moeen_code || '',
     pos_terminal_number: String(sc.pos_terminal_number || ''),
     tafsili_code: String(sc.tafsili_code || ''),
   }));

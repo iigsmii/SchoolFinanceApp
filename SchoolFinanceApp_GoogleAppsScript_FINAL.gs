@@ -27,7 +27,7 @@ const HEADERS = {
   ClaimSettlements: ['id','date','school_id','manager_id','manager_name','amount','tracking_code','expense_ids','note','created_by','created_at'],
   Requests: ['id','user_id','action','payload_hash','status','result','created_at'],
   Managers: ['id','name','username','password','school_id','role','active','created_at','petty_cash_card','petty_cash_bank','petty_cash_shaba','petty_cash_limit','petty_cash_balance','gender'],
-  Schools: ['id','name','code','active','created_at','petty_cash_card','type','moeen_code'],
+  Schools: ['id','name','code','active','created_at','petty_cash_card','type','moeen_code','expense_kol_code','income_moeen_code','tafsili_code'],
   Staff: ['id','school_id','school_name','name','national_id','phone','role_title','contract_type','hourly_rate','base_salary','insurance_employer_share','insurance_employee_share','bank_card_or_sheba','kol_code','moeen_code','tafsili_code','active','created_at'],
   Students: ['id','name','grade','phone','national_id','school_id','kol_code','moeen_code','tafsili_code','active','created_at','father_phone','mother_phone'],
   // New columns are ALWAYS appended at the end so positional writers of older code keep working.
@@ -69,11 +69,6 @@ const SCHOOLS = [
 
 // Existing Managers rows are preserved. Never embed password hashes in source.
 const ATTACHED_MANAGERS = [];
-
-const SCHOOL_TUITION = {
-  1:'0-1-40', 2:'0-2-40', 3:'0-3-40', 4:'0-4-40',
-  7:'0-5-40', 8:'0-7-40', 6:'0-8-40', 9:'0-9-40', 5:'0-10-40'
-};
 
 const EXPENSE_CODES = {
   1:{'هزینه های متفرقه':'0-2-68','هزینه ی تخفیف':'0-3-68','هزینه ی پذیرایی مدرسه':'0-4-68','قبض تلفن':'0-6-68','اینترنت':'0-7-68'},
@@ -213,7 +208,7 @@ function doGet(e) {
 function ensureStructure_() {
   const cache=CacheService.getScriptCache();
   const ss = SpreadsheetApp.openById(CFG.SPREADSHEET_ID);
-  if(cache.get('structure_ready_v218')==='1' && ss.getSheetByName('Requests')) return;
+  if(cache.get('structure_ready_v219')==='1' && ss.getSheetByName('Requests')) return;
   CFG.SHEETS.forEach(name => {
     let sh = ss.getSheetByName(name);
     if (!sh) sh = ss.insertSheet(name);
@@ -225,7 +220,7 @@ function ensureStructure_() {
     }
     sh.setFrozenRows(1);
   });
-  cache.put('structure_ready_v218','1',300);
+  cache.put('structure_ready_v219','1',300);
 }
 
 let writeLockHeld_=false;
@@ -481,18 +476,24 @@ function schools_(b) {
   return {success:true,data:data};
 }
 
+const SCHOOL_EDITABLE_=['name','code','active','petty_cash_card','type','moeen_code','expense_kol_code','income_moeen_code','tafsili_code'];
 function schoolAdd_(b){
   auth_(b,['senior','admin']); ensureStructure_();
   const id=nextId_('Schools');
-  const row=[id,String(b.name||''),String(b.code||''),b.active!==false,now_(),String(b.petty_cash_card||''),String(b.type||''),String(b.moeen_code||'')];
-  sheet_('Schools').appendRow(row); if(b.pos_terminal_number!==undefined) saveSetting_('pos_terminal_'+String(id),String(b.pos_terminal_number||'').trim()); return {success:true,id:id};
+  const obj={id:id,created_at:now_(),active:b.active!==false};
+  SCHOOL_EDITABLE_.forEach(k=>{ if(k!=='active') obj[k]=b[k]===undefined||b[k]===null?'':String(b[k]); });
+  // Written by header name: the live sheet's column order differs from HEADERS.
+  appendObj_('Schools',obj); schoolAccMemo_=null;
+  if(b.pos_terminal_number!==undefined) saveSetting_('pos_terminal_'+String(id),String(b.pos_terminal_number||'').trim());
+  return {success:true,id:id};
 }
 function schoolUpdate_(b){
   auth_(b,['senior','admin']); ensureStructure_();
   const hit=findRow_('Schools',b.id); if(!hit) throw new Error('مدرسه یافت نشد.');
-  const r=hit.obj;
-  updateRow_('Schools',hit.row,[r.id,b.name!==undefined?b.name:r.name,b.code!==undefined?b.code:r.code,b.active!==undefined?b.active:r.active,r.created_at,b.petty_cash_card!==undefined?b.petty_cash_card:(r.petty_cash_card||''),b.type!==undefined?b.type:(r.type||''),b.moeen_code!==undefined?b.moeen_code:(r.moeen_code||'')]);
-  if(b.pos_terminal_number!==undefined) saveSetting_('pos_terminal_'+String(r.id),String(b.pos_terminal_number||'').trim());
+  const patch={};
+  SCHOOL_EDITABLE_.forEach(k=>{ if(b[k]!==undefined&&b[k]!==null) patch[k]=(k==='active')?b[k]:String(b[k]); });
+  patchRow_('Schools',hit.row,patch); schoolAccMemo_=null;
+  if(b.pos_terminal_number!==undefined) saveSetting_('pos_terminal_'+String(hit.obj.id),String(b.pos_terminal_number||'').trim());
   return {success:true};
 }
 function schoolDelete_(b){ auth_(b,['senior','admin']); const hit=findRow_('Schools',b.id); if(!hit) throw new Error('مدرسه یافت نشد.'); sheet_('Schools').getRange(hit.row,4).setValue(false); return {success:true}; }
@@ -793,9 +794,34 @@ function studentsImport_(b) {
   }
 }
 
+// Accounting codes follow the school CODE read from the Schools sheet (never the numeric id), so a
+// school edited/re-ordered in the sheet or the phone keeps the same accounts.
+const SCHOOL_ACC_BY_CODE_={
+  NOOR1:{tuition:'3',expense:'68',income:'1',legacy:1}, NOOR2:{tuition:'4',expense:'69',income:'2',legacy:2},
+  TEBYAN1:{tuition:'1',expense:'70',income:'3',legacy:3}, TEBYAN2:{tuition:'2',expense:'71',income:'4',legacy:4},
+  MAHD1:{tuition:'10',expense:'73',income:'10',legacy:5}, MAHD2:{tuition:'11',expense:'75',income:'8',legacy:6},
+  MAHD3:{tuition:'12',expense:'76',income:'5',legacy:7}, MAHD4:{tuition:'14',expense:'78',income:'7',legacy:8},
+  MAHD5:{tuition:'9',expense:'74',income:'9',legacy:9}, MAHD6:{tuition:'13',expense:'77',income:'6',legacy:0}
+};
+let schoolAccMemo_=null;
+function schoolAcc_(schoolId){
+  // Memoised per execution: callers loop over thousands of students.
+  if(!schoolAccMemo_){schoolAccMemo_={};rows_('Schools').forEach(x=>{
+    const code=String(x.obj.code||'').trim().toUpperCase();
+    schoolAccMemo_[String(x.obj.id)]={row:x.obj,acc:SCHOOL_ACC_BY_CODE_[code]||null};
+  });}
+  return schoolAccMemo_[String(schoolId)]||{row:null,acc:null};
+}
 function schoolMoeen_(schoolId){
-  const map={'3':'1','4':'2','1':'3','2':'4','9':'9','5':'10','6':'11','7':'12','10':'13','8':'14'};
-  return map[String(schoolId||'')]||'';
+  const x=schoolAcc_(schoolId);
+  if(x.acc) return x.acc.tuition;
+  return x.row?String(x.row.moeen_code||''):'';
+}
+function schoolIncomeCode_(schoolId){
+  const x=schoolAcc_(schoolId);
+  const moeen=x.row&&String(x.row.income_moeen_code||x.row.moeen_code||'').trim();
+  const m=moeen||(x.acc?x.acc.income:'');
+  return m?('0-'+m+'-40'):'';
 }
 function studentAccountCodes_(studentId,grade,schoolId,nationalId){
   return {kol:'67',moeen:schoolMoeen_(schoolId),tafsili:String(nationalId||'').trim()};
@@ -2221,7 +2247,7 @@ function getDriveFolder_() {
   return DriveApp.createFolder(CFG.DRIVE_FOLDER_NAME);
 }
 
-function parsianSchoolMap_(b){ auth_(b); const out=[]; Object.keys(SCHOOL_TUITION).forEach(k=>out.push({school_id:Number(k),school_name:schoolName_(Number(k)),tuition:{code:SCHOOL_TUITION[k],name:'سرفصل درآمد شهریه مدرسه'}})); return {success:true,data:out}; }
+function parsianSchoolMap_(b){ auth_(b); const out=[]; rows_('Schools').filter(x=>String(x.obj.active)!=='false').forEach(x=>{const c=schoolIncomeCode_(x.obj.id);if(c)out.push({school_id:Number(x.obj.id),school_name:String(x.obj.name||''),tuition:{code:c,name:'سرفصل درآمد شهریه مدرسه'}});}); return {success:true,data:out}; }
 function parsianStudentAccounts_(b){const u=auth_(b);let data=rows_('Students').map(x=>x.obj).filter(s=>String(s.active)!=='false'&&(u.role==='senior'||userCanAccessSchool_(u,s.school_id))).map(s=>({code:[s.tafsili_code,s.moeen_code,s.kol_code||'67'].join('-'),name:s.name,id:s.id}));if(b.q){const q=String(b.q).toLowerCase();data=data.filter(x=>String(x.code).toLowerCase().includes(q)||String(x.name).toLowerCase().includes(q));}return {success:true,data:data};}
 function parsianAllocate_(b){ auth_(b); return {success:true,data:{code:'0-'+String(b.moeen||1)+'-67',name:String(b.name||'حساب دانش‌آموز')}}; }
 
@@ -2247,7 +2273,8 @@ function parsianExport_(b) {
     if(String(t.kind)==='expense') {
       const src=findRow_('Expenses',t.source_id);
       const cat=src?String(src.obj.category):'هزینه های متفرقه';
-      const account=(EXPENSE_CODES[schoolId]&&EXPENSE_CODES[schoolId][cat])||GENERIC_EXPENSE[cat]||'0-8-50';
+      const legacyKey=(schoolAcc_(schoolId).acc||{}).legacy;
+      const account=(legacyKey&&EXPENSE_CODES[legacyKey]&&EXPENSE_CODES[legacyKey][cat])||GENERIC_EXPENSE[cat]||'0-8-50';
       const parts=account.split('-');
       const bank='0-1-11'.split('-');
       out.push(parsianRow_(t.id,parts[2],parts[1],parts[0],cat,t.description,amount,0,t.tracking_code,'',t.tracking_code,'',0,''));
@@ -2262,7 +2289,7 @@ function parsianExport_(b) {
       const moe=String(student.moeen_code||'');
       const kol=String(student.kol_code||'67');
       if(!taf || !moe || !kol) return;
-      const schoolCode=SCHOOL_TUITION[schoolId];
+      const schoolCode=schoolIncomeCode_(schoolId);
       if(!schoolCode) return;
       const sp=schoolCode.split('-');
       if(String(t.kind)==='payment') {
