@@ -1584,6 +1584,20 @@ function bankRulesSave_(b){
   const cards=Array.isArray(rules.pettyCashCards)?rules.pettyCashCards:[];
   const terminals=Array.isArray(rules.posTerminals)?rules.posTerminals:[];
   if(cards.length>500 || terminals.length>500)throw new Error('حداکثر ۵۰۰ کارت و ۵۰۰ پایانه قابل تعریف است.');
+  // هر کارت تن‌خواه‌ی فعال باید به یکی از حساب‌های بانکیِ تعریف‌شده وصل باشد. کارت‌های بدون اتصالِ
+  // قدیمی تا زمان اصلاح باقی می‌مانند، اما کارت بدون اتصالِ جدید پذیرفته نمی‌شود.
+  const prevHit=rows_('Settings').find(x=>String(x.obj.key||'')==='bank_reconciliation_rules');
+  let prevCards=[];
+  try{prevCards=JSON.parse(String(prevHit&&prevHit.obj.value||'{}')).pettyCashCards||[];}catch(e){prevCards=[];}
+  const prevUnlinked={};
+  prevCards.forEach(c=>{if(c&&!Number(c.bankAccountId||0))prevUnlinked[digits_(c.card||'')]=true;});
+  cards.forEach(c=>{
+    if(!c||c.active===false)return;
+    const num=digits_(c.card||'');
+    const accId=Number(c.bankAccountId||0);
+    if(accId){if(!findRow_('BankAccounts',accId))throw new Error('حساب بانکی انتخاب‌شده برای کارت '+num+' تعریف نشده است.');return;}
+    if(!prevUnlinked[num])throw new Error('کارت '+num+' باید به یکی از حساب‌های بانکی تعریف‌شده وصل شود.');
+  });
   // The app sends only terminal/card lists. Use the default matching window when omitted.
   const defaultMatching=defaultBankRules_().matching;
   const days=Number(rules.matching && rules.matching.dateWindowDays !== undefined ? rules.matching.dateWindowDays : defaultMatching.dateWindowDays);
@@ -1646,11 +1660,15 @@ function bankUpload_(b){
     const messageRows=rows_('Messages');
     const normalizeManagerName=value=>String(value||'').replace(/[يى]/g,'ی').replace(/ك/g,'ک').replace(/\s+/g,'').trim();
     let pettyCashAlerts=0;
-    rows_('Bank').forEach(bankRecord=>{
+    // Only the rows imported just now (and a lookup map) - scanning the whole bank history for every
+    // upload made big files slow enough to time out.
+    const addedSet={};addedBankIds.forEach(id=>addedSet[String(id)]=true);
+    const detailByBankId={};rows_('BankDetails').forEach(x=>{detailByBankId[String(x.obj.bank_id)]=x;});
+    rows_('Bank').filter(r=>addedSet[String(r.obj.id)]).forEach(bankRecord=>{
       const bankId=bankRecord.obj.id;
       const bankHit=bankRecord;
       if(String(bankHit.obj.matched)==='true' || String(bankHit.obj.matched_transaction_id||'')) return;
-      const detail=rows_('BankDetails').find(x=>String(x.obj.bank_id)===String(bankId));
+      const detail=detailByBankId[String(bankId)];
       if(!detail || String(detail.obj.direction||'')!=='withdrawal') return;
       const sourceCard=digits_(detail.obj.source_card_number||'');
       if(!sourceCard) return;
