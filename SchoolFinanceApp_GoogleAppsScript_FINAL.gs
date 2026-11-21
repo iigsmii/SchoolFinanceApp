@@ -201,7 +201,7 @@ function doGet(e) {
     if(action==='my_claim') return json_(myClaim_(b));
     if(action==='app_version') return json_(appVersion_(b));
     if(action==='activity_logs')return json_(activityLogs_(b));
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.24.9',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.24.10',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
@@ -1625,6 +1625,10 @@ function myPettyCashCards_(b){
   const managerName=normalize(user.name), managerUsername=normalize(user.username);
   const cards=(Array.isArray(rules.pettyCashCards)?rules.pettyCashCards:[]).filter(card=>{
     if(!card || card.active===false || String(card.active).toLowerCase()==='false') return false;
+    // Senior users choose the manager/school in the expense form, so they need the full active card list.
+    // The client then filters this list against the selected manager. Returning only cards matching
+    // the senior account itself incorrectly produced an empty list for every senior user.
+    if(isSenior_(user)) return true;
     const owner=normalize(card.managerName||card.manager_name);
     const cardManagerId=card.managerId!==undefined?card.managerId:(card.manager_id!==undefined?card.manager_id:'');
     const idMatch=String(cardManagerId)!=='' && String(cardManagerId)===String(user.id);
@@ -1950,7 +1954,7 @@ function syncPayload_(b){
     const bankData=(bank_(b)||{}).data||[];
     return {
       success:true,
-      backend_version:'2.24.9',
+      backend_version:'2.24.10',
       students:(students_(b)||{}).data||[],
       schools:(schools_(b)||{}).data||[],
       staff:(staff_(b)||{}).data||[],
@@ -2444,7 +2448,7 @@ function appVersion_(b){
     notes:settings['android_update_notes']||'',
     force_update:String(settings['android_force_update']||'false').toLowerCase()==='true',
     release_enabled:String(settings['android_release_enabled']||'false').toLowerCase()==='true',
-    backend_version:'2.24.9'
+    backend_version:'2.24.10'
   };
 }
 
