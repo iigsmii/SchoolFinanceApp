@@ -163,7 +163,18 @@ export const ExpensesScreen: React.FC = () => {
         const usernameMatch = owner && managerUsername && (
           owner === managerUsername || owner.startsWith(managerUsername) || owner.endsWith(managerUsername)
         );
-        return idMatch || nameMatch || usernameMatch;
+        // Some older card records were saved with a stale manager ID/name.
+        // Use school ownership only when the school has exactly one active manager.
+        const cardSchoolId = Number(card.schoolId ?? card.school_id ?? 0);
+        const managerSchoolId = Number(manager.school_id || 0);
+        const managersForSchool = (users || []).filter((u: any) =>
+          u.role === 'manager' && u.active !== false &&
+          (Number(u.school_id) === managerSchoolId || (u.school_ids || []).map(Number).includes(managerSchoolId))
+        );
+        const uniqueSchoolFallback = !idMatch && !nameMatch && !usernameMatch &&
+          cardSchoolId > 0 && managerSchoolId > 0 && cardSchoolId === managerSchoolId &&
+          managersForSchool.length === 1 && String(managersForSchool[0].id) === String(manager.id);
+        return idMatch || nameMatch || usernameMatch || uniqueSchoolFallback;
       })
       .map((card) => String(card.card ?? card.card_number ?? '').replace(/\D/g, ''))
       .filter((card: string) => card.length === 16);
