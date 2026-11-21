@@ -201,7 +201,7 @@ function doGet(e) {
     if(action==='my_claim') return json_(myClaim_(b));
     if(action==='app_version') return json_(appVersion_(b));
     if(action==='activity_logs')return json_(activityLogs_(b));
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.24.7',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.24.9',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
