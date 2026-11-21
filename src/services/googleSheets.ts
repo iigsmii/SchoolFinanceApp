@@ -1117,20 +1117,29 @@ export const loadDataFromAppsScript = async (
     };
   });
 
-  const managers: User[] = rawManagers.map((m: any, idx: number) => ({
-    id: Number(m.id) || idx + 1,
-    name: m.name || 'مدیر',
-    username: m.username || `user_${idx + 1}`,
-    role: String(m.role || '').toLowerCase() === 'senior' || String(m.role || '').toLowerCase() === 'admin' ? 'senior' : 'manager',
-    school_id: m.school_id ? Number(m.school_id) : undefined,
-    school_name: m.school_id ? schoolMap.get(Number(m.school_id)) : undefined,
-    active: m.active !== false && String(m.active) !== 'false',
-    petty_cash_card: String(m.petty_cash_card || ''),
-    petty_cash_bank: String(m.petty_cash_bank || ''),
-    petty_cash_shaba: String(m.petty_cash_shaba || ''),
-    petty_cash_limit: Number(m.petty_cash_limit || 0),
-    petty_cash_balance: Number(m.petty_cash_balance || 0),
-  }));
+  const managers: User[] = rawManagers.map((m: any, idx: number) => {
+    const parsedSchoolIds = String(m.school_id || '')
+      .split(/[;,،；]/)
+      .map((v) => Number(v.trim()))
+      .filter((v) => Number.isFinite(v) && v > 0);
+    const primarySchoolId = parsedSchoolIds[0] || undefined;
+    const schoolNames = parsedSchoolIds.map((sid) => schoolMap.get(sid)).filter(Boolean);
+    return {
+      id: Number(m.id) || idx + 1,
+      name: m.name || 'مدیر',
+      username: m.username || `user_${idx + 1}`,
+      role: String(m.role || '').toLowerCase() === 'senior' || String(m.role || '').toLowerCase() === 'admin' ? 'senior' : 'manager',
+      school_id: primarySchoolId,
+      school_ids: parsedSchoolIds,
+      school_name: schoolNames.length ? schoolNames.join('، ') : (primarySchoolId ? schoolMap.get(primarySchoolId) : undefined),
+      active: m.active !== false && String(m.active) !== 'false',
+      petty_cash_card: String(m.petty_cash_card || ''),
+      petty_cash_bank: String(m.petty_cash_bank || ''),
+      petty_cash_shaba: String(m.petty_cash_shaba || ''),
+      petty_cash_limit: Number(m.petty_cash_limit || 0),
+      petty_cash_balance: Number(m.petty_cash_balance || 0),
+    };
+  });
 
   return {
     success: true,

@@ -112,23 +112,101 @@ export const ExpensesScreen: React.FC = () => {
   const [formJalaliDate, setFormJalaliDate] = useState(todayJalali());
   const [formTracking, setFormTracking] = useState('');
   const [formSource, setFormSource] = useState<'petty_cash' | 'bank' | 'own'>('petty_cash');
-  const [configuredPettyCards, setConfiguredPettyCards] = useState<any[]>([]);
+  const [configuredPettyCards, setConfiguredPettyCards] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('school_finance_petty_cards');
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed)
+        ? parsed.filter((card: any) => card && card.active !== false && String(card.active).toLowerCase() !== 'false')
+        : [];
+    } catch {
+      return [];
+    }
+  });
+  const [pettyCardsFromServerForCurrentUser, setPettyCardsFromServerForCurrentUser] = useState(false);
   const [pettyCardsLoaded, setPettyCardsLoaded] = useState(false);
   const [pettyCardsError, setPettyCardsError] = useState('');
   const [selectedPettyCard, setSelectedPettyCard] = useState('');
+
+  const cleanCardDigits = (value: unknown): string =>
+    latinDigits(String(value ?? '')).replace(/\D/g, '');
+
+  const normalizeManager = (value: unknown) =>
+    latinDigits(String(value || ''))
+      .replace(/[يى]/g, 'ی')
+      .replace(/ك/g, 'ک')
+      .replace(/[\u064B-\u065F\u0670]/g, '')
+      .replace(/[()（）ـ]/g, '')
+      .replace(/[\s\u200c\u200f\-_.،,:;]+/g, '')
+      .trim()
+      .toLowerCase();
+
+  const normalizeManagerBase = (value: unknown) =>
+    normalizeManager(
+      String(value || '')
+        .replace(/\([^)]*\)/g, ' ')
+        .replace(/（[^）]*）/g, ' ')
+        .replace(/^(آقای|خانم|جناب|سرکار|دکتر|مهندس|استاد)\s+/u, '')
+    );
 
   const reloadMyPettyCashCards = async () => {
     setPettyCardsLoaded(false);
     setPettyCardsError('');
     try {
       const res: any = await postToAppsScript({ action: 'my_petty_cash_cards' });
-      if (!res?.success || !Array.isArray(res.cards)) throw new Error(res?.error || 'سرور فهرست کارت‌های این مدیر را برنگرداند.');
-      setConfiguredPettyCards(res.cards.filter((card: any) => card && card.active !== false && String(card.active).toLowerCase() !== 'false'));
+      if (res?.success && Array.isArray(res.cards)) {
+        let activeCards = res.cards.filter(
+          (card: any) => card && card.active !== false && String(card.active).toLowerCase() !== 'false'
+        );
+        // Fallback to bank_rules_get for senior users if my_petty_cash_cards returned empty
+        if (activeCards.length === 0 && isSenior) {
+          try {
+            const rulesRes: any = await postToAppsScript({ action: 'bank_rules_get' });
+            if (rulesRes?.success && Array.isArray(rulesRes.rules?.pettyCashCards)) {
+              activeCards = rulesRes.rules.pettyCashCards.filter(
+                (card: any) => card && card.active !== false && String(card.active).toLowerCase() !== 'false'
+              );
+            }
+          } catch {
+            /* keep activeCards */
+          }
+        }
+        setConfiguredPettyCards(activeCards);
+        setPettyCardsFromServerForCurrentUser(true);
+        return;
+      }
+      throw new Error(res?.error || 'سرور فهرست کارت‌های این مدیر را برنگرداند.');
     } catch (error: any) {
+      setPettyCardsFromServerForCurrentUser(false);
       setPettyCardsError(error?.message || 'دریافت کارت تن‌خواه از سرور ناموفق بود.');
-      const legacy = String(currentUser?.petty_cash_card || '').replace(/\D/g, '');
-      if (legacy.length === 16) setConfiguredPettyCards([{ card: legacy, managerId: String(currentUser?.id || ''), managerName: currentUser?.name || '', active: true, legacy: true }]);
-    } finally { setPettyCardsLoaded(true); }
+      try {
+        const saved = localStorage.getItem('school_finance_petty_cards');
+        const parsed = saved ? JSON.parse(saved) : [];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setConfiguredPettyCards(
+            parsed.filter((card: any) => card && card.active !== false && String(card.active).toLowerCase() !== 'false')
+          );
+          return;
+        }
+      } catch {
+        /* ignore invalid cache */
+      }
+      const legacy = cleanCardDigits(currentUser?.petty_cash_card);
+      if (legacy.length === 16) {
+        setConfiguredPettyCards([
+          {
+            card: legacy,
+            managerId: String(currentUser?.id || ''),
+            managerName: currentUser?.name || '',
+            schoolId: Number(currentUser?.school_id || 0),
+            active: true,
+            legacy: true,
+          },
+        ]);
+      }
+    } finally {
+      setPettyCardsLoaded(true);
+    }
   };
 
   useEffect(() => {
@@ -136,70 +214,172 @@ export const ExpensesScreen: React.FC = () => {
     void reloadMyPettyCashCards();
   }, [currentUser?.id, currentUser?.name, currentUser?.role]);
 
-  const [formComment, setFormComment] = useState('');
-  const [formSchoolId, setFormSchoolId] = useState<number>(
-    isSenior ? schools[0]?.id || 1 : currentUser?.school_id || 1
+  const userSchoolIds = useMemo(() => {
+    if (!currentUser || isSenior) return schools.map((s) => Number(s.id));
+    const ids = [
+      ...(Array.isArray(currentUser.school_ids) ? currentUser.school_ids : []),
+      ...(currentUser.school_id ? [currentUser.school_id] : []),
+    ]
+      .map(Number)
+      .filter((id) => Number.isFinite(id) && id > 0);
+    return ids.length ? Array.from(new Set(ids)) : [1];
+  }, [currentUser, isSenior, schools]);
+
+  const accessibleSchools = useMemo(
+    () => (isSenior ? schools : schools.filter((s) => userSchoolIds.includes(Number(s.id)))),
+    [schools, isSenior, userSchoolIds]
   );
 
-  // کارت‌ها از منبع مشترک تنظیمات بانکی خوانده می‌شوند؛ فیلد قدیمی مدیر فقط fallback است.
-  const normalizeManager = (value: unknown) => String(value || '')
-    .replace(/[يى]/g, 'ی').replace(/ك/g, 'ک')
-    .replace(/[\u064B-\u065F\u0670]/g, '').replace(/[()（）ـ]/g, '')
-    .replace(/[\s\u200c\u200f\-_.،,:;]+/g, '').trim().toLowerCase();
-  const cardsForManager = (manager: any): string[] => {
-    if (!manager) return [];
-    const aliases = [manager.name, manager.username].map(normalizeManager).filter(Boolean);
-    return configuredPettyCards
-      .filter((card) => {
-        const cardManagerId = card.managerId ?? card.manager_id ?? '';
-        const idMatch = String(cardManagerId) !== '' && String(cardManagerId) === String(manager.id);
-        const owner = normalizeManager(card.managerName ?? card.manager_name);
-        const managerName = normalizeManager(manager.name);
-        const managerUsername = normalizeManager(manager.username);
-        const nameMatch = owner && managerName && (
-          owner === managerName || owner.startsWith(managerName) || owner.endsWith(managerName) ||
-          managerName.startsWith(owner) || managerName.endsWith(owner)
-        );
-        const usernameMatch = owner && managerUsername && (
-          owner === managerUsername || owner.startsWith(managerUsername) || owner.endsWith(managerUsername)
-        );
-        // Some older card records were saved with a stale manager ID/name.
-        // Use school ownership only when the school has exactly one active manager.
-        const cardSchoolId = Number(card.schoolId ?? card.school_id ?? 0);
-        const managerSchoolId = Number(manager.school_id || 0);
-        const managersForSchool = (users || []).filter((u: any) =>
-          u.role === 'manager' && u.active !== false &&
-          (Number(u.school_id) === managerSchoolId || (u.school_ids || []).map(Number).includes(managerSchoolId))
-        );
-        const uniqueSchoolFallback = !idMatch && !nameMatch && !usernameMatch &&
-          cardSchoolId > 0 && managerSchoolId > 0 && cardSchoolId === managerSchoolId &&
-          managersForSchool.length === 1 && String(managersForSchool[0].id) === String(manager.id);
-        return idMatch || nameMatch || usernameMatch || uniqueSchoolFallback;
-      })
-      .map((card) => String(card.card ?? card.card_number ?? '').replace(/\D/g, ''))
-      .filter((card: string) => card.length === 16);
+  const [formComment, setFormComment] = useState('');
+  const [formSchoolId, setFormSchoolId] = useState<number>(
+    isSenior ? schools[0]?.id || 1 : currentUser?.school_id || userSchoolIds[0] || 1
+  );
+
+  const managerMatchesCard = (card: any, manager: any): boolean => {
+    if (!card || !manager) return false;
+    const cardManagerId = card.managerId ?? card.manager_id ?? '';
+    if (String(cardManagerId) !== '' && String(cardManagerId) === String(manager.id)) return true;
+
+    const ownerFull = normalizeManager(card.managerName ?? card.manager_name);
+    const ownerBase = normalizeManagerBase(card.managerName ?? card.manager_name);
+    const mgrFull = normalizeManager(manager.name);
+    const mgrBase = normalizeManagerBase(manager.name);
+    const mgrUser = normalizeManager(manager.username);
+
+    const matchStrings = (a: string, b: string) =>
+      !!a &&
+      !!b &&
+      (a === b || (Math.min(a.length, b.length) >= 4 && (a.includes(b) || b.includes(a))));
+
+    if (
+      matchStrings(ownerFull, mgrFull) ||
+      matchStrings(ownerBase, mgrBase) ||
+      matchStrings(ownerFull, mgrBase) ||
+      matchStrings(ownerBase, mgrFull) ||
+      matchStrings(ownerFull, mgrUser) ||
+      matchStrings(ownerBase, mgrUser)
+    ) {
+      return true;
+    }
+
+    const cardSchoolId = Number(card.schoolId ?? card.school_id ?? 0);
+    const managerSchoolIds = [
+      ...(Array.isArray(manager.school_ids) ? manager.school_ids : []),
+      ...(manager.school_id ? [manager.school_id] : []),
+    ].map(Number).filter((id) => id > 0);
+    if (cardSchoolId > 0 && managerSchoolIds.includes(cardSchoolId)) {
+      const managersForSchool = (users || []).filter(
+        (u: any) =>
+          u.role === 'manager' &&
+          u.active !== false &&
+          (Number(u.school_id) === cardSchoolId || (u.school_ids || []).map(Number).includes(cardSchoolId))
+      );
+      if (managersForSchool.length <= 1) return true;
+    }
+    return false;
   };
-  const pettyCardsFor = (schoolId: number | string): string[] => {
+
+  type PettyCardOption = { card: string; label?: string };
+
+  const pettyCardOptionsFor = (schoolId: number | string): PettyCardOption[] => {
     const sid = Number(schoolId);
-    const manager = currentUser?.role === 'manager'
-      ? currentUser
-      : (users || []).find((u) =>
-          u.role === 'manager' && u.active !== false &&
-          (Number(u.school_id) === sid || (u.school_ids || []).map(Number).includes(sid))
+    const result: PettyCardOption[] = [];
+    const seen = new Set<string>();
+    const pushCard = (rawCard: unknown, label?: string) => {
+      const clean = cleanCardDigits(rawCard);
+      if (clean.length !== 16 || seen.has(clean)) return;
+      seen.add(clean);
+      result.push({ card: clean, label });
+    };
+
+    const userMatchesSchool = (u: any) =>
+      u &&
+      u.role === 'manager' &&
+      u.active !== false &&
+      (Number(u.school_id) === sid || (u.school_ids || []).map(Number).includes(sid));
+
+    if (!isSenior && currentUser) {
+      // If my_petty_cash_cards succeeded on the server, every active card in res.cards is already scoped to currentUser.
+      if (pettyCardsFromServerForCurrentUser) {
+        configuredPettyCards.forEach((c) =>
+          pushCard(c.card ?? c.card_number, c.managerName || c.manager_name || currentUser.name)
         );
-    const configured = cardsForManager(manager);
-    if (configured.length) return Array.from(new Set(configured));
-    const legacy = String(manager?.petty_cash_card || '').replace(/\D/g, '');
-    return legacy.length === 16 ? [legacy] : [];
+      } else {
+        configuredPettyCards.forEach((c) => {
+          if (managerMatchesCard(c, currentUser) || Number(c.schoolId ?? c.school_id ?? 0) === sid) {
+            pushCard(c.card ?? c.card_number, c.managerName || c.manager_name || currentUser.name);
+          }
+        });
+      }
+
+      // Profile fallback: check currentUser AND matching record in users (login API omits petty_cash_card).
+      pushCard(currentUser.petty_cash_card, currentUser.name);
+      const matchingUser = (users || []).find(
+        (u) =>
+          String(u.id) === String(currentUser.id) ||
+          normalizeManager(u.username) === normalizeManager(currentUser.username) ||
+          normalizeManagerBase(u.name) === normalizeManagerBase(currentUser.name)
+      );
+      if (matchingUser) {
+        configuredPettyCards.forEach((c) => {
+          if (managerMatchesCard(c, matchingUser)) {
+            pushCard(c.card ?? c.card_number, c.managerName || c.manager_name || matchingUser.name);
+          }
+        });
+        pushCard(matchingUser.petty_cash_card, matchingUser.name);
+      }
+      // School-level petty cash card fallback when no manager card was resolved.
+      if (result.length === 0) {
+        const sc = schools.find((s) => Number(s.id) === sid);
+        if (sc?.petty_cash_card) pushCard(sc.petty_cash_card, sc.name);
+      }
+    } else {
+      // Senior / Admin: gather cards from configured rules & managers associated with the selected school first.
+      const schoolManagers = (users || []).filter(userMatchesSchool);
+      configuredPettyCards.forEach((c) => {
+        const cardSid = Number(c.schoolId ?? c.school_id ?? 0);
+        if (cardSid === sid || schoolManagers.some((m) => managerMatchesCard(c, m))) {
+          pushCard(c.card ?? c.card_number, c.managerName || c.manager_name || '');
+        }
+      });
+      schoolManagers.forEach((m) => {
+        pushCard(m.petty_cash_card, m.name);
+      });
+      const sc = schools.find((s) => Number(s.id) === sid);
+      if (result.length === 0 && sc?.petty_cash_card) {
+        pushCard(sc.petty_cash_card, sc.name);
+      }
+      // If the selected school still has no dedicated card, allow selecting from central/other active petty cash cards.
+      if (result.length === 0) {
+        configuredPettyCards.forEach((c) =>
+          pushCard(c.card ?? c.card_number, c.managerName || c.manager_name || 'کارت تن‌خواه مجموعه')
+        );
+        (users || [])
+          .filter((u) => u.active !== false && u.petty_cash_card)
+          .forEach((u) => pushCard(u.petty_cash_card, u.name));
+      }
+    }
+
+    // Preserve card on an existing expense when editing.
+    if (editingExpense?.petty_cash_card && result.length === 0) {
+      pushCard(editingExpense.petty_cash_card, 'کارت ثبت‌شده روی سند');
+    }
+
+    return result;
   };
+
+  const pettyCardsFor = (schoolId: number | string): string[] =>
+    pettyCardOptionsFor(schoolId).map((o) => o.card);
+
   const pettyCardFor = (schoolId: number | string): string => {
     const cards = pettyCardsFor(schoolId);
     if (selectedPettyCard && cards.includes(selectedPettyCard)) return selectedPettyCard;
     return cards[0] || '';
   };
-  const formPettyCards = pettyCardsFor(formSchoolId);
+  const formPettyCardOptions = pettyCardOptionsFor(formSchoolId);
+  const formPettyCards = formPettyCardOptions.map((o) => o.card);
   const formPettyCard = pettyCardFor(formSchoolId);
-  const formatCard = (c: string) => c.replace(/\D/g, '').replace(/(.{4})(?=.)/g, '$1-');
+  const formatCard = (c: string) => cleanCardDigits(c).replace(/(.{4})(?=.)/g, '$1-');
   const [formAttachment, setFormAttachment] = useState<string>('');
   const [formError, setFormError] = useState('');
 
@@ -213,10 +393,10 @@ export const ExpensesScreen: React.FC = () => {
   const schoolExpenses = useMemo(() => {
     return transactions.filter((t) => {
       if (t.kind !== 'هزینه') return false;
-      if (!isSenior && t.school_id !== currentUser?.school_id) return false;
+      if (!isSenior && !userSchoolIds.includes(Number(t.school_id))) return false;
       return true;
     });
-  }, [transactions, isSenior, currentUser]);
+  }, [transactions, isSenior, userSchoolIds]);
 
   const counts = useMemo(() => {
     let pending = 0;
@@ -235,7 +415,7 @@ export const ExpensesScreen: React.FC = () => {
   const schoolBreakdowns = useMemo(() => {
     const targetSchools = isSenior
       ? schools
-      : schools.filter((s) => s.id === currentUser?.school_id);
+      : schools.filter((s) => userSchoolIds.includes(Number(s.id)));
 
     return targetSchools.map((sc) => {
       const scTxs = schoolExpenses.filter((t) => t.school_id === sc.id);
@@ -301,7 +481,7 @@ export const ExpensesScreen: React.FC = () => {
     setSelectedPettyCard('');
     setFormComment('');
     setFormAttachment('');
-    setFormSchoolId(isSenior ? schools[0]?.id || 1 : currentUser?.school_id || 1);
+    setFormSchoolId(isSenior ? schools[0]?.id || 1 : currentUser?.school_id || userSchoolIds[0] || 1);
     setFormError('');
     setIsModalOpen(true);
   };
@@ -314,9 +494,10 @@ export const ExpensesScreen: React.FC = () => {
     setFormJalaliDate(todayJalali());
     setFormTracking('FEE-' + Math.floor(100000 + Math.random() * 900000));
     setFormSource('petty_cash');
+    setSelectedPettyCard('');
     setFormComment('کارمزد انتقال وجه بانکی (پایا)');
     setFormAttachment('bank_fee_auto_receipt');
-    setFormSchoolId(isSenior ? schools[0]?.id || 1 : currentUser?.school_id || 1);
+    setFormSchoolId(isSenior ? schools[0]?.id || 1 : currentUser?.school_id || userSchoolIds[0] || 1);
     setFormError('');
     setIsModalOpen(true);
   };
@@ -328,7 +509,7 @@ export const ExpensesScreen: React.FC = () => {
     setFormJalaliDate(jalaliFromGregorian(t.date));
     setFormTracking(t.tracking_code || '');
     setFormSource(t.payment_source === 'own' || t.payment_source === 'bank' ? (t.payment_source as any) : 'petty_cash');
-    setSelectedPettyCard(String(t.petty_cash_card || '').replace(/\D/g, ''));
+    setSelectedPettyCard(cleanCardDigits(t.petty_cash_card));
     setFormComment(t.description || t.comment || '');
     setFormAttachment(t.attachment_url || '');
     setFormSchoolId(t.school_id);
@@ -352,7 +533,7 @@ export const ExpensesScreen: React.FC = () => {
 
     if (formSource === 'petty_cash' && !pettyCardFor(formSchoolId)) {
       setFormError(pettyCardsLoaded
-        ? 'برای این مدیر کارتی در تنظیمات تن‌خواه پیدا نشد. نام مدیر در بخش کارت‌های تن‌خواه را با نام کاربری او یکسان کنید.'
+        ? 'برای این مدیر کارتی در تنظیمات تن‌خواه ثبت نشده است. از بخش «مدیریت مدیران» کارت تن‌خواه را ثبت کنید یا از «از حساب خودم» استفاده نمایید.'
         : 'در حال دریافت اطلاعات کارت تن‌خواه هستیم؛ چند لحظه دیگر دوباره ثبت کنید.');
       return;
     }
@@ -1000,7 +1181,11 @@ export const ExpensesScreen: React.FC = () => {
                           <label className="block space-y-1">
                             <span>انتخاب کارت تن‌خواه</span>
                             <select value={formPettyCard} onChange={(e) => setSelectedPettyCard(e.target.value)} className="w-full rounded-lg border border-purple-200 bg-white px-2 py-2 font-mono text-xs" dir="ltr">
-                              {formPettyCards.map((card) => <option key={card} value={card}>{formatCard(card)}</option>)}
+                              {formPettyCardOptions.map((opt) => (
+                                <option key={opt.card} value={opt.card}>
+                                  {formatCard(opt.card)}{opt.label ? ` — ${opt.label}` : ''}
+                                </option>
+                              ))}
                             </select>
                           </label>
                         )}
@@ -1012,7 +1197,7 @@ export const ExpensesScreen: React.FC = () => {
                     ) : (
                       <div className="mt-1.5 p-2 bg-amber-50 rounded-lg border border-amber-300 text-[11px] font-bold text-amber-800">
                         {!pettyCardsLoaded ? 'در حال دریافت کارت‌های تن‌خواه...' : pettyCardsError ? ('خطا در دریافت کارت‌ها: ' + pettyCardsError) : 'برای این مدیر کارت تن‌خواه ثبت نشده است.'}
-                        {pettyCardsLoaded && pettyCardsError && <button type="button" onClick={() => void reloadMyPettyCashCards()} className="mr-2 underline">تلاش مجدد</button>}
+                        {pettyCardsLoaded && <button type="button" onClick={() => void reloadMyPettyCashCards()} className="mr-2 underline">تلاش مجدد</button>}
                       </div>
                     ))}
                   {formSource === 'own' && (
@@ -1039,8 +1224,8 @@ export const ExpensesScreen: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-[#341648] mb-1.5">مدرسه و واحد آموزشی</label>
-                {isSenior ? (
-                  <SchoolSelect schools={schools} value={formSchoolId} onChange={(value) => setFormSchoolId(Number(value))} className="w-full px-3 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735]" optionLabel={(school) => `${school.name} (کد تفصیلی: ${school.tafsili_code || school.id})`} />
+                {isSenior || accessibleSchools.length > 1 ? (
+                  <SchoolSelect schools={accessibleSchools} value={formSchoolId} onChange={(value) => setFormSchoolId(Number(value))} className="w-full px-3 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735]" optionLabel={(school) => `${school.name} (کد تفصیلی: ${school.tafsili_code || school.id})`} />
                 ) : (
                   <div className="text-xs font-bold text-gray-700 bg-gray-50 px-3 py-2.5 rounded-xl border border-gray-200">
                     {schools.find((s) => s.id === formSchoolId)?.name || currentUser?.school_name}

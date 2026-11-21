@@ -36,7 +36,7 @@ import {
   INITIAL_FEEDBACKS,
 } from '../data/initialData';
 import { buildParsianCode, setSchoolRegistry } from '../utils/parsian';
-import { jalaliFromGregorian, todayGregorian, todayJalali } from '../utils/jalali';
+import { jalaliFromGregorian, todayGregorian, todayJalali, latinDigits } from '../utils/jalali';
 import { calculateStudentOverdue, DEFAULT_SMS_TEMPLATE, formatSmsTemplate } from '../utils/debt';
 import {
   DEFAULT_SPREADSHEET_ID,
@@ -1796,10 +1796,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     updatedBank.forEach((bt) => {
       if (bt.reconciled) return;
-      const bankCard = String(bt.card_number || bt.bank_account || '').replace(/\D/g, '');
+      const bankCard = latinDigits(String(bt.card_number || bt.bank_account || '')).replace(/\D/g, '');
       const cardManager = bankCard.length >= 4
         ? users.find((u) => {
-            const managerCard = String(u.petty_cash_card || '').replace(/\D/g, '');
+            const managerCard = latinDigits(String(u.petty_cash_card || '')).replace(/\D/g, '');
             return u.role === 'manager' && managerCard.length >= 4 &&
               (bankCard.endsWith(managerCard) || managerCard.endsWith(bankCard));
           })
@@ -1811,8 +1811,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (sameReference) return true;
         // A card-number match is strong enough for petty-cash matching only when
         // school, manager card, transaction type and amount also agree.
+        const managerOwnsSchool = !!cardManager && (
+          Number(t.school_id) === Number(cardManager.school_id) ||
+          (cardManager.school_ids || []).map(Number).includes(Number(t.school_id))
+        );
         if (!cardManager || t.payment_source !== 'petty_cash' ||
-            Number(t.school_id) !== Number(cardManager.school_id) ||
+            !managerOwnsSchool ||
             (bt.school_id && Number(t.school_id) !== Number(bt.school_id))) return false;
         if (bt.direction === 'withdrawal' && t.kind !== 'هزینه') return false;
         if (bt.direction === 'deposit' && t.kind === 'هزینه') return false;

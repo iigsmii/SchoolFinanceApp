@@ -14,16 +14,26 @@ export const ManagersScreen: React.FC = () => {
   const [cardsSaving, setCardsSaving] = useState(false);
   const [cardsError, setCardsError] = useState('');
   const normalizeManager = (value: unknown) => String(value || '')
-    .replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[()（）]/g, '')
-    .replace(/\s+/g, '').trim().toLowerCase();
+    .replace(/[يى]/g, 'ی').replace(/ك/g, 'ک').replace(/[\u064B-\u065F\u0670]/g, '').replace(/[()（）ـ]/g, '')
+    .replace(/[\s\u200c\u200f\-_.،,:;]+/g, '').trim().toLowerCase();
+  const normalizeManagerBase = (value: unknown) =>
+    normalizeManager(String(value || '').replace(/\([^)]*\)/g, ' ').replace(/（[^）]*）/g, ' ').replace(/^(آقای|خانم|جناب|سرکار|دکتر|مهندس|استاد)\s+/u, ''));
   const normalizeCard = (value: unknown) => String(value || '')
     .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
     .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/\D/g, '');
   const managerCards = (manager: User) => pettyCashCards.filter((card) => {
-    const owner = normalizeManager(card.managerName);
-    const name = normalizeManager(manager.name);
     const idMatch = card.managerId !== undefined && card.managerId !== null && String(card.managerId) !== '' && String(card.managerId) === String(manager.id);
-    return idMatch || (!!owner && !!name && owner === name);
+    if (idMatch) return true;
+    const ownerFull = normalizeManager(card.managerName);
+    const ownerBase = normalizeManagerBase(card.managerName);
+    const nameFull = normalizeManager(manager.name);
+    const nameBase = normalizeManagerBase(manager.name);
+    const userNorm = normalizeManager(manager.username);
+    return (
+      (!!ownerFull && !!nameFull && ownerFull === nameFull) ||
+      (!!ownerBase && !!nameBase && ownerBase === nameBase) ||
+      (!!ownerBase && !!userNorm && ownerBase === userNorm)
+    );
   });
   const reloadPettyCashCards = async () => {
     setCardsLoading(true);
@@ -31,6 +41,7 @@ export const ManagersScreen: React.FC = () => {
       const res: any = await postToAppsScript({ action: 'bank_rules_get' });
       if (!res?.success || !Array.isArray(res.rules?.pettyCashCards)) throw new Error(res?.error || 'دریافت فهرست کارت‌ها ناموفق بود.');
       setPettyCashCards(res.rules.pettyCashCards);
+      try { localStorage.setItem('school_finance_petty_cards', JSON.stringify(res.rules.pettyCashCards)); } catch {}
       setCardsError('');
     } catch (error: any) {
       setCardsError(error?.message || 'ارتباط با فهرست کارت‌های تن‌خواه برقرار نشد.');
@@ -59,7 +70,9 @@ export const ManagersScreen: React.FC = () => {
         rules: { ...latest.rules, pettyCashCards: normalizedCards },
       });
       if (!saved?.success) throw new Error(saved?.error || 'ذخیره کارت‌ها در Google Sheets ناموفق بود.');
-      setPettyCashCards(Array.isArray(saved.rules?.pettyCashCards) ? saved.rules.pettyCashCards : normalizedCards);
+      const persisted = Array.isArray(saved.rules?.pettyCashCards) ? saved.rules.pettyCashCards : normalizedCards;
+      setPettyCashCards(persisted);
+      try { localStorage.setItem('school_finance_petty_cards', JSON.stringify(persisted)); } catch {}
       return true;
     } catch (error: any) {
       setCardsError(error?.message || 'ذخیره کارت‌های تن‌خواه انجام نشد.');
