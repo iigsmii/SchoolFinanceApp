@@ -359,7 +359,7 @@ export const buildManagerPayload = (manager: Partial<User> & { id?: number }, ac
   const payload: Record<string, any> = {
     action: action === 'add' ? 'manager_add' : action === 'delete' ? 'manager_delete' : 'manager_update',
     id: manager.id, name: manager.name, username: manager.username, password: manager.password, gender: manager.gender,
-    school_id: manager.school_id, role: manager.role, active: manager.active,
+    school_id: manager.role === 'senior' ? '' : (Array.isArray(manager.school_ids) && manager.school_ids.length ? [...new Set(manager.school_ids.map(Number).filter((id) => id > 0))].join(',') : manager.school_id), role: manager.role, active: manager.active,
     petty_cash_card: manager.petty_cash_card, petty_cash_bank: manager.petty_cash_bank,
     petty_cash_shaba: manager.petty_cash_shaba, petty_cash_limit: manager.petty_cash_limit,
     petty_cash_balance: manager.petty_cash_balance,
