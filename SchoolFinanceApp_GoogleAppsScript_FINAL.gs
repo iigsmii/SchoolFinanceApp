@@ -41,7 +41,7 @@ const HEADERS = {
   BankDetails: ['bank_id','source_card_number','destination_card_number','terminal_number','direction','balance','reference_number','pos_reference_code','fee_amount','account_suffix','transaction_time','settlement_date'],
   BankAnnotations: ['id','school_id','date','amount','tracking_code','bank_account','student_id','student_name','purpose','manager_id','updated_at','direction','balance','card_number'],
   ExpenseCategories: ['id','name','active','created_at'],
-  Messages: ['id','message','created_by','created_at','active','target_school_id','target_role','author_name'],
+  Messages: ['id','message','created_by','created_at','active','target_school_id','target_role','author_name','target_user_id'],
   Attachments: ['id','source_type','source_id','file_name','mime_type','drive_file_id','url','created_by','created_at'],
   ParsianAccounts: ['id','account_name','account_code','school_id','category','active'],
   Settings: ['key','value','updated_at'],
@@ -1587,7 +1587,7 @@ function bankUpload_(b){
     const savedRules=rows_('Settings').find(x=>String(x.obj.key||'')==='bank_reconciliation_rules');
     let bankRules=defaultBankRules_();
     if(savedRules){try{bankRules=Object.assign(bankRules,JSON.parse(String(savedRules.obj.value||'{}')));}catch(e){}}
-    let added=0,skipped=0;const existing=rows_('Bank').map(x=>x.obj);
+    let added=0,skipped=0;const existing=rows_('Bank').map(x=>x.obj);const addedBankIds=[];
     b.rows.forEach(r=>{
       const amount=Number(r.amount)||0,track=String(r.tracking_code||'').trim();
       if(!amount||(!track&&!String(r.description||'').trim())){skipped++;return;}
@@ -1613,6 +1613,7 @@ function bankUpload_(b){
         String(r.pos_reference_code||''),r.fee_amount===''?'':Number(r.fee_amount||0),String(r.account_suffix||''),
         String(r.transaction_time||''),String(r.settlement_date||'')
       ]);
+      addedBankIds.push(bankId);
       existing.push({amount:amount,tracking_code:track,school_id:schoolId,date:String(r.date||''),direction:direction,source_card_number:sourceCard});added++;
     });
     SpreadsheetApp.flush();
@@ -1620,7 +1621,38 @@ function bankUpload_(b){
     let reconcileWarning='';
     try { reconciliation=bankReconcile_(b)||reconciliation; }
     catch(reconcileError) { reconcileWarning=' اطلاعات ذخیره شد، اما تطبیق خودکار نیازمند بررسی است: '+String(reconcileError&&reconcileError.message||reconcileError); }
-    return {success:true,message:'فایل بانک پردازش شد.',count:added,skipped:skipped,matched:reconciliation.matched||0,unmatched:reconciliation.unmatched??added,warning:reconcileWarning};
+    // Notify the exact manager when an imported withdrawal belongs to their petty-cash card and remains unmatched.
+    const managerRows=rows_('Managers');
+    const messageRows=rows_('Messages');
+    const normalizeManagerName=value=>String(value||'').replace(/[يى]/g,'ی').replace(/ك/g,'ک').replace(/\s+/g,'').trim();
+    addedBankIds.forEach(bankId=>{
+      const bankHit=findRow_('Bank',bankId);
+      if(!bankHit || String(bankHit.obj.matched)==='true') return;
+      const detail=rows_('BankDetails').find(x=>String(x.obj.bank_id)===String(bankId));
+      if(!detail || String(detail.obj.direction||'')!=='withdrawal') return;
+      const sourceCard=digits_(detail.obj.source_card_number||'');
+      if(!sourceCard) return;
+      const card=(Array.isArray(bankRules.pettyCashCards)?bankRules.pettyCashCards:[]).find(x=>digits_(x.card||'')===sourceCard && x.active!==false);
+      if(!card) return;
+      const linkedAccountId=Number(card.bankAccountId||0);
+      if(linkedAccountId){
+        const linkedAccount=findRow_('BankAccounts',linkedAccountId);
+        if(linkedAccount && String(bankHit.obj.bank_account||'')!==String(linkedAccount.obj.account_number||'') && String(bankHit.obj.bank_account||'')!==String(linkedAccount.obj.name||'')) return;
+      }
+      const manager=managerRows.find(x=>normalizeManagerName(x.obj.name)===normalizeManagerName(card.managerName));
+      if(!manager) return;
+      const marker='[BANK-PETTY:'+bankId+']';
+      if(messageRows.some(x=>String(x.obj.message||'').indexOf(marker)>=0)) return;
+      const amount=Number(bankHit.obj.amount||0);
+      const date=String(bankHit.obj.date||'');
+      const description=String(bankHit.obj.description||'برداشت کارت تن‌خواه');
+      const account=String(bankHit.obj.bank_account||'');
+      const message=marker+' برداشت ثبت‌نشده کارت تن‌خواه شما شناسایی شد. مبلغ: '+amount+' ریال؛ تاریخ: '+date+'؛ کارت: '+sourceCard+'؛ حساب بانکی: '+account+'؛ شرح: '+description+'. لطفاً هزینه مربوطه را در بخش هزینه‌ها با منبع «کارت تن‌خواه» ثبت کنید.';
+      appendObj_('Messages',{id:'SYS-'+Utilities.getUuid(),message:message,created_by:'system',created_at:now_(),active:true,target_school_id:String(card.schoolId||bankHit.obj.school_id||''),target_role:'manager',author_name:'سامانه تطبیق بانک',target_user_id:String(manager.obj.id)});
+      messageRows.push({obj:{message:message}});
+    });
+    SpreadsheetApp.flush();
+    return {success:true,message:'فایل بانک پردازش شد.',count:added,skipped:skipped,matched:reconciliation.matched||0,unmatched:reconciliation.unmatched??added,petty_cash_alerts:messageRows.length,warning:reconcileWarning};
   }
   if(!b.base64) throw new Error('فایل بانک ارسال نشده است.');
   if(b.school_id) activeSchool_(b.school_id);
@@ -1670,7 +1702,7 @@ function categoryDelete_(b) {
 function messages_(b) {
   const u=auth_(b);
   ensureCoreData_();
-  const data=rows_('Messages').map(x=>x.obj).filter(x=>String(x.active)!=='false').filter(x=>{ const school=String(x.target_school_id||'').trim(); const role=String(x.target_role||'').trim(); const roleOk=!role || role.split(',').indexOf(String(u.role))>=0; const schoolOk=!school || userCanAccessSchool_(u,school) || u.role==='senior' || u.role==='admin'; return roleOk&&schoolOk; }).reverse();
+  const data=rows_('Messages').map(x=>x.obj).filter(x=>String(x.active)!=='false').filter(x=>{ const school=String(x.target_school_id||'').trim(); const role=String(x.target_role||'').trim(); const targetUser=String(x.target_user_id||'').trim(); const roleOk=!role || role.split(',').indexOf(String(u.role))>=0; const schoolOk=!school || userCanAccessSchool_(u,school) || u.role==='senior' || u.role==='admin'; const userOk=!targetUser || String(u.id)===targetUser || u.role==='senior' || u.role==='admin'; return roleOk&&schoolOk&&userOk; }).reverse();
   return {success:true,data:data};
 }
 
@@ -1804,7 +1836,7 @@ function syncPayload_(b){
     const bankData=(bank_(b)||{}).data||[];
     return {
       success:true,
-      backend_version:'2.24.1',
+      backend_version:'2.24.2',
       students:(students_(b)||{}).data||[],
       schools:(schools_(b)||{}).data||[],
       staff:(staff_(b)||{}).data||[],
