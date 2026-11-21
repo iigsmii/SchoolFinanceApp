@@ -1620,36 +1620,46 @@ function myPettyCashCards_(b){
     }catch(e){throw new Error('فهرست کارت‌های تن‌خواه قابل خواندن نیست؛ مدیر ارشد باید تنظیمات را بررسی کند.');}
   }
   const normalize=name=>String(name||'').replace(/[يى]/g,'ی').replace(/ك/g,'ک')
-    .replace(/[\u064B-\u065F\u0670]/g,'').replace(/[()（）ـ]/g,'')
-    .replace(/[\s\u200c\u200f\-_.،,:;]+/g,'').trim().toLowerCase();
+    .replace(/[\\u064B-\\u065F\\u0670]/g,'').replace(/[()（）ـ]/g,'')
+    .replace(/[\\s\\u200c\\u200f\\-_.،,:;]+/g,'').trim().toLowerCase();
   const managerName=normalize(user.name), managerUsername=normalize(user.username);
-  const cards=(Array.isArray(rules.pettyCashCards)?rules.pettyCashCards:[]).filter(card=>{
+  const managerSchoolIds=String(user.school_id||'').split(/[;,،；]/).map(v=>Number(v.trim())).filter(v=>Number.isFinite(v)&&v>0);
+  const managerRows=rows_('Managers').filter(row=>{
+    const m=row.obj;
+    return String(m.role||'')==='manager' && String(m.active).toLowerCase()!=='false';
+  });
+  const managersForSchool=schoolId=>managerRows.filter(row=>
+    String(row.obj.school_id||'').split(/[;,،；]/).map(v=>Number(v.trim())).includes(Number(schoolId))
+  );
+  let cards=(Array.isArray(rules.pettyCashCards)?rules.pettyCashCards:[]).filter(card=>{
     if(!card || card.active===false || String(card.active).toLowerCase()==='false') return false;
-    // Senior users choose the manager/school in the expense form, so they need the full active card list.
-    // The client then filters this list against the selected manager. Returning only cards matching
-    // the senior account itself incorrectly produced an empty list for every senior user.
+    // Senior users intentionally receive all active cards; the expense form scopes them by school.
     if(isSenior_(user)) return true;
     const owner=normalize(card.managerName||card.manager_name);
     const cardManagerId=card.managerId!==undefined?card.managerId:(card.manager_id!==undefined?card.manager_id:'');
     const idMatch=String(cardManagerId)!=='' && String(cardManagerId)===String(user.id);
-    const nameMatch=owner && managerName && (owner===managerName || owner.indexOf(managerName)>=0 || managerName.indexOf(owner)>=0);
-    const usernameMatch=owner && managerUsername && (owner===managerUsername || owner.indexOf(managerUsername)>=0 || managerUsername.indexOf(owner)>=0);
+    // Owner-name matching must be exact. Partial-name matching can expose other managers' cards
+    // when names share a prefix or a short common token.
+    const nameMatch=!!owner && !!managerName && owner===managerName;
+    const usernameMatch=!!owner && !!managerUsername && owner===managerUsername;
     const cardSchoolId=Number(card.schoolId||card.school_id||0);
-    const managerSchoolId=Number(user.school_id||0);
-    // A legacy card can be assigned by school only if exactly one active manager owns that school.
-    const managersForSchool=rows_('Managers').filter(row=>{
-      const m=row.obj;
-      return String(m.role||'')==='manager' && String(m.active).toLowerCase()!=='false' && Number(m.school_id||0)===managerSchoolId;
-    });
     const uniqueSchoolFallback=!idMatch&&!nameMatch&&!usernameMatch&&cardSchoolId>0&&
-      managerSchoolId>0&&cardSchoolId===managerSchoolId&&managersForSchool.length===1&&
-      String(managersForSchool[0].obj.id)===String(user.id);
+      managerSchoolIds.includes(cardSchoolId)&&managersForSchool(cardSchoolId).length===1&&
+      String(managersForSchool(cardSchoolId)[0].obj.id)===String(user.id);
     return idMatch || nameMatch || usernameMatch || uniqueSchoolFallback;
   }).map(card=>Object.assign({},card,{card:digits_(card.card||card.card_number||'')}));
+  // Remove duplicate rows for the same card number before returning to the app.
+  const seenCards={};
+  cards=cards.filter(card=>{
+    const number=digits_(card.card||card.card_number||'');
+    if(number.length!==16 || seenCards[number]) return false;
+    seenCards[number]=true;
+    return true;
+  });
   const managerRow=findRow_('Managers',user.id);
   const legacyCard=digits_(managerRow&&managerRow.obj.petty_cash_card||'');
   if(legacyCard.length===16 && !cards.some(card=>digits_(card.card||'')===legacyCard)){
-    cards.push({card:legacyCard,managerId:String(user.id),managerName:String(user.name||''),schoolId:Number(user.school_id||0),active:true,legacy:true});
+    cards.push({card:legacyCard,managerId:String(user.id),managerName:String(user.name||''),schoolId:managerSchoolIds[0]||0,active:true,legacy:true});
   }
   return {success:true,cards:cards};
 }
