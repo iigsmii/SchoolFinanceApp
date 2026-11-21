@@ -292,11 +292,14 @@ export const ExpensesScreen: React.FC = () => {
       result.push({ card: clean, label });
     };
 
-    const userMatchesSchool = (u: any) =>
-      u &&
-      u.role === 'manager' &&
-      u.active !== false &&
-      (Number(u.school_id) === sid || (u.school_ids || []).map(Number).includes(sid));
+    const userMatchesSchool = (u: any) => {
+      if (!u || u.active === false) return false;
+      const rawIds = [
+        ...(Array.isArray(u.school_ids) ? u.school_ids : []),
+        ...(String(u.school_id ?? '').split(/[,;،；]/)),
+      ];
+      return rawIds.map((v: any) => Number(v)).some((id: number) => Number.isFinite(id) && id === sid);
+    };
 
     if (!isSenior && currentUser) {
       // If my_petty_cash_cards succeeded on the server, every active card in res.cards is already scoped to currentUser.
@@ -334,17 +337,30 @@ export const ExpensesScreen: React.FC = () => {
         if (sc?.petty_cash_card) pushCard(sc.petty_cash_card, sc.name);
       }
     } else {
-      // Senior / Admin: gather cards from configured rules & managers associated with the selected school first.
-      const schoolManagers = (users || []).filter(userMatchesSchool);
+      // Senior / Admin: include ordinary managers for this school AND the current account
+      // when it also has manager responsibilities across multiple schools.
+      const schoolManagers = (users || []).filter((u: any) => u.role === 'manager' && userMatchesSchool(u));
+      const currentUserManagesSchool = !!currentUser && userMatchesSchool(currentUser);
+      const schoolOwners = currentUserManagesSchool
+        ? [...schoolManagers, currentUser]
+        : schoolManagers;
+
       configuredPettyCards.forEach((c) => {
         const cardSid = Number(c.schoolId ?? c.school_id ?? 0);
-        if (cardSid === sid || schoolManagers.some((m) => managerMatchesCard(c, m))) {
+        if (
+          cardSid === sid ||
+          schoolOwners.some((m) => managerMatchesCard(c, m))
+        ) {
           pushCard(c.card ?? c.card_number, c.managerName || c.manager_name || '');
         }
       });
       schoolManagers.forEach((m) => {
         pushCard(m.petty_cash_card, m.name);
       });
+      // The senior account may itself own a petty-cash card while also managing this school.
+      if (currentUserManagesSchool && currentUser) {
+        pushCard(currentUser.petty_cash_card, currentUser.name);
+      }
       const sc = schools.find((s) => Number(s.id) === sid);
       if (result.length === 0 && sc?.petty_cash_card) {
         pushCard(sc.petty_cash_card, sc.name);
