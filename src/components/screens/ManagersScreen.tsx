@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import SchoolSelect from '../SchoolSelect';
 import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
