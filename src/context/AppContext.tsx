@@ -911,23 +911,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setter(merged);
       }
     };
+    // Tables the server did not deliver this time are left exactly as they are on the device:
+    // a missing table must never look like "everything was deleted".
+    const failed = new Set<string>(Array.isArray(res.failedParts) ? res.failedParts : []);
+    const anyFailed = (...keys: string[]) => keys.some((k) => failed.has(k));
     const remoteStudents = Array.isArray(res.students) ? res.students : [];
     const localStudents = loadFromStorage<Student[]>('students', []);
     if (remoteStudents.length === 0 && localStudents.length > 0) {
       console.warn('Cloud roster is empty; preserving local students rather than deleting them.');
     }
     put('students', remoteStudents, setStudents);
-    put('schools', res.schools, setSchools);
-    put('transactions', res.transactions, setTransactions);
-    put('bank_txs', res.bankTransactions, setBankTransactions);
-    put('cheques', res.cheques, setCheques);
-    put('categories', res.categories, setCategories);
-    put('users', res.managers, setUsers);
-    put('staff_members', res.staff, setStaffMembers);
-    put('senior_msgs', res.messages, setSeniorMessages);
-    put('staff_work_logs', res.staffWorkLogs, setStaffWorkLogs);
-    put('payroll_payments', res.payroll, setPayrollPayments);
-    put('bank_accounts', res.bankAccounts, setBankAccounts);
+    if (!anyFailed('schools')) put('schools', res.schools, setSchools);
+    if (!anyFailed('tuition', 'expenses', 'transactions', 'cheques')) put('transactions', res.transactions, setTransactions);
+    if (!anyFailed('bank')) put('bank_txs', res.bankTransactions, setBankTransactions);
+    if (!anyFailed('cheques')) put('cheques', res.cheques, setCheques);
+    if (!anyFailed('categories')) put('categories', res.categories, setCategories);
+    if (!anyFailed('managers')) put('users', res.managers, setUsers);
+    if (!anyFailed('staff')) put('staff_members', res.staff, setStaffMembers);
+    if (!anyFailed('messages')) put('senior_msgs', res.messages, setSeniorMessages);
+    if (!anyFailed('staffWorkLogs')) put('staff_work_logs', res.staffWorkLogs, setStaffWorkLogs);
+    if (!anyFailed('payroll')) put('payroll_payments', res.payroll, setPayrollPayments);
+    if (!anyFailed('bankAccounts')) put('bank_accounts', res.bankAccounts, setBankAccounts);
     if (res.stats) {
       setSyncStats(res.stats);
       saveToStorage('sync_stats', res.stats);
@@ -939,6 +943,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setLastSyncTime(timeStr);
     saveToStorage('last_sync_time', timeStr);
     setSyncStatus('synced');
+    setSyncError(res.partialError || null);
   };
 
   const syncLock = useRef<Promise<boolean> | null>(null);

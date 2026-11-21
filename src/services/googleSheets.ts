@@ -44,6 +44,10 @@ export interface SheetLoadResult {
   error?: string;
   /** Why the load failed: no internet, slow server, unreachable server, bad server reply or expired login. */
   errorKind?: NetErrorKind | 'auth';
+  /** Tables the server did not deliver this time (the device keeps its own copy of those). */
+  failedParts?: string[];
+  /** Human-readable note about the tables that did not arrive. */
+  partialError?: string;
 }
 
 export const extractSpreadsheetId = (input: string): string => {
@@ -803,123 +807,97 @@ export const loadDataFromAppsScript = async (
   // With no internet there is nothing to wait for: fail at once instead of burning timeouts.
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return failResult(NET_MESSAGES.offline, 'offline');
 
-  let lastNet: { kind: NetErrorKind; message: string } | null = null;
-  let serverAnswered = false;
-
-  // 1. Try POST action: 'sync' with the authenticated session token.
-  const postStartedAt = Date.now();
+  // Download every table as its own request. One giant request used to run into the time limit
+  // on a slow connection (or a big sheet) and left the phone with old data. Now each part has its
+  // own time budget and one retry, and a slow table (for example the bank statement) can no
+  // longer block the students or the payments.
+  let role = '';
   try {
-    const r = await requestJson(cleanUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'sync', token: authToken, owner: OWNER_EMAIL }),
-      mode: 'cors',
-    }, 75000);
-    serverAnswered = true;
-    const json = r.data;
-    diagnostics.push(`POST sync: HTTP ${r.status}, ${Date.now() - postStartedAt}ms${r.parseFailed ? ', پاسخ غیر JSON' : ''}`);
-    if (r.ok && json && (json.success || Array.isArray(json.students) || Array.isArray(json.data))) {
-      rawData = json;
-    } else if (json && json.success === false && isAuthMessage(json.error)) {
-      diagnostics.push('سرور درخواست را دریافت کرد اما نشست را نپذیرفت');
-      return failResult(String(json.error), 'auth');
-    } else {
-      diagnostics.push(`پاسخ POST قابل استفاده نبود${json?.error ? `: ${String(json.error).slice(0,180)}` : ''}`);
-    }
-  } catch (err: any) {
-    lastNet = classifyFetchError(err);
-    diagnostics.push(`POST sync ناموفق: ${err?.name || 'Error'}؛ ${String(err?.message || lastNet.message).slice(0,180)}؛ ${Date.now() - postStartedAt}ms`);
-    console.warn('Apps Script POST sync notice:', err);
-  }
+    role = String(JSON.parse(localStorage.getItem('school_finance_current_user') || 'null')?.role || '');
+  } catch { /* ignore */ }
+  const isSeniorRole = role === 'senior' || role === 'admin';
 
-  // The server was too slow: a second request to the same server would only double the wait.
-  if (!rawData && lastNet?.kind === 'timeout') return failResult(lastNet.message, 'timeout');
+  const PARTS: Array<{ key: string; action: string; label: string; core?: boolean; seniorOnly?: boolean }> = [
+    { key: 'students', action: 'students', label: 'دانش‌آموزان', core: true },
+    { key: 'schools', action: 'schools', label: 'مدرسه‌ها', core: true },
+    { key: 'tuition', action: 'tuition', label: 'شهریه‌ها' },
+    { key: 'expenses', action: 'expenses', label: 'هزینه‌ها' },
+    { key: 'cheques', action: 'cheques_all', label: 'چک‌ها' },
+    { key: 'categories', action: 'categories', label: 'سرفصل هزینه' },
+    { key: 'transactions', action: 'transactions', label: 'تراکنش‌ها' },
+    { key: 'messages', action: 'messages', label: 'پیام‌ها' },
+    { key: 'staff', action: 'staff', label: 'پرسنل' },
+    { key: 'staffWorkLogs', action: 'staff_worklogs', label: 'کارکرد پرسنل' },
+    { key: 'payroll', action: 'payroll', label: 'حقوق' },
+    { key: 'bank', action: 'bank', label: 'بانک' },
+    { key: 'managers', action: 'managers', label: 'مدیران', seniorOnly: true },
+    { key: 'bankAccounts', action: 'bank_accounts', label: 'حساب‌های بانکی', seniorOnly: true },
+  ];
 
-  // 2. Fallback to GET action: 'sync'
-  if (!rawData) {
-    const getStartedAt = Date.now();
-    try {
-      const r = await requestJson(
-        `${cleanUrl}?action=sync&token=${encodeURIComponent(authToken)}&owner=${encodeURIComponent(OWNER_EMAIL)}`,
-        {},
-        20000
-      );
-      serverAnswered = true;
-      const json = r.data;
-      diagnostics.push(`GET sync: HTTP ${r.status}, ${Date.now() - getStartedAt}ms${r.parseFailed ? ', پاسخ غیر JSON' : ''}`);
-      if (r.ok && json && (json.success || Array.isArray(json.students))) {
-        rawData = json;
-      } else if (json && json.success === false && isAuthMessage(json.error)) {
-        diagnostics.push('سرور GET نشست را نپذیرفت');
-        return failResult(String(json.error), 'auth');
-      } else {
-        diagnostics.push(`پاسخ GET قابل استفاده نبود${json?.error ? `: ${String(json.error).slice(0,180)}` : ''}`);
-      }
-    } catch (err: any) {
-      lastNet = classifyFetchError(err);
-      diagnostics.push(`GET sync ناموفق: ${err?.name || 'Error'}؛ ${String(err?.message || lastNet.message).slice(0,180)}؛ ${Date.now() - getStartedAt}ms`);
-      console.warn('Apps Script GET sync notice:', err);
-    }
-  }
-
-  // Neither request got any answer: the connection is the problem, not the data.
-  if (!rawData && !serverAnswered && lastNet) {
-    diagnostics.push(`هیچ‌یک از درخواست‌های sync پاسخ HTTP معتبر ندادند؛ آخرین وضعیت: ${lastNet.kind}`);
-    return failResult(lastNet.message, lastNet.kind);
-  }
-
-  // 3. Fallback to separate endpoints if unified sync wasn't deployed yet
-  if (!rawData || (!Array.isArray(rawData.students) && !Array.isArray(rawData.tuition))) {
-    // Older deployments may not support the unified sync endpoint. Bound every
-    // fallback request so the UI can never remain stuck at 65% indefinitely.
-    const fetchFallback = async (action: string): Promise<any | null> => {
+  type PartOutcome = { key: string; label: string; core: boolean; data?: any[]; auth?: string; net?: { kind: NetErrorKind; message: string }; serverError?: string };
+  const fetchPart = async (part: (typeof PARTS)[number]): Promise<PartOutcome> => {
+    const out: PartOutcome = { key: part.key, label: part.label, core: !!part.core };
+    for (let attempt = 0; attempt < 2; attempt++) {
       const startedAt = Date.now();
       try {
-        const r = await requestJson(
-          `${cleanUrl}?action=${action}&token=${encodeURIComponent(authToken)}&owner=${encodeURIComponent(OWNER_EMAIL)}`,
-          {},
-          15000
-        );
+        const r = await requestJson(cleanUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: part.action, token: authToken, owner: OWNER_EMAIL }),
+          mode: 'cors',
+        }, 45000);
         const json = r.data;
-        diagnostics.push(`GET ${action}: HTTP ${r.status}, ${Date.now() - startedAt}ms${r.parseFailed ? ', پاسخ غیر JSON' : ''}`);
-        if (!r.ok || r.parseFailed) return null;
-        if (json?.success === false) {
-          diagnostics.push(`GET ${action} رد شد: ${String(json.error || 'بدون توضیح').slice(0,160)}`);
-          return null;
+        if (r.ok && json && json.success !== false && Array.isArray(json.data)) {
+          out.data = json.data;
+          out.net = undefined;
+          out.serverError = undefined;
+          return out;
         }
-        if (!Array.isArray(json?.data)) {
-          diagnostics.push(`GET ${action}: آرایه data در پاسخ وجود ندارد`);
-          return null;
+        if (json && json.success === false && isAuthMessage(json.error)) {
+          out.auth = String(json.error);
+          return out; // an expired login will not fix itself on retry
         }
-        return json;
+        out.serverError = String(json?.error || (r.parseFailed ? 'پاسخ نامعتبر از سرور' : `خطای سرور (${r.status})`)).slice(0, 180);
+        diagnostics.push(`${part.action}: HTTP ${r.status}, ${Date.now() - startedAt}ms, ${out.serverError}`);
       } catch (err: any) {
-        diagnostics.push(`GET ${action} ناموفق: ${err?.name || 'Error'}؛ ${String(err?.message || 'خطای شبکه').slice(0,160)}؛ ${Date.now() - startedAt}ms`);
-        return null;
+        out.net = classifyFetchError(err);
+        diagnostics.push(`${part.action}: ${err?.name || 'Error'}؛ ${String(err?.message || out.net.message).slice(0, 140)}؛ ${Date.now() - startedAt}ms`);
+        if (out.net.kind === 'offline') return out;
       }
-    };
-    const [studentsRes, schoolsRes, tuitionRes, expensesRes, chequesRes] = await Promise.all([
-      fetchFallback('students'),
-      fetchFallback('schools'),
-      fetchFallback('tuition'),
-      fetchFallback('expenses'),
-      fetchFallback('cheques'),
-    ]);
-
-    // Never report an empty successful sync when the students endpoint failed:
-    // that could replace valid local data with empty arrays.
-    if (!studentsRes) {
-      return failResult('دریافت فهرست دانش‌آموزان از سرور ناموفق بود؛ جزئیات هر مسیر در ادامه آمده است.', 'server');
     }
+    return out;
+  };
 
-    rawData = {
-      success: true,
-      students: studentsRes.data || [],
-      schools: schoolsRes?.data || [],
-      tuition: tuitionRes?.data || [],
-      expenses: expensesRes?.data || [],
-      cheques: chequesRes?.data || [],
-    };
+  // Apps Script allows only a limited number of simultaneous executions (shared by all users),
+  // so run a few parts at a time: the important ones first, the big bank table last.
+  const queue = PARTS.filter((p) => !p.seniorOnly || isSeniorRole).sort((a, b) => Number(!!b.core) - Number(!!a.core) || Number(a.key === 'bank') - Number(b.key === 'bank'));
+  const outcomes: PartOutcome[] = [];
+  const worker = async () => {
+    for (let part = queue.shift(); part; part = queue.shift()) outcomes.push(await fetchPart(part));
+  };
+  await Promise.all(Array.from({ length: 5 }, worker));
+  const authFail = outcomes.find((o) => o.auth);
+  if (authFail) return failResult(authFail.auth!, 'auth');
+
+  const byKey: Record<string, PartOutcome> = {};
+  outcomes.forEach((o) => (byKey[o.key] = o));
+  const studentsPart = byKey.students;
+  if (!studentsPart?.data) {
+    // Without the student list there is nothing trustworthy to apply.
+    if (studentsPart?.net) return failResult(studentsPart.net.message, studentsPart.net.kind);
+    return failResult(`دریافت دانش‌آموزان انجام نشد: ${studentsPart?.serverError || 'پاسخ سرور دریافت نشد.'}`, 'server');
   }
+
+  rawData = { success: true } as any;
+  PARTS.forEach((p) => {
+    const o = byKey[p.key];
+    if (o?.data) rawData[p.key] = o.data;
+  });
+  rawData.bankTransactions = rawData.bank;
+  const failedParts = outcomes.filter((o) => !o.data && !o.auth);
+  const partialError = failedParts.length
+    ? `بخشی از اطلاعات دریافت نشد (${failedParts.map((o) => `${o.label}: ${o.net?.message || o.serverError || 'نامشخص'}`).join('، ')}). سایر بخش‌ها بروزرسانی شد.`
+    : undefined;
 
   const rawStudents = rawData.students || [];
   const rawSchools = rawData.schools || [];
@@ -1153,6 +1131,8 @@ export const loadDataFromAppsScript = async (
 
   return {
     success: true,
+    failedParts: failedParts.map((o) => o.key),
+    partialError: partialError && diagnostics.length ? `${partialError} [${diagnostics.join(' | ')}]` : partialError,
     students,
     schools,
     transactions,
