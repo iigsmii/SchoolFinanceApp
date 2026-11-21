@@ -1625,9 +1625,11 @@ function bankUpload_(b){
     const managerRows=rows_('Managers');
     const messageRows=rows_('Messages');
     const normalizeManagerName=value=>String(value||'').replace(/[يى]/g,'ی').replace(/ك/g,'ک').replace(/\s+/g,'').trim();
-    addedBankIds.forEach(bankId=>{
-      const bankHit=findRow_('Bank',bankId);
-      if(!bankHit || String(bankHit.obj.matched)==='true') return;
+    let pettyCashAlerts=0;
+    rows_('Bank').forEach(bankRecord=>{
+      const bankId=bankRecord.obj.id;
+      const bankHit=bankRecord;
+      if(String(bankHit.obj.matched)==='true' || String(bankHit.obj.matched_transaction_id||'')) return;
       const detail=rows_('BankDetails').find(x=>String(x.obj.bank_id)===String(bankId));
       if(!detail || String(detail.obj.direction||'')!=='withdrawal') return;
       const sourceCard=digits_(detail.obj.source_card_number||'');
@@ -1639,7 +1641,8 @@ function bankUpload_(b){
         const linkedAccount=findRow_('BankAccounts',linkedAccountId);
         if(linkedAccount && String(bankHit.obj.bank_account||'')!==String(linkedAccount.obj.account_number||'') && String(bankHit.obj.bank_account||'')!==String(linkedAccount.obj.name||'')) return;
       }
-      const manager=managerRows.find(x=>normalizeManagerName(x.obj.name)===normalizeManagerName(card.managerName));
+      const cardOwnerName=normalizeManagerName(card.managerName);
+      const manager=managerRows.find(x=>{const managerName=normalizeManagerName(x.obj.name);return managerName===cardOwnerName || (managerName.length>=4 && cardOwnerName.indexOf(managerName)>=0) || (cardOwnerName.length>=4 && managerName.indexOf(cardOwnerName)>=0);});
       if(!manager) return;
       const marker='[BANK-PETTY:'+bankId+']';
       if(messageRows.some(x=>String(x.obj.message||'').indexOf(marker)>=0)) return;
@@ -1650,9 +1653,10 @@ function bankUpload_(b){
       const message=marker+' برداشت ثبت‌نشده کارت تن‌خواه شما شناسایی شد. مبلغ: '+amount+' ریال؛ تاریخ: '+date+'؛ کارت: '+sourceCard+'؛ حساب بانکی: '+account+'؛ شرح: '+description+'. لطفاً هزینه مربوطه را در بخش هزینه‌ها با منبع «کارت تن‌خواه» ثبت کنید.';
       appendObj_('Messages',{id:'SYS-'+Utilities.getUuid(),message:message,created_by:'system',created_at:now_(),active:true,target_school_id:String(card.schoolId||bankHit.obj.school_id||''),target_role:'manager',author_name:'سامانه تطبیق بانک',target_user_id:String(manager.obj.id)});
       messageRows.push({obj:{message:message}});
+      pettyCashAlerts++;
     });
     SpreadsheetApp.flush();
-    return {success:true,message:'فایل بانک پردازش شد.',count:added,skipped:skipped,matched:reconciliation.matched||0,unmatched:reconciliation.unmatched??added,petty_cash_alerts:messageRows.length,warning:reconcileWarning};
+    return {success:true,message:'فایل بانک پردازش شد.',count:added,skipped:skipped,matched:reconciliation.matched||0,unmatched:reconciliation.unmatched??added,petty_cash_alerts:pettyCashAlerts,warning:reconcileWarning};
   }
   if(!b.base64) throw new Error('فایل بانک ارسال نشده است.');
   if(b.school_id) activeSchool_(b.school_id);
@@ -1836,7 +1840,7 @@ function syncPayload_(b){
     const bankData=(bank_(b)||{}).data||[];
     return {
       success:true,
-      backend_version:'2.24.2',
+      backend_version:'2.24.3',
       students:(students_(b)||{}).data||[],
       schools:(schools_(b)||{}).data||[],
       staff:(staff_(b)||{}).data||[],
