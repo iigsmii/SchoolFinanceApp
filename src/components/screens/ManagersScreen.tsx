@@ -132,7 +132,7 @@ export const ManagersScreen: React.FC = () => {
   const [formGender, setFormGender] = useState<'male' | 'female'>('male');
   const [formUsername, setFormUsername] = useState('');
   const [formPassword, setFormPassword] = useState('');
-  const [formSchoolId, setFormSchoolId] = useState<number>(schools[0]?.id || 1);
+  const [formSchoolIds, setFormSchoolIds] = useState<number[]>([schools[0]?.id || 1]);
   const [formPettyCashCard, setFormPettyCashCard] = useState('');
   const [formPettyCashBank, setFormPettyCashBank] = useState('');
   const [formPettyCashShaba, setFormPettyCashShaba] = useState('');
@@ -145,7 +145,7 @@ export const ManagersScreen: React.FC = () => {
     setFormGender('male');
     setFormUsername('');
     setFormPassword('');
-    setFormSchoolId(schools[0]?.id || 1);
+    setFormSchoolIds(schools[0]?.id ? [Number(schools[0].id)] : []);
     setFormPettyCashCard('');
     setFormPettyCashBank('');
     setFormPettyCashShaba('');
@@ -160,7 +160,7 @@ export const ManagersScreen: React.FC = () => {
     setFormGender(m.gender || 'male');
     setFormUsername(m.username);
     setFormPassword('');
-    setFormSchoolId(m.school_id || schools[0]?.id || 1);
+    setFormSchoolIds((m.school_ids?.length ? m.school_ids : (m.school_id ? [m.school_id] : [])).map(Number).filter((id) => id > 0));
     setFormPettyCashCard(m.petty_cash_card || '');
     setFormPettyCashBank(m.petty_cash_bank || '');
     setFormPettyCashShaba(m.petty_cash_shaba || '');
@@ -190,12 +190,19 @@ export const ManagersScreen: React.FC = () => {
       return;
     }
 
+    if (formRole === 'manager' && formSchoolIds.length === 0) {
+      setFormError('حداقل یک مدرسه را انتخاب کنید.');
+      return;
+    }
+
+    const selectedSchoolIds = formRole === 'senior' ? [] : [...new Set(formSchoolIds.map(Number).filter((id) => id > 0))];
     if (editingManager) {
       updateManager(editingManager.id, {
         name: formName.trim(),
         gender: formGender,
         username: formUsername.trim().toLowerCase(),
-        school_id: formRole === 'senior' ? undefined : formSchoolId,
+        school_id: selectedSchoolIds[0],
+        school_ids: selectedSchoolIds,
         role: formRole,
         petty_cash_card: formPettyCashCard.replace(/[^0-9۰-۹٠-٩]/g, ''),
         petty_cash_bank: formPettyCashBank.trim(),
@@ -207,7 +214,8 @@ export const ManagersScreen: React.FC = () => {
         name: formName.trim(),
         gender: formGender,
         username: formUsername.trim().toLowerCase(),
-        school_id: formRole === 'senior' ? undefined : formSchoolId,
+        school_id: selectedSchoolIds[0],
+        school_ids: selectedSchoolIds,
         role: formRole,
         petty_cash_card: formPettyCashCard.replace(/[^0-9۰-۹٠-٩]/g, ''),
         petty_cash_bank: formPettyCashBank.trim(),
@@ -265,7 +273,7 @@ export const ManagersScreen: React.FC = () => {
                 </div>
                 <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-x-4">
                   <span>نام کاربری: <span className="font-mono font-bold text-gray-700">{m.username}</span></span>
-                  <span>مدرسه: {m.school_name || 'همه مدارس (مرکزی)'}</span>
+                  <span>مدارس: {m.role === 'senior' ? 'همه مدارس (مرکزی)' : (m.school_name || 'بدون مدرسه')}</span>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {managerCards(m).map((card) => {
@@ -467,11 +475,28 @@ export const ManagersScreen: React.FC = () => {
               </div>
 
               {formRole === 'manager' && (
-                <div>
-                  <label className="block text-xs font-bold text-[#341648] mb-1.5">
-                    مدرسه مربوطه <span className="text-rose-500">*</span>
-                  </label>
-                  <SchoolSelect schools={schools} value={formSchoolId} onChange={(value) => setFormSchoolId(Number(value))} className="w-full px-4 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#302735]" />
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="block text-xs font-bold text-[#341648]">مدارس تحت پوشش مدیر <span className="text-rose-500">*</span></label>
+                    <span className="text-[11px] text-gray-500">{formSchoolIds.length} مدرسه انتخاب شده</span>
+                  </div>
+                  <div className="rounded-xl border border-[#e5dde8] bg-[#fdfcfd] p-2.5 max-h-52 overflow-y-auto space-y-1">
+                    {schools.filter((school) => school.active !== false).map((school) => {
+                      const schoolId = Number(school.id);
+                      const checked = formSchoolIds.includes(schoolId);
+                      return (
+                        <label key={school.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-purple-50 cursor-pointer text-xs font-semibold text-[#302735]">
+                          <input type="checkbox" checked={checked}
+                            onChange={(e) => setFormSchoolIds((current) => e.target.checked
+                              ? [...new Set([...current, schoolId])]
+                              : current.filter((id) => id !== schoolId))}
+                            className="h-4 w-4 accent-purple-700" />
+                          <span>{school.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] leading-5 text-gray-500">مدیر با یک نام کاربری می‌تواند به تمام مدارس انتخاب‌شده دسترسی داشته باشد.</p>
                 </div>
               )}
 
