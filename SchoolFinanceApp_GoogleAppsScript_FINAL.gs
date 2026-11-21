@@ -1630,7 +1630,17 @@ function myPettyCashCards_(b){
     const idMatch=String(cardManagerId)!=='' && String(cardManagerId)===String(user.id);
     const nameMatch=owner && managerName && (owner===managerName || owner.indexOf(managerName)>=0 || managerName.indexOf(owner)>=0);
     const usernameMatch=owner && managerUsername && (owner===managerUsername || owner.indexOf(managerUsername)>=0 || managerUsername.indexOf(owner)>=0);
-    return idMatch || nameMatch || usernameMatch;
+    const cardSchoolId=Number(card.schoolId||card.school_id||0);
+    const managerSchoolId=Number(user.school_id||0);
+    // A legacy card can be assigned by school only if exactly one active manager owns that school.
+    const managersForSchool=rows_('Managers').filter(row=>{
+      const m=row.obj;
+      return String(m.role||'')==='manager' && String(m.active).toLowerCase()!=='false' && Number(m.school_id||0)===managerSchoolId;
+    });
+    const uniqueSchoolFallback=!idMatch&&!nameMatch&&!usernameMatch&&cardSchoolId>0&&
+      managerSchoolId>0&&cardSchoolId===managerSchoolId&&managersForSchool.length===1&&
+      String(managersForSchool[0].obj.id)===String(user.id);
+    return idMatch || nameMatch || usernameMatch || uniqueSchoolFallback;
   }).map(card=>Object.assign({},card,{card:digits_(card.card||card.card_number||'')}));
   const managerRow=findRow_('Managers',user.id);
   const legacyCard=digits_(managerRow&&managerRow.obj.petty_cash_card||'');
@@ -1940,7 +1950,7 @@ function syncPayload_(b){
     const bankData=(bank_(b)||{}).data||[];
     return {
       success:true,
-      backend_version:'2.24.8',
+      backend_version:'2.24.9',
       students:(students_(b)||{}).data||[],
       schools:(schools_(b)||{}).data||[],
       staff:(staff_(b)||{}).data||[],
@@ -2434,7 +2444,7 @@ function appVersion_(b){
     notes:settings['android_update_notes']||'',
     force_update:String(settings['android_force_update']||'false').toLowerCase()==='true',
     release_enabled:String(settings['android_release_enabled']||'false').toLowerCase()==='true',
-    backend_version:'2.24.8'
+    backend_version:'2.24.9'
   };
 }
 
