@@ -118,10 +118,10 @@ export const ExpensesScreen: React.FC = () => {
 
   useEffect(() => {
     let active = true;
-    void postToAppsScript({ action: 'bank_rules_get' }).then((res: any) => {
+    void postToAppsScript({ action: 'my_petty_cash_cards' }).then((res: any) => {
       if (!active) return;
-      if (res?.success && Array.isArray(res.rules?.pettyCashCards)) {
-        setConfiguredPettyCards(res.rules.pettyCashCards.filter((card: any) => card && card.active !== false));
+      if (res?.success && Array.isArray(res.cards)) {
+        setConfiguredPettyCards(res.cards.filter((card: any) => card && card.active !== false));
       }
       setPettyCardsLoaded(true);
     }).catch(() => { if (active) setPettyCardsLoaded(true); });
@@ -142,6 +142,9 @@ export const ExpensesScreen: React.FC = () => {
     const aliases = [manager.name, manager.username].map(normalizeManager).filter(Boolean);
     return configuredPettyCards
       .filter((card) => {
+        if (card.managerId !== undefined && card.managerId !== null && String(card.managerId) !== '') {
+          return String(card.managerId) === String(manager.id);
+        }
         const owner = normalizeManager(card.managerName);
         return owner && aliases.some((alias) => owner === alias || owner.startsWith(alias) || alias.startsWith(owner));
       })
