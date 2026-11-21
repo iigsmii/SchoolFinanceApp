@@ -142,11 +142,10 @@ export const ExpensesScreen: React.FC = () => {
     const aliases = [manager.name, manager.username].map(normalizeManager).filter(Boolean);
     return configuredPettyCards
       .filter((card) => {
-        if (card.managerId !== undefined && card.managerId !== null && String(card.managerId) !== '') {
-          return String(card.managerId) === String(manager.id);
-        }
+        const idMatch = card.managerId !== undefined && card.managerId !== null && String(card.managerId) !== '' && String(card.managerId) === String(manager.id);
         const owner = normalizeManager(card.managerName);
-        return owner && aliases.some((alias) => owner === alias || owner.startsWith(alias) || alias.startsWith(owner));
+        const nameMatch = owner && normalizeManager(manager.name) && owner === normalizeManager(manager.name);
+        return idMatch || nameMatch;
       })
       .map((card) => String(card.card || '').replace(/\D/g, ''))
       .filter((card: string) => card.length === 16);
