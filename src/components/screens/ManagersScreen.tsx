@@ -20,12 +20,10 @@ export const ManagersScreen: React.FC = () => {
     .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
     .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/\D/g, '');
   const managerCards = (manager: User) => pettyCashCards.filter((card) => {
-    if (card.managerId !== undefined && card.managerId !== null && String(card.managerId) !== '') {
-      return String(card.managerId) === String(manager.id);
-    }
     const owner = normalizeManager(card.managerName);
     const name = normalizeManager(manager.name);
-    return !!owner && !!name && (owner === name || owner.startsWith(name) || name.startsWith(owner));
+    const idMatch = card.managerId !== undefined && card.managerId !== null && String(card.managerId) !== '' && String(card.managerId) === String(manager.id);
+    return idMatch || (!!owner && !!name && owner === name);
   });
   const reloadPettyCashCards = async () => {
     setCardsLoading(true);
