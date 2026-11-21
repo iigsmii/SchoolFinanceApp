@@ -1921,11 +1921,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addManager = (m: Omit<User, 'id'>) => {
     const newId = nextTempId();
     const { password, ...safeManager } = m;
-    const sc = schools.find((s) => s.id === safeManager.school_id);
+    const assignedIds = [...new Set((safeManager.school_ids?.length ? safeManager.school_ids : (safeManager.school_id ? [safeManager.school_id] : [])).map(Number).filter((id) => id > 0))];
+    const primarySchoolId = assignedIds[0];
+    const assignedNames = assignedIds.map((id) => schools.find((school) => Number(school.id) === id)?.name).filter(Boolean);
     const newUser: User = {
       ...safeManager,
       id: newId,
-      school_name: sc?.name,
+      school_id: primarySchoolId,
+      school_ids: assignedIds,
+      school_name: assignedNames.join('، ') || undefined,
     };
     setUsers((prev) => [...prev, newUser]);
     queue('manager_add', { ...buildManagerPayload({ ...newUser, ...(password ? { password } : {}) }, 'add'), id: undefined }, { type: 'manager', id: newId });
@@ -1939,9 +1943,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((u) => {
         if (u.id !== id) return u;
         const updated = { ...u, ...safeChanges };
-        if (safeChanges.school_id) {
-          const sc = schools.find((s) => s.id === safeChanges.school_id);
-          updated.school_name = sc?.name;
+        if (safeChanges.school_ids !== undefined || safeChanges.school_id !== undefined) {
+          const assignedIds = [...new Set((safeChanges.school_ids?.length ? safeChanges.school_ids : (safeChanges.school_id ? [safeChanges.school_id] : [])).map(Number).filter((id) => id > 0))];
+          updated.school_id = assignedIds[0];
+          updated.school_ids = assignedIds;
+          updated.school_name = assignedIds.map((schoolId) => schools.find((school) => Number(school.id) === schoolId)?.name).filter(Boolean).join('، ') || undefined;
         }
         return updated;
       })
