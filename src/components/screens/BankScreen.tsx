@@ -55,6 +55,7 @@ import * as XLSX from 'xlsx';
 import { postToAppsScript } from '../../services/googleSheets';
 import { BankTransaction, Transaction, Student } from '../../types';
 import { openAttachment } from '../../services/attachments';
+import { isUncollectedChequeTx } from '../../utils/cheques';
 
 // Standard 7 POS Terminals mapped to Schools 1-7
 export const DEFAULT_POS_TERMINALS = [
@@ -84,6 +85,7 @@ export const DEFAULT_SADERAT_CARDS = [
 export const BankScreen: React.FC = () => {
   const {
     transactions,
+    cheques,
     students,
     bankTransactions,
     bankAccounts,
@@ -596,7 +598,7 @@ export const BankScreen: React.FC = () => {
       if (!bCode) return;
 
       const hit = transactions.find((t) => {
-        if (usedTxIds.has(t.id) || t.reconciled) return false;
+        if (usedTxIds.has(t.id) || t.reconciled || isUncollectedChequeTx(t, cheques)) return false;
         if (Number(t.amount) !== Number(b.amount)) return false;
         const tCode = String(t.tracking_code || '').trim();
         return tCode && (tCode === bCode || tCode.endsWith(bCode) || bCode.endsWith(tCode));
@@ -626,7 +628,7 @@ export const BankScreen: React.FC = () => {
       if (!bCard || bCard.length < 4) return;
 
       const hit = transactions.find((t) => {
-        if (usedTxIds.has(t.id) || t.reconciled) return false;
+        if (usedTxIds.has(t.id) || t.reconciled || isUncollectedChequeTx(t, cheques)) return false;
         if (Number(t.amount) !== Number(b.amount)) return false;
         const tCard = normalizeCard(t.petty_cash_card || '');
         if (!tCard || (!bCard.endsWith(tCard.slice(-4)) && !tCard.endsWith(bCard.slice(-4)))) return false;
@@ -1046,12 +1048,14 @@ export const BankScreen: React.FC = () => {
     if (!resolveRow) return [];
     return transactions.filter((t) => {
       if (t.reconciled) return false;
+      // چک تا وقتی مدیر ارشد «وصول» را تأیید نکرده با بانک تطبیق داده نمی‌شود.
+      if (isUncollectedChequeTx(t, cheques)) return false;
       if (resolveSchoolId && t.school_id !== resolveSchoolId) return false;
       // Proximity or amount
       if (Number(t.amount) === Number(resolveRow.amount)) return true;
       return false;
     }).slice(0, 10);
-  }, [transactions, resolveRow, resolveSchoolId]);
+  }, [transactions, cheques, resolveRow, resolveSchoolId]);
 
   return (
     <div className="min-h-screen bg-[#fcfafd] pb-24 text-gray-800">

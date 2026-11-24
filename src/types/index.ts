@@ -104,6 +104,13 @@ export interface Cheque {
   status: 'pending' | 'approved' | 'rejected' | 'paid' | 'bounced';
   note?: string;
   attachment_url?: string;
+  // چرخه‌ی وصول: تأییدشده ← سرحساب (on_account) ← وصول شد (cleared) / وصول نشد (not_cleared) ← واریز به بانک ← تطبیق بانک
+  collection_status?: '' | 'on_account' | 'cleared' | 'not_cleared';
+  on_account_date?: string; // ISO
+  deposit_bank_account_id?: number; // حساب بانکی که چک به آن سرحساب شده
+  cleared_date?: string; // ISO
+  bank_reconciled?: boolean; // با ردیف صورتحساب بانک تطبیق خورده است
+  tuition_id?: number; // شناسه‌ی پرداخت شهریه‌ی ساخته‌شده از این چک (= شناسه‌ی تراکنش دفتر)
 }
 
 export interface ExpenseCategory {
