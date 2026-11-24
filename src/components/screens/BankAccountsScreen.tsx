@@ -7,6 +7,7 @@ import { BankAccount, Transaction, BankTransaction } from '../../types';
 import { formatRial, jalaliFromGregorian, todayJalali, latinDigits } from '../../utils/jalali';
 import { matchTokens } from '../../utils/studentSearch';
 import { isOutsideMainBank, splitSettlementBySchool } from '../../utils/claims';
+import { chequeStage } from '../../utils/cheques';
 import { useClaimSettlements } from '../../hooks/useClaimSettlements';
 import {
   Landmark,
@@ -61,6 +62,7 @@ export const BankAccountsScreen: React.FC = () => {
     deleteBankAccount,
     transactions,
     bankTransactions,
+    cheques,
     schools,
     currentUser,
     accentColor,
@@ -230,9 +232,34 @@ export const BankAccountsScreen: React.FC = () => {
       });
     });
 
+    // Source 3: چک‌هایی که مدیر ارشد «وصول» را تأیید کرده و به همین حساب واریز شده‌اند، اما هنوز با ردیف
+    // صورتحساب بانک تطبیق نخورده‌اند (بعد از تطبیق از مسیر Source 1 شمرده می‌شوند، نه دوبار).
+    cheques.forEach((c) => {
+      if (chequeStage(c) !== 'cleared') return;
+      if (transactions.some((t) => t.id === c.tuition_id && t.reconciled)) return;
+      if (activeAccount && c.deposit_bank_account_id !== activeAccount.id) return;
+      if (!isSenior && c.school_id !== currentUser?.school_id) return;
+      const acc = bankAccounts.find((b) => b.id === c.deposit_bank_account_id) || activeAccount;
+      const date = c.cleared_date || c.due_date;
+      list.push({
+        id: `chq_${c.id}`,
+        date,
+        jalali_date: jalaliFromGregorian(date),
+        direction: 'deposit',
+        title: `واریز چک ${c.sayad_id || c.cheque_number || ''} · در انتظار تطبیق با صورتحساب بانک`,
+        party_name: c.student_name || c.issuer_name || 'صادرکننده چک',
+        tracking_code: c.sayad_id || '',
+        amount: c.amount,
+        school_id: c.school_id,
+        school_name: c.school_name || 'مدرسه',
+        bank_account_name: acc?.name || 'حساب بانکی',
+        source_kind: 'واریز چک (تطبیق‌نشده)',
+      });
+    });
+
     // Sort chronologically
     return list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-  }, [transactions, bankTransactions, claimSettlements, schools, activeAccount, isSenior, currentUser, bankAccounts]);
+  }, [transactions, bankTransactions, claimSettlements, cheques, schools, activeAccount, isSenior, currentUser, bankAccounts]);
 
   // Apply Search & Direction Filters
   const filteredLedger = useMemo(() => {

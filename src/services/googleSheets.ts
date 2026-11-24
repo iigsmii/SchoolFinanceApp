@@ -137,7 +137,7 @@ export const postToAppsScript = async (
     if (!url) return { success: false, error: 'آدرس وب‌اپ تعریف نشده است.' };
 
     const action = String(payload.action || payload.endpoint || '').replace(/^\/+/, '').toLowerCase();
-    const idempotentActions = ['tuition_add', 'tuition_bulk_debt', 'expense_add', 'finance_transaction', 'cheque_review'];
+    const idempotentActions = ['tuition_add', 'tuition_bulk_debt', 'expense_add', 'finance_transaction', 'cheque_review', 'cheque_collection'];
     // Send a client-generated operation ID so the server can replay a stored result
     // when the same operation is retried with the same payload/request_id.
     const requestId = payload.request_id || (idempotentActions.includes(action)
@@ -1114,6 +1114,12 @@ export const loadDataFromAppsScript = async (
       in_favor_confirmed: truthy(c.in_favor_confirmed),
       received_confirmed: truthy(c.received_confirmed),
       attachment_url: c.image_url || c.attachment_url || undefined,
+      collection_status: (['on_account', 'cleared', 'not_cleared'].includes(String(c.collection_status)) ? String(c.collection_status) : '') as Cheque['collection_status'],
+      on_account_date: dateFromExcelSerial(c.on_account_date) || undefined,
+      deposit_bank_account_id: Number(c.deposit_bank_account_id) || undefined,
+      cleared_date: dateFromExcelSerial(c.cleared_date) || undefined,
+      bank_reconciled: truthy(c.bank_reconciled),
+      tuition_id: Number(c.tuition_id) || undefined,
     };
   });
 

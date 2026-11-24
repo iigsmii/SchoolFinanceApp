@@ -46,7 +46,7 @@ const HEADERS = {
   ParsianAccounts: ['id','account_name','account_code','school_id','category','active'],
   Settings: ['key','value','updated_at'],
   ActivityLogs: ['id','date','user_id','username','user_name','role','school_id','action','entity_type','entity_id','description','details'],
-  Cheques: ['id','date','student_id','school_id','amount','sayad_id','due_date','description','created_by','created_at','payment_method','received_confirmed','in_favor_confirmed','status','approved_at','approved_by','bank_reconciled','bank_status','bank_date','image_url','bank_name','cheque_type','cheque_number','issuer_name','cheque_purpose']
+  Cheques: ['id','date','student_id','school_id','amount','sayad_id','due_date','description','created_by','created_at','payment_method','received_confirmed','in_favor_confirmed','status','approved_at','approved_by','bank_reconciled','bank_status','bank_date','image_url','bank_name','cheque_type','cheque_number','issuer_name','cheque_purpose','collection_status','on_account_date','on_account_by','deposit_bank_account_id','cleared_date','cleared_by','tuition_id','transaction_id']
 };
 
 const DEFAULT_CATEGORIES = [
@@ -208,7 +208,7 @@ function doGet(e) {
 function ensureStructure_() {
   const cache=CacheService.getScriptCache();
   const ss = SpreadsheetApp.openById(CFG.SPREADSHEET_ID);
-  if(cache.get('structure_ready_v219')==='1' && ss.getSheetByName('Requests')) return;
+  if(cache.get('structure_ready_v220')==='1' && ss.getSheetByName('Requests')) return;
   CFG.SHEETS.forEach(name => {
     let sh = ss.getSheetByName(name);
     if (!sh) sh = ss.insertSheet(name);
@@ -220,7 +220,7 @@ function ensureStructure_() {
     }
     sh.setFrozenRows(1);
   });
-  cache.put('structure_ready_v219','1',300);
+  cache.put('structure_ready_v220','1',300);
 }
 
 let writeLockHeld_=false;
@@ -247,7 +247,7 @@ function doPost(e) {
     ensureCoreData_();
     if (!body.request_id) body.request_id = Utilities.getUuid() + '-' + Utilities.getUuid();
     // Durable deduplication survives app restarts and lost network responses.
-    const guarded=['tuition_add','tuition_bulk_debt','expense_add','finance_transaction','cheque_review','cheque_add','staff_worklog_add','payroll_add','bank_account_add','message_add','category_add','manager_add','school_add','staff_add','bank_upload'];
+    const guarded=['tuition_add','tuition_bulk_debt','expense_add','finance_transaction','cheque_review','cheque_collection','cheque_add','staff_worklog_add','payroll_add','bank_account_add','message_add','category_add','manager_add','school_add','staff_add','bank_upload'];
     if(guarded.indexOf(action)>=0){
       const user=auth_(body);
       const fingerprint=Object.keys(body).filter(k=>k!=='token'&&k!=='request_id').sort().map(k=>[k,body[k]]);
@@ -312,6 +312,7 @@ function doPost(e) {
       case 'cheques': result=cheques_(body); break;
       case 'cheque_list': result=chequeList_(body); break;
       case 'cheque_review': result=chequeReview_(body); break;
+      case 'cheque_collection': result=chequeCollection_(body); break;
       case 'cheque_add': result=chequeAdd_(body); break;
       case 'cheque_update': result=chequeUpdate_(body); break;
       case 'cheque_delete': result=chequeDelete_(body); break;
@@ -1429,7 +1430,11 @@ function bankMatch_(b) {
   }
   const tx=findRow_('Transactions',transactionId);
   if(!tx) throw new Error('تراکنش اپ یافت نشد.');
-  if(String(tx.obj.payment_source)==='چک')throw new Error('چک باید از مسیر تطبیق خودکار چک با شناسه صیادی بررسی شود.');
+  let chequeRow=null;
+  if(String(tx.obj.payment_source)==='چک'){
+    chequeRow=rows_('Cheques').find(x=>(String(x.obj.tuition_id||'')!==''&&String(x.obj.tuition_id)===String(tx.obj.source_id))||(String(x.obj.sayad_id||'')!==''&&String(x.obj.sayad_id)===String(tx.obj.tracking_code)&&String(x.obj.school_id)===String(tx.obj.school_id)&&Number(x.obj.amount)===Number(tx.obj.amount)))||null;
+    if(!chequeRow||String(chequeRow.obj.collection_status)!=='cleared') throw new Error('این چک هنوز توسط مدیر ارشد «وصول‌شده» تأیید نشده است؛ ابتدا چک را سرحساب و در سررسید وصول کنید.');
+  }
   if(!bankEligible_(tx.obj))throw new Error('این تراکنش نقدی یا بدهی، قابل تطبیق بانکی نیست.');
   if(rows_('Bank').some(x=>String(x.obj.matched_transaction_id||'')===transactionId&&String(x.obj.id)!==String(hit.obj.id)))
     throw new Error('این تراکنش به ردیف بانکی دیگری متصل است.');
@@ -1451,6 +1456,7 @@ function bankMatch_(b) {
     tx.obj.tracking_code,tx.obj.image_url,tx.obj.created_by,tx.obj.created_at,
     true,tx.obj.approved,tx.obj.source_id,tx.obj.payment_source||''
   ]);
+  if(chequeRow) patchRow_('Cheques',chequeRow.row,{bank_reconciled:true,bank_status:'paid',bank_date:String(hit.obj.date||'')});
   return {success:true,matched:true};
 }
 function transactionReview_(b){
@@ -1532,15 +1538,18 @@ function bankReconcile_(b){
       if(String(t.reconciled)==='true') updateRow_('Transactions',x.row,[t.id,t.date,t.school_id,t.kind,t.amount,t.description,t.tracking_code,t.image_url,t.created_by,t.created_at,false,t.approved,t.source_id,t.payment_source||'']);
     }
   });
-  // Resolve approved cheques from bank rows. A bank description containing return/bounce terms marks the cheque as unpaid.
+  // Resolve cheques from bank rows: approved cheques the bank shows as paid/returned, and cheques the senior
+  // already marked as collected (status paid) that still wait for their bank statement row.
   const chequeRows=rows_('Cheques');
   chequeRows.forEach(x=>{
-    const c=x.obj; if(String(c.status)!=='approved' || String(c.bank_reconciled)==='true') return;
+    const c=x.obj;
+    const clearedByUser=String(c.status)==='paid'&&String(c.collection_status)==='cleared';
+    if((String(c.status)!=='approved'&&!clearedByUser) || String(c.bank_reconciled)==='true') return;
     const hits=banks.filter(z=>!usedBankIds[String(z.id)] && String(z.tracking_code||'')===String(c.sayad_id||'') && String(z.school_id)===String(c.school_id) && Number(z.amount)===Number(c.amount));
     const hit=hits.length===1?hits[0]:null;
     if(!hit) return;
     usedBankIds[String(hit.id)]=true;
-    const ledger=rows_('Transactions').find(z=>String(z.obj.kind)==='payment'&&String(z.obj.payment_source)==='چک'&&String(z.obj.tracking_code)===String(c.sayad_id)&&String(z.obj.school_id)===String(c.school_id));
+    const ledger=chequeLedger_(c).ledger||rows_('Transactions').find(z=>String(z.obj.kind)==='payment'&&String(z.obj.payment_source)==='چک'&&String(z.obj.tracking_code)===String(c.sayad_id)&&String(z.obj.school_id)===String(c.school_id));
     const bankRecord=bankRows.find(z=>String(z.obj.id)===String(hit.id));
     if(bankRecord&&ledger){
       const z=bankRecord.obj,t=ledger.obj;
@@ -1555,7 +1564,9 @@ function bankReconcile_(b){
       updateRow_('Transactions',ledger.row,[t.id,t.date,t.school_id,t.kind,t.amount,t.description,t.tracking_code,t.image_url,t.created_by,t.created_at,false,t.approved,t.source_id,t.payment_source]);
       voidRecord_('Transactions',ledger.row);
     }
-    updateRow_('Cheques',x.row,[c.id,c.date,c.student_id,c.school_id,c.amount,c.sayad_id,c.due_date,c.description,c.created_by,c.created_at,c.payment_method,c.received_confirmed,c.in_favor_confirmed,bounced?'bounced':'paid',c.approved_at,c.approved_by,true,bounced?'bounced':'paid',hit.date]);
+    const patch={status:bounced?'bounced':'paid',bank_reconciled:true,bank_status:bounced?'bounced':'paid',bank_date:hit.date,collection_status:bounced?'not_cleared':'cleared'};
+    if(!String(c.cleared_date||'')) patch.cleared_date=hit.date;
+    patchRow_('Cheques',x.row,patch);
     if(bounced) addSystemMessage_('⚠️ چک صیادی '+c.sayad_id+' دانش‌آموز با سررسید '+c.due_date+' پاس نشده/برگشت خورده است. مدیر مدرسه و کاربر ارشد باید پیگیری کنند.',c.school_id);
   });
   return {success:true,matched:matched,unmatched:unmatched};
@@ -1883,6 +1894,7 @@ function chequeAlerts_(b){
   data.forEach(c=>{
     const name=students[String(c.student_id)]?.name||'دانش‌آموز';
     if(String(c.status)==='bounced') alerts.push({level:'danger',message:'⚠️ چک '+c.sayad_id+' دانش‌آموز '+name+' پاس نشده/برگشت خورده است.'});
+    else if(String(c.collection_status)==='on_account' && String(c.due_date)<=today) alerts.push({level:'warning',message:'⏰ سررسید چک '+(c.sayad_id||c.cheque_number||c.id)+' دانش‌آموز '+name+' فرا رسیده است؛ وصول یا عدم وصول را تأیید کنید.'});
     else if(String(c.bank_reconciled)!=='true' && String(c.due_date) && String(c.due_date)<=today) alerts.push({level:'warning',message:'⏰ سررسید چک '+c.sayad_id+' دانش‌آموز '+name+' فرا رسیده است و هنوز با بانک تطبیق نشده.'});
     else if(String(c.bank_reconciled)!=='true' && daysBetween_(today,String(c.due_date))<=3 && daysBetween_(today,String(c.due_date))>=0) alerts.push({level:'info',message:'⏰ سررسید چک '+c.sayad_id+' دانش‌آموز '+name+' نزدیک است.'});
   });
@@ -1937,12 +1949,72 @@ function chequeReview_(b){
         updateRow_('Cheques',hit.row,[c.id,c.date,c.student_id,c.school_id,c.amount,c.sayad_id,c.due_date,c.description,c.created_by,c.created_at,c.payment_method,c.received_confirmed,c.in_favor_confirmed,'pending',c.approved_at,c.approved_by,c.bank_reconciled,c.bank_status,c.bank_date]);
         throw error;
       }
+      patchRow_('Cheques',hit.row,{tuition_id:String(tid),transaction_id:String(txid)});
       SpreadsheetApp.flush();
       addSystemMessage_('✅ چک صیادی '+c.sayad_id+' تأیید شد و پرداخت آن در ریز گردش دانش‌آموز ثبت گردید.',c.school_id);
       return {success:true,status:'approved',received_confirmed:true,in_favor_confirmed:true,tuition_id:tid,transaction_id:txid};
     }
     SpreadsheetApp.flush();
     return {success:true,status:'pending',received_confirmed:received,in_favor_confirmed:favor,message:'تأیید اول ثبت شد؛ برای نهایی‌شدن، تأیید دیگر نیز لازم است.'};
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* ---------- CHEQUE COLLECTION: on-account -> cleared/not cleared -> bank deposit -> reconcile ---------- */
+function chequeLedger_(c){
+  let ledger=null;
+  if(String(c.tuition_id||'')!=='') ledger=rows_('Transactions').find(z=>String(z.obj.source_id)===String(c.tuition_id)&&['payment','debt'].indexOf(String(z.obj.kind))>=0&&String(z.obj.kind)==='payment')||null;
+  if(!ledger&&String(c.sayad_id||'')!=='') ledger=rows_('Transactions').find(z=>String(z.obj.kind)==='payment'&&String(z.obj.payment_source)==='چک'&&String(z.obj.tracking_code)===String(c.sayad_id)&&String(z.obj.school_id)===String(c.school_id)&&Number(z.obj.amount)===Number(c.amount))||null;
+  const tuition=ledger?findRow_('Tuition',ledger.obj.source_id):null;
+  return {ledger:ledger,tuition:tuition};
+}
+function chequeCollection_(b){
+  const lock=writeLock_();
+  lock.waitLock(30000);
+  try{
+    const u=auth_(b,['senior','admin']);
+    const hit=findRow_('Cheques',b.id); if(!hit) throw new Error('چک یافت نشد.');
+    const c=hit.obj;
+    const step=String(b.step||'');
+    const status=String(c.status||'pending');
+    const cs=String(c.collection_status||'');
+    if(['on_account','undo_on_account','cleared','not_cleared'].indexOf(step)<0) throw new Error('عملیات نامعتبر است. لطفاً برنامه را به‌روزرسانی کنید.');
+    if(String(c.cheque_type)==='guarantee'||['guarantee','staff_guarantee'].indexOf(String(c.cheque_purpose))>=0) throw new Error('چک ضمانتی سرحساب و وصول نمی‌شود.');
+    const today=todayIso_();
+    if(step==='on_account'){
+      if(status!=='approved'||cs!=='') return {success:true,already_processed:true,status:status,collection_status:cs};
+      const acc=findRow_('BankAccounts',b.bank_account_id);
+      if(!acc||String(acc.obj.is_active)==='false') throw new Error('حساب بانکی انتخاب‌شده تعریف نشده یا غیرفعال است.');
+      const d=String(b.date||'').trim()?date_(b.date):today;
+      patchRow_('Cheques',hit.row,{collection_status:'on_account',on_account_date:d,on_account_by:u.id,deposit_bank_account_id:String(acc.obj.id)});
+      return {success:true,status:'approved',collection_status:'on_account',on_account_date:d,deposit_bank_account_id:String(acc.obj.id)};
+    }
+    if(step==='undo_on_account'){
+      if(status!=='approved'||cs!=='on_account') throw new Error('فقط چکِ «سرحساب‌شده» که هنوز وصول/عدم وصول نشده قابل بازگشت است.');
+      patchRow_('Cheques',hit.row,{collection_status:'',on_account_date:'',on_account_by:'',deposit_bank_account_id:''});
+      return {success:true,status:'approved',collection_status:''};
+    }
+    // cleared / not_cleared
+    if(cs==='cleared'||cs==='not_cleared') return {success:true,already_processed:true,status:status,collection_status:cs};
+    if(status!=='approved'||cs!=='on_account') throw new Error('ابتدا چک باید تأیید و «سرحساب» شود.');
+    if(String(c.due_date||'')>today) throw new Error('سررسید این چک ('+c.due_date+') هنوز نرسیده است؛ وصول یا عدم وصول بعد از سررسید قابل تأیید است.');
+    const d=String(b.date||'').trim()?date_(b.date):today;
+    if(step==='cleared'){
+      patchRow_('Cheques',hit.row,{status:'paid',collection_status:'cleared',cleared_date:d,cleared_by:u.id});
+      addSystemMessage_('✅ چک '+(c.sayad_id||c.cheque_number||c.id)+' به مبلغ '+c.amount+' وصول شد و به حساب بانک واریز گردید؛ منتظر تطبیق با صورتحساب بانک است.',c.school_id);
+      return {success:true,status:'paid',collection_status:'cleared',cleared_date:d};
+    }
+    const l=chequeLedger_(c);
+    if(l.tuition) voidRecord_('Tuition',l.tuition.row);
+    if(l.ledger){
+      const t=l.ledger.obj;
+      updateRow_('Transactions',l.ledger.row,[t.id,t.date,t.school_id,t.kind,t.amount,t.description,t.tracking_code,t.image_url,t.created_by,t.created_at,false,t.approved,t.source_id,t.payment_source]);
+      voidRecord_('Transactions',l.ledger.row);
+    }
+    patchRow_('Cheques',hit.row,{status:'bounced',collection_status:'not_cleared',cleared_date:d,cleared_by:u.id,bank_status:'bounced'});
+    addSystemMessage_('⚠️ چک '+(c.sayad_id||c.cheque_number||c.id)+' وصول نشد؛ پرداخت شهریه آن از دفتر دانش‌آموز برگشت خورد. مدیر مدرسه و کاربر ارشد باید پیگیری کنند.',c.school_id);
+    return {success:true,status:'bounced',collection_status:'not_cleared',ledger_reversed:!!(l.ledger||l.tuition)};
   } finally {
     lock.releaseLock();
   }
@@ -2034,6 +2106,7 @@ function chequeAdd_(b){
     appendFinancialPair_('Tuition',[tuitionId,issue,String(b.student_id),schoolId,'payment',amount,description,sayad,image.url||'',u.id,now_(),false,true,'چک','approved','','','','','','',''],
       [txId,issue,schoolId,'payment',amount,description,sayad,image.url||'',u.id,now_(),false,true,tuitionId,'چک','approved','','','','']);
   }
+  if(tuitionId){ const ch=findRow_('Cheques',id); if(ch) patchRow_('Cheques',ch.row,{tuition_id:String(tuitionId),transaction_id:String(txId)}); }
   SpreadsheetApp.flush();
   return {success:true,id:id,status:row.status,image_url:image.url||'',tuition_id:tuitionId,transaction_id:txId};
 }

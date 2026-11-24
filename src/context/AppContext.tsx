@@ -36,6 +36,7 @@ import {
   INITIAL_FEEDBACKS,
 } from '../data/initialData';
 import { buildParsianCode, setSchoolRegistry } from '../utils/parsian';
+import { isUncollectedChequeTx } from '../utils/cheques';
 import { jalaliFromGregorian, todayGregorian, todayJalali, latinDigits } from '../utils/jalali';
 import { calculateStudentOverdue, DEFAULT_SMS_TEMPLATE, formatSmsTemplate } from '../utils/debt';
 import {
@@ -209,6 +210,8 @@ interface AppContextType {
 
   // Cheque ops
   reviewCheque: (id: number, action: 'receive' | 'favor' | 'reject') => { success: boolean; status: string; message: string };
+  /** سرحساب‌کردن چک، تأیید وصول یا عدم وصول در سررسید (فقط مدیر ارشد؛ مستقیم روی سرور انجام می‌شود). */
+  chequeCollection: (id: number, step: 'on_account' | 'undo_on_account' | 'cleared' | 'not_cleared', opts?: { bank_account_id?: number; date?: string }) => Promise<{ success: boolean; message: string }>;
   addDirectCheque: (cheque: Omit<Cheque, 'id'>) => Cheque;
   deleteCheque: (id: number) => void;
   updateCheque: (id: number, data: Partial<Cheque>) => void;
@@ -1724,7 +1727,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         payment_method: 'چک',
         tracking_code: cheque.sayad_id,
         description: `پرداخت با چک ${cheque.sayad_id || cheque.cheque_number || ''} (سررسید: ${jalaliFromGregorian(cheque.due_date)})`,
-        reconciled: true,
+        // تا وقتی چک سرحساب و وصول و با بانک تطبیق نخورده، روی موجودی بانک اثر ندارد.
+        reconciled: false,
         review_status: 'approved',
       };
       setTransactions((prev) => [newTx, ...prev]);
@@ -1742,6 +1746,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : updatedStatus === 'rejected'
           ? 'چک رد شد و از فهرست انتظار خارج گردید.'
           : 'تأیید ثبت شد؛ برای تأیید نهایی باید هر دو شرط تأیید دریافت و در وجه مدرسه احراز شوند.',
+    };
+  };
+
+  const chequeCollection: AppContextType['chequeCollection'] = async (id, step, opts = {}) => {
+    const cheque = cheques.find((c) => c.id === id);
+    if (!cheque) return { success: false, message: 'چک پیدا نشد.' };
+    if (isTempId(id)) return { success: false, message: 'این چک هنوز به سرور ارسال نشده است؛ ابتدا همگام‌سازی کنید.' };
+    const res = await postToAppsScript({ action: 'cheque_collection', id, step, bank_account_id: opts.bank_account_id, date: opts.date });
+    if (!res.success) {
+      return { success: false, message: res.network ? 'اتصال برقرار نشد؛ اینترنت را بررسی و دوباره تلاش کنید.' : (res.error || 'انجام نشد.') };
+    }
+    const r: any = res;
+    setCheques((prev) => prev.map((c) => (c.id === id ? {
+      ...c,
+      status: (r.status || c.status) as Cheque['status'],
+      collection_status: (r.collection_status ?? c.collection_status ?? '') as Cheque['collection_status'],
+      on_account_date: step === 'undo_on_account' ? undefined : (r.on_account_date || c.on_account_date),
+      deposit_bank_account_id: step === 'undo_on_account' ? undefined : (r.deposit_bank_account_id ? Number(r.deposit_bank_account_id) : c.deposit_bank_account_id),
+      cleared_date: r.cleared_date || c.cleared_date,
+    } : c)));
+    const label = ({ on_account: 'سرحساب شد', undo_on_account: 'سرحساب لغو شد', cleared: 'وصول شد', not_cleared: 'وصول نشد (برگشت)' } as const)[step];
+    logActivity('وصول چک', `چک ${cheque.sayad_id || cheque.cheque_number || id}: ${label}`, 'cheque', id);
+    // اگر چک برگشت خورد دفتر شهریه عوض شده است؛ دفتر را دوباره از سرور بگیر.
+    if (step === 'not_cleared' || step === 'cleared') void syncWithGoogleSheets(spreadsheetId).catch(() => {});
+    return {
+      success: true,
+      message: step === 'on_account' ? 'چک سرحساب شد. بعد از رسیدن سررسید وصول یا عدم وصول را تأیید کنید.'
+        : step === 'undo_on_account' ? 'سرحساب چک لغو شد.'
+        : step === 'cleared' ? 'وصول چک تأیید شد و مبلغ به حساب بانک واریز گردید؛ حالا در صفحه‌ی تطبیق بانک با صورتحساب تطبیق دهید.'
+        : 'عدم وصول چک ثبت شد و پرداخت شهریه‌ی آن از دفتر دانش‌آموز برگشت خورد.',
     };
   };
 
@@ -1806,6 +1840,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         : undefined;
       const matchIndex = updatedTxs.findIndex((t) => {
         if (t.reconciled || Number(t.amount) !== Number(bt.amount)) return false;
+        if (isUncollectedChequeTx(t, cheques)) return false; // چک تا تأیید وصول با بانک تطبیق نمی‌خورد
         const sameReference = Boolean(t.tracking_code && bt.tracking_code &&
           t.tracking_code.trim() === bt.tracking_code.trim());
         if (sameReference) return true;
@@ -2509,6 +2544,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addCategory,
         toggleCategory,
         reviewCheque,
+        chequeCollection,
         addDirectCheque,
         deleteCheque,
         updateCheque,

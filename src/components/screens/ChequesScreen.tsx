@@ -4,7 +4,8 @@ import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { Cheque } from '../../types';
-import { formatRial, jalaliFromGregorian, todayJalali, jalaliToIso, latinDigits } from '../../utils/jalali';
+import { formatRial, jalaliFromGregorian, todayJalali, jalaliToIso, latinDigits, todayGregorian } from '../../utils/jalali';
+import { chequeStage, CHEQUE_STAGE_LABEL, isCollectibleCheque, daysToDue, ChequeStage } from '../../utils/cheques';
 import { JalaliDatePicker } from '../JalaliDatePicker';
 import { QuickAmountPad } from '../QuickAmountPad';
 import { ReceiptImageUploader } from '../ReceiptImageUploader';
@@ -58,6 +59,8 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
   const {
     cheques,
     reviewCheque,
+    chequeCollection,
+    bankAccounts,
     addDirectCheque,
     deleteCheque,
     currentUser,
@@ -67,7 +70,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
   } = useApp();
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
 
-  const [activeTab, setActiveTab] = useState<'review' | 'list'>(
+  const [activeTab, setActiveTab] = useState<'review' | 'list' | 'collect'>(
     isSenior && initialMode === 'review' ? 'review' : 'list'
   );
   const [filterType, setFilterType] = useState<string>('all');
@@ -99,14 +102,63 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
     ? cheques
     : cheques.filter((c) => c.school_id === currentUser?.school_id);
 
+  // ---- چرخه‌ی سرحساب و وصول (فقط مدیر ارشد) ----
+  const today = todayGregorian();
+  type CollectFilter = 'todo' | 'on_account' | 'cleared' | 'done';
+  const [collectFilter, setCollectFilter] = useState<CollectFilter>('todo');
+  const [collectDialog, setCollectDialog] = useState<{ cheque: Cheque; accountId: number; dateJalali: string } | null>(null);
+  const [collectBusy, setCollectBusy] = useState(false);
+  useBackClose(collectDialog !== null, () => { if (!collectBusy) setCollectDialog(null); });
+  const [collectNotice, setCollectNotice] = useState<{ text: string; ok: boolean } | null>(null);
+  const activeBankAccounts = bankAccounts.filter((a) => a.is_active !== false);
+  const collectStages: Record<CollectFilter, ChequeStage[]> = {
+    todo: ['to_deposit', 'on_account'],
+    on_account: ['on_account'],
+    cleared: ['cleared'],
+    done: ['reconciled', 'not_cleared'],
+  };
+  const stageOf = (c: Cheque) => chequeStage(c);
+  const stageCounts = userCheques.reduce<Record<string, number>>((acc, c) => {
+    const st = stageOf(c);
+    acc[st] = (acc[st] || 0) + 1;
+    return acc;
+  }, {});
+  const dueActionCount = userCheques.filter((c) => stageOf(c) === 'on_account' && daysToDue(c.due_date, today) <= 0).length;
+
+  const runCollection = async (c: Cheque, step: 'on_account' | 'undo_on_account' | 'cleared' | 'not_cleared', opts: { bank_account_id?: number; date?: string } = {}) => {
+    if (collectBusy) return;
+    setCollectBusy(true);
+    try {
+      const res = await chequeCollection(c.id, step, opts);
+      setCollectNotice({ text: res.message, ok: res.success });
+      if (res.success) setCollectDialog(null);
+    } finally {
+      setCollectBusy(false);
+    }
+  };
+  const confirmCollection = (c: Cheque, step: 'cleared' | 'not_cleared') => {
+    const name = c.student_name || c.issuer_name || 'چک';
+    const msg = step === 'cleared'
+      ? `وصول چک «${name}» به مبلغ ${formatRial(c.amount)} ریال تأیید شود و به حساب بانک واریز گردد؟`
+      : `عدم وصول چک «${name}» ثبت شود؟ پرداخت شهریه‌ی این چک از دفتر دانش‌آموز برگشت می‌خورد.`;
+    if (window.confirm(msg)) void runCollection(c, step);
+  };
+  const saveCollectDialog = () => {
+    if (!collectDialog) return;
+    const iso = jalaliToIso(collectDialog.dateJalali);
+    if (!collectDialog.accountId) { setCollectNotice({ text: 'حساب بانکی را انتخاب کنید.', ok: false }); return; }
+    void runCollection(collectDialog.cheque, 'on_account', { bank_account_id: collectDialog.accountId, date: iso || undefined });
+  };
+
   const filteredCheques = userCheques.filter((c) => {
+    if (activeTab === 'collect' && !collectStages[collectFilter].includes(stageOf(c))) return false;
     if (filterType === 'all') return true;
     if (filterType === 'sayad') return !c.cheque_type || c.cheque_type === 'sayad';
     if (filterType === 'non_sayad') return c.cheque_type === 'non_sayad';
     if (filterType === 'gharzolhasane') return c.cheque_type === 'gharzolhasane';
     if (filterType === 'guarantee') return c.cheque_type === 'guarantee' || c.cheque_purpose === 'guarantee';
     return true;
-  });
+  }).sort((a, b) => (activeTab === 'collect' ? String(a.due_date).localeCompare(String(b.due_date)) : 0));
 
   // Due date warnings (cheques maturing within 10 days)
   const now = new Date();
@@ -275,6 +327,46 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
               <FileCheck className="w-4 h-4" />
               <span>لیست کلی چک‌ها ({userCheques.length})</span>
             </button>
+            <button
+              onClick={() => setActiveTab('collect')}
+              className={`flex-1 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 ${
+                activeTab === 'collect'
+                  ? 'bg-[#62205f] text-white shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              style={activeTab === 'collect' ? { backgroundColor: accentColor } : {}}
+            >
+              <Landmark className="w-4 h-4" />
+              <span>سرحساب و وصول{dueActionCount > 0 ? ` (${dueActionCount} سررسید)` : ''}</span>
+            </button>
+          </div>
+        )}
+
+        {collectNotice && (
+          <div className={`rounded-2xl border p-3 text-xs font-bold flex items-start justify-between gap-2 ${collectNotice.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
+            <span>{collectNotice.text}</span>
+            <button type="button" aria-label="بستن" onClick={() => setCollectNotice(null)}><X className="w-4 h-4" /></button>
+          </div>
+        )}
+
+        {isSenior && activeTab === 'collect' && (
+          <div className="bg-white p-3 rounded-2xl border border-[#e5dde8] shadow-2xs space-y-2">
+            <div className="text-[11px] leading-5 text-gray-600">
+              مراحل هر چک: تأیید ← <b>سرحساب</b> (انتخاب حساب بانکی) ← در سررسید <b>وصول / عدم وصول</b> ← واریز به حساب بانک ← <b>تطبیق</b> در صفحه‌ی تطبیق بانک.
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {([
+                { id: 'todo', label: `نیازمند اقدام (${(stageCounts.to_deposit || 0) + (stageCounts.on_account || 0)})` },
+                { id: 'on_account', label: `سرحساب‌شده (${stageCounts.on_account || 0})` },
+                { id: 'cleared', label: `وصول‌شده، منتظر تطبیق (${stageCounts.cleared || 0})` },
+                { id: 'done', label: `تطبیق‌شده / برگشتی (${(stageCounts.reconciled || 0) + (stageCounts.not_cleared || 0)})` },
+              ] as Array<{ id: CollectFilter; label: string }>).map((t) => (
+                <button key={t.id} type="button" onClick={() => setCollectFilter(t.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${collectFilter === t.id ? 'bg-[#341648] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -343,9 +435,22 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
           ) : (
             filteredCheques.map((c) => {
               const badge = getTypeBadge(c);
+              const stage = stageOf(c);
+              const stageBg: Record<ChequeStage, string> = {
+                awaiting_review: 'bg-amber-100 text-amber-800 border-amber-200',
+                to_deposit: 'bg-sky-100 text-sky-800 border-sky-200',
+                on_account: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+                cleared: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+                reconciled: 'bg-emerald-200 text-emerald-900 border-emerald-300',
+                not_cleared: 'bg-red-100 text-red-900 border-red-200',
+                rejected: 'bg-rose-100 text-rose-800 border-rose-200',
+                guarantee: 'bg-gray-100 text-gray-700 border-gray-200',
+              };
+              const dueDays = daysToDue(c.due_date, today);
+              const depositAccount = bankAccounts.find((a) => a.id === c.deposit_bank_account_id);
               const statusBadge =
-                c.status === 'approved'
-                  ? { label: 'تأیید شده / وصول', bg: 'bg-emerald-100 text-emerald-800 border-emerald-200' }
+                c.status === 'approved' || c.status === 'paid' || c.status === 'bounced'
+                  ? { label: CHEQUE_STAGE_LABEL[stage], bg: stageBg[stage] }
                   : c.status === 'pending'
                   ? { label: 'در انتظار تأیید', bg: 'bg-amber-100 text-amber-800 border-amber-200' }
                   : c.status === 'rejected'
@@ -452,6 +557,50 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                     </div>
                   )}
 
+                  {/* سرحساب و وصول (مدیر ارشد) */}
+                  {isSenior && (stage === 'to_deposit' || stage === 'on_account' || stage === 'cleared' || stage === 'reconciled' || stage === 'not_cleared') && (
+                    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-3 space-y-2">
+                      {depositAccount && stage !== 'to_deposit' && (
+                        <div className="text-[11px] text-indigo-900 font-bold flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <span>حساب: {depositAccount.name} ({String(depositAccount.account_number || '').slice(-4)})</span>
+                          {c.on_account_date && <span>تاریخ سرحساب: {jalaliFromGregorian(c.on_account_date)}</span>}
+                          {c.cleared_date && stage !== 'on_account' && <span>تاریخ نتیجه: {jalaliFromGregorian(c.cleared_date)}</span>}
+                        </div>
+                      )}
+                      {stage === 'to_deposit' && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button type="button" disabled={collectBusy}
+                            onClick={() => setCollectDialog({ cheque: c, accountId: activeBankAccounts.find((a) => a.school_id === c.school_id)?.id || (activeBankAccounts.length === 1 ? activeBankAccounts[0].id : 0), dateJalali: todayJalali() })}
+                            className="px-4 py-2 rounded-xl text-xs font-bold text-white disabled:opacity-50" style={{ backgroundColor: accentColor }}>
+                            سرحساب کردن چک
+                          </button>
+                          <span className="text-[11px] text-gray-500">سررسید: {dueDays > 0 ? `${dueDays} روز دیگر` : dueDays === 0 ? 'امروز' : `${Math.abs(dueDays)} روز گذشته`}</span>
+                        </div>
+                      )}
+                      {stage === 'on_account' && (
+                        dueDays > 0 ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[11px] font-bold text-indigo-900">سررسید {dueDays} روز دیگر است؛ بعد از سررسید می‌توانید وصول یا عدم وصول را تأیید کنید.</span>
+                            <button type="button" disabled={collectBusy} onClick={() => { if (window.confirm('سرحساب این چک لغو شود؟')) void runCollection(c, 'undo_on_account'); }}
+                              className="px-3 py-1.5 rounded-lg text-[11px] font-bold border border-gray-300 text-gray-700 bg-white">لغو سرحساب</button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button type="button" disabled={collectBusy} onClick={() => confirmCollection(c, 'cleared')}
+                              className="flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50">✓ تأیید وصول</button>
+                            <button type="button" disabled={collectBusy} onClick={() => confirmCollection(c, 'not_cleared')}
+                              className="flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 disabled:opacity-50">✗ عدم وصول</button>
+                          </div>
+                        )
+                      )}
+                      {stage === 'cleared' && (
+                        <div className="text-[11px] font-bold text-emerald-800">مبلغ به حساب بانک واریز شد؛ در صفحه‌ی «تطبیق بانک» با ردیف صورتحساب تطبیق دهید.</div>
+                      )}
+                      {stage === 'reconciled' && <div className="text-[11px] font-bold text-emerald-800">با صورتحساب بانک تطبیق خورده است ✓</div>}
+                      {stage === 'not_cleared' && <div className="text-[11px] font-bold text-rose-800">وصول نشد؛ پرداخت شهریه‌ی این چک از دفتر برگشت خورد.</div>}
+                    </div>
+                  )}
+
                   {/* Delete Option for Senior or Creator */}
                   {isSenior && (
                     <div className="flex justify-end pt-1">
@@ -475,6 +624,43 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
           )}
         </div>
       </main>
+
+      {collectDialog && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4">
+          <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col max-h-[92vh] supports-[height:100dvh]:max-h-[92dvh]">
+            <div className="p-4 border-b border-[#ede5ef] flex items-center justify-between shrink-0">
+              <div className="font-bold text-[#341648] text-sm">سرحساب کردن چک — {collectDialog.cheque.student_name || collectDialog.cheque.issuer_name}</div>
+              <button type="button" aria-label="بستن" disabled={collectBusy} onClick={() => setCollectDialog(null)} className="p-1"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+              <div className="text-xs text-gray-600">مبلغ: <b>{formatRial(collectDialog.cheque.amount)} ریال</b> · سررسید: <b>{jalaliFromGregorian(collectDialog.cheque.due_date)}</b></div>
+              <div>
+                <label className="block text-xs font-bold text-[#341648] mb-1.5">حساب بانکیِ سرحساب <span className="text-rose-500">*</span></label>
+                {activeBankAccounts.length === 0 ? (
+                  <div className="text-xs rounded-xl bg-amber-50 border border-amber-300 text-amber-900 p-3">هنوز حساب بانکی تعریف نشده است؛ ابتدا از بخش «حساب‌های بانکی» حساب را تعریف کنید.</div>
+                ) : (
+                  <select value={collectDialog.accountId} onChange={(e) => setCollectDialog({ ...collectDialog, accountId: Number(e.target.value) || 0 })}
+                    className="w-full px-3 py-2.5 rounded-xl border border-[#e5dde8] text-sm bg-white">
+                    <option value={0} disabled>— انتخاب از حساب‌های تعریف‌شده —</option>
+                    {activeBankAccounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({String(a.account_number || '').slice(-4)})</option>)}
+                  </select>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-[#341648] mb-1.5">تاریخ سرحساب</label>
+                <JalaliDatePicker label="تاریخ سرحساب" value={collectDialog.dateJalali} onChange={(v) => setCollectDialog({ ...collectDialog, dateJalali: v })} />
+              </div>
+            </div>
+            <div className="p-4 border-t border-[#ede5ef] shrink-0 flex justify-end gap-2">
+              <button type="button" disabled={collectBusy} onClick={() => setCollectDialog(null)} className="px-4 py-2.5 rounded-xl border border-[#e5dde8] text-xs font-bold text-gray-600">انصراف</button>
+              <button type="button" disabled={collectBusy || activeBankAccounts.length === 0} onClick={saveCollectDialog}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white disabled:opacity-50" style={{ backgroundColor: accentColor }}>
+                {collectBusy ? 'در حال ثبت…' : 'ثبت سرحساب'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add New Cheque Modal */}
       {isModalOpen && (
