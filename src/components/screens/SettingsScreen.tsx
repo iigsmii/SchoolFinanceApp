@@ -21,6 +21,7 @@ import {
 import { DEFAULT_SPREADSHEET_ID, postToAppsScript } from '../../services/googleSheets';
 import { toPersianDigits } from '../../utils/jalali';
 import packageJson from '../../../package.json';
+import { UpdateOverlay, UpdateInfo } from '../AppUpdatePrompt';
 
 const THEME_NAMES = [
   { name: 'بنفش سلطنتی (اصلی)', color: '#62205f' },
@@ -68,6 +69,8 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
   const [releaseVersion, setReleaseVersion] = useState(String(packageJson.version || '2.16.0'));
   const [releaseApkUrl, setReleaseApkUrl] = useState('https://github.com/iigsmii/SchoolFinanceApp/releases/latest/download/SchoolFinanceApp-latest.apk');
   const [releaseNotes, setReleaseNotes] = useState('');
+  const [releaseForce, setReleaseForce] = useState(false);
+  const [manualUpdate, setManualUpdate] = useState<UpdateInfo | null>(null);
   const [releaseBusy, setReleaseBusy] = useState(false);
   // Each build is stored as its own GitHub Release; typing the version fills that exact APK link
   // (only when the link is still one of this repository's release links, never a custom one).
@@ -89,6 +92,7 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
       if (result.version) setReleaseVersion(String(result.version));
       if (result.apk_url) setReleaseApkUrl(String(result.apk_url));
       if (result.notes) setReleaseNotes(String(result.notes));
+      setReleaseForce(result.force_update === true);
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [googleOnly, isSenior, webAppUrl]);
@@ -100,7 +104,7 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
     }
     setReleaseBusy(true);
     try {
-      const result: any = await postToAppsScript({ action: 'update_settings', version: releaseVersion.trim(), apk_url: releaseApkUrl.trim(), notes: releaseNotes.trim(), release_enabled: enabled }, webAppUrl);
+      const result: any = await postToAppsScript({ action: 'update_settings', version: releaseVersion.trim(), apk_url: releaseApkUrl.trim(), notes: releaseNotes.trim(), force_update: releaseForce, release_enabled: enabled }, webAppUrl);
       if (!result?.success) throw new Error(result?.error || result?.message || 'ذخیره تنظیمات انتشار انجام نشد.');
       setReleaseEnabled(enabled);
       setSaveFeedback(enabled ? 'انتشار بروزرسانی برای مدیران فعال شد.' : 'انتشار بروزرسانی غیرفعال شد.');
@@ -143,10 +147,7 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
         setUpdateMsg('برنامه شما به‌روز است؛ نسخه فعلی ' + currentVersion);
         return;
       }
-      const notes = latest.notes ? '\\n\\nتغییرات: ' + String(latest.notes) : '';
-      if (window.confirm('نسخه جدید ' + remoteVersion + ' آماده دانلود است.\\nنسخه فعلی: ' + currentVersion + notes + '\\n\\nبرای دانلود نسخه جدید ادامه می‌دهید؟')) {
-        window.open(String(latest.apk_url), '_blank', 'noopener,noreferrer');
-      }
+      setManualUpdate({ version: remoteVersion, apk_url: String(latest.apk_url), notes: latest.notes ? String(latest.notes) : undefined, force_update: latest.force_update === true });
     } catch (_) {
       setUpdateMsg('ارتباط با سرور بروزرسانی برقرار نشد؛ لطفاً بعداً دوباره امتحان کنید.');
     } finally {
@@ -211,6 +212,19 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
             <label className="text-xs font-semibold text-gray-600 space-y-1 block"><span>شماره نسخه</span><input value={releaseVersion} onChange={e => handleReleaseVersionChange(e.target.value)} placeholder="2.24.0" dir="ltr" className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm font-mono" /></label>
             <label className="text-xs font-semibold text-gray-600 space-y-1 block"><span>لینک مستقیم APK</span><input value={releaseApkUrl} onChange={e => setReleaseApkUrl(e.target.value)} placeholder="https://.../SchoolFinanceApp-latest.apk" dir="ltr" className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-xs font-mono" /></label>
           </div>
+          <fieldset className="space-y-2">
+            <legend className="text-xs font-semibold text-gray-600">نوع بروزرسانی برای کاربران</legend>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setReleaseForce(false)} aria-pressed={!releaseForce}
+                className={`rounded-xl border px-3 py-2.5 text-xs font-bold ${!releaseForce ? 'border-[#62205f] bg-purple-50 text-[#341648]' : 'border-gray-200 text-gray-600'}`}>
+                اختیاری<span className="block font-normal text-[11px] text-gray-500 mt-0.5">کاربر می‌تواند «بعداً» بزند</span>
+              </button>
+              <button type="button" onClick={() => setReleaseForce(true)} aria-pressed={releaseForce}
+                className={`rounded-xl border px-3 py-2.5 text-xs font-bold ${releaseForce ? 'border-rose-500 bg-rose-50 text-rose-800' : 'border-gray-200 text-gray-600'}`}>
+                اجباری<span className="block font-normal text-[11px] text-gray-500 mt-0.5">تا نصب نسخه جدید امکان کار نیست</span>
+              </button>
+            </div>
+          </fieldset>
           <label className="text-xs font-semibold text-gray-600 space-y-1 block"><span>تغییرات نسخه</span><textarea value={releaseNotes} onChange={e => setReleaseNotes(e.target.value)} rows={3} className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm" placeholder="شرح تغییرات این نسخه..." /></label>
           <div className="flex flex-col sm:flex-row gap-2">
             <button type="button" disabled={releaseBusy} onClick={() => saveReleaseSettings(true)} className="flex-1 rounded-xl bg-emerald-700 text-white px-4 py-3 text-sm font-bold disabled:opacity-50">{releaseBusy ? 'در حال ذخیره...' : 'فعال‌سازی انتشار برای همه مدیران'}</button>
@@ -564,6 +578,7 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
           </div>
         )}
       </main>
+      {manualUpdate && <UpdateOverlay update={manualUpdate} onDismiss={() => setManualUpdate(null)} />}
     </div>
   );
 };
