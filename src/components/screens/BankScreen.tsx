@@ -56,6 +56,7 @@ import { postToAppsScript } from '../../services/googleSheets';
 import { BankTransaction, Transaction, Student } from '../../types';
 import { openAttachment } from '../../services/attachments';
 import { isUncollectedChequeTx } from '../../utils/cheques';
+import { setNavHint } from '../../utils/alerts';
 
 // Standard 7 POS Terminals mapped to Schools 1-7
 export const DEFAULT_POS_TERMINALS = [
@@ -153,6 +154,7 @@ export const BankScreen: React.FC = () => {
   const [resolveComment, setResolveComment] = useState('');
   const [resolvePaymentSource, setResolvePaymentSource] = useState<'bank' | 'petty_cash'>('bank');
   const [resolveModalError, setResolveModalError] = useState('');
+  const [resolveErrorTargetTxId, setResolveErrorTargetTxId] = useState<number | null>(null);
 
   // Rules state
   const [posTerminals, setPosTerminals] = useState(DEFAULT_POS_TERMINALS);
@@ -671,6 +673,7 @@ export const BankScreen: React.FC = () => {
   const openResolveModal = (row: BankTransaction) => {
     setResolveRow(row);
     setResolveModalError('');
+    setResolveErrorTargetTxId(null);
     setResolveSelectedStudent(null);
     setResolveStudentSearch('');
 
@@ -787,6 +790,12 @@ export const BankScreen: React.FC = () => {
   // MANUAL LINK RESOLUTION (Link existing book tx to this bank row)
   const handleLinkExistingTx = (tx: Transaction) => {
     if (!resolveRow) return;
+    if (Number(tx.school_id) !== Number(resolveSchoolId)) {
+      setResolveErrorTargetTxId(tx.id);
+      setResolveModalError('تراکنش بانکی و تراکنش نرم‌افزار باید متعلق به یک مدرسه باشند. برای بررسی سند مرتبط، روی این خطا بزنید.');
+      return;
+    }
+    setResolveErrorTargetTxId(null);
     updateBankTransaction(resolveRow.id, {
       reconciled: true,
       matched_transaction_id: tx.id,
@@ -1063,6 +1072,22 @@ export const BankScreen: React.FC = () => {
       return false;
     }).slice(0, 10);
   }, [transactions, cheques, resolveRow, resolveSchoolId]);
+
+  // Same-amount records from another school are shown as blocked, not silently hidden.
+  const crossSchoolCandidateTxs = useMemo(() => {
+    if (!resolveRow || !resolveSchoolId) return [];
+    return transactions.filter((t) => {
+      if (t.reconciled || Number(t.school_id) === Number(resolveSchoolId)) return false;
+      if (isUncollectedChequeTx(t, cheques)) return false;
+      return Number(t.amount) === Number(resolveRow.amount);
+    }).slice(0, 10);
+  }, [transactions, cheques, resolveRow, resolveSchoolId]);
+
+  const openRelatedBookTransaction = (transactionId: number) => {
+    setNavHint('transactions', `transaction:${transactionId}`);
+    setCurrentScreen('transactions');
+    setResolveRow(null);
+  };
 
   return (
     <div className="min-h-screen bg-[#fcfafd] pb-24 text-gray-800">
@@ -2152,8 +2177,13 @@ export const BankScreen: React.FC = () => {
               </div>
 
               {resolveModalError && (
-                <div className="p-3 rounded-xl bg-rose-50 text-rose-800 text-xs font-bold border border-rose-200">
-                  {resolveModalError}
+                <div className="rounded-xl bg-rose-50 text-rose-800 text-xs font-bold border border-rose-200 overflow-hidden">
+                  {resolveErrorTargetTxId ? (
+                    <button type="button" onClick={() => openRelatedBookTransaction(resolveErrorTargetTxId)} className="w-full p-3 text-right hover:bg-rose-100 transition-colors underline decoration-dotted underline-offset-4">
+                      {resolveModalError}
+                      <span className="block mt-1 text-[10px] font-black">مشاهده تراکنش مرتبط ←</span>
+                    </button>
+                  ) : <div className="p-3">{resolveModalError}</div>}
                 </div>
               )}
 
@@ -2297,6 +2327,20 @@ export const BankScreen: React.FC = () => {
                     {candidateBookTxs.length === 0 && (
                       <div className="text-center text-xs text-gray-400 py-4">
                         هیچ سند ثبت‌شده با این مبلغ دقیق در دفاتر یافت نشد. می‌توانید از گزینه‌های ثبت شهریه یا ثبت هزینه استفاده کنید.
+                      </div>
+                    )}
+                    {crossSchoolCandidateTxs.length > 0 && (
+                      <div className="mt-3 border-t border-rose-200 pt-2 space-y-1.5">
+                        <div className="px-1 text-[11px] font-black text-rose-700">اسناد هم‌مبلغ از مدرسه‌های دیگر (قابل پیوند نیستند):</div>
+                        {crossSchoolCandidateTxs.map((tx) => (
+                          <button key={tx.id} type="button" onClick={() => {
+                            setResolveErrorTargetTxId(tx.id);
+                            setResolveModalError('تراکنش بانکی و تراکنش نرم‌افزار باید متعلق به یک مدرسه باشند. برای مشاهده سند، روی این پیام خطا بزنید.');
+                          }} className="w-full rounded-xl border border-rose-200 bg-rose-50/70 p-2.5 text-right text-xs hover:bg-rose-100">
+                            <span className="block font-bold text-rose-800">سند #{tx.id} · {tx.school_name || schools.find((s) => Number(s.id) === Number(tx.school_id))?.name || `مدرسه ${tx.school_id}`}</span>
+                            <span className="block mt-1 text-[10px] text-rose-600">برای نمایش جزئیات و علت عدم تطبیق، انتخاب کنید</span>
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>
