@@ -29,6 +29,7 @@ import {
   Shield,
   CreditCard,
   FileText,
+  Edit2,
 } from 'lucide-react';
 import { AttachmentImg } from '../AttachmentImg';
 
@@ -937,7 +938,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                   style={{ backgroundColor: accentColor }}
                 >
                   <Check className="w-4 h-4" />
-                  <span>ثبت قطعی چک در سامانه</span>
+                  <span>{editingCheque ? 'ویرایش و ارسال مجدد برای تأیید' : 'ثبت قطعی چک در سامانه'}</span>
                 </button>
                 <button
                   type="button"
