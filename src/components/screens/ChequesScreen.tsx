@@ -646,6 +646,19 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                     </div>
                   )}
 
+                  {c.status === 'rejected' && (isSenior || String((c as any).created_by || '') === String(currentUser?.id || '')) && (
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditCheque(c)}
+                        className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold hover:bg-amber-100 flex items-center gap-1.5"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                        ویرایش و ارسال مجدد
+                      </button>
+                    </div>
+                  )}
+
                   {/* Delete Option for Senior or Creator */}
                   {isSenior && (
                     <div className="flex justify-end pt-1">
