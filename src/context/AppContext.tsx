@@ -797,10 +797,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // ───────── Local-change journal ─────────
+  // Every change made on this device is protected from being overwritten by a server snapshot
+  // until the server shows it: while it waits in the outbox, and for a grace period after it was
+  // sent (a pull that started before the send finished returns the old row). Without this an
+  // approved transaction, an edit or a delete could "come back" after a sync.
+  const localJournal = useRef<Map<string, { deleted: boolean; at: number }>>(new Map());
+  const wholeTableJournal = useRef<Map<string, number>>(new Map());
+  const LOCAL_GRACE_MS = 5 * 60 * 1000;
+  const ENTITY_TABLE: Record<string, string> = {
+    student: 'students', tuition: 'transactions', expense: 'transactions', petty_income: 'transactions', tx: 'transactions',
+    cheque: 'cheques', category: 'categories', manager: 'users', school: 'schools', bank_account: 'bank_accounts',
+    message: 'senior_msgs', staff: 'staff_members', worklog: 'staff_work_logs', payroll: 'payroll_payments', bank: 'bank_txs',
+  };
+  // bank:match carries the matched transaction's id (the bank row is protected explicitly), so it maps to nothing here.
+  const tableOf = (type: string): string | undefined => (type === 'bank:match' ? undefined : ENTITY_TABLE[type.split(':')[0]]);
+  const touchLocal = (table: string | undefined, id: any, deleted = false) => {
+    if (!table || id == null || id === '') return;
+    localJournal.current.set(`${table}:${id}`, { deleted, at: Date.now() });
+  };
+  const touchEntry = (action: string, entity?: OutboxEntity) => {
+    if (action === 'bank_reconcile') {
+      wholeTableJournal.current.set('bank_txs', Date.now());
+      wholeTableJournal.current.set('transactions', Date.now());
+    }
+    if (!entity || entity.id == null) return;
+    touchLocal(tableOf(entity.type), entity.id, /_delete$/.test(action));
+  };
+  /** Ids of `table` whose local version must win over the server snapshot right now. */
+  const protectedIds = (table: string): Map<string, { deleted: boolean }> => {
+    const out = new Map<string, { deleted: boolean }>();
+    const now = Date.now();
+    localJournal.current.forEach((v, k) => {
+      if (now - v.at > LOCAL_GRACE_MS) { localJournal.current.delete(k); return; }
+      if (k.startsWith(`${table}:`)) out.set(k.slice(table.length + 1), { deleted: v.deleted });
+    });
+    for (const e of outboxSnapshot()) {
+      if (!e.entity || e.entity.id == null || e.entity.type.indexOf(':') < 0) continue; // plain adds are kept by temp id
+      if (tableOf(e.entity.type) !== table) continue;
+      out.set(String(e.entity.id), { deleted: /_delete$/.test(e.action) });
+    }
+    return out;
+  };
+  const tableProtected = (table: string): boolean => {
+    const at = wholeTableJournal.current.get(table);
+    if (at && Date.now() - at < LOCAL_GRACE_MS) return true;
+    return outboxSnapshot().some((e) => e.action === 'bank_reconcile' && (table === 'bank_txs' || table === 'transactions'));
+  };
+
   const onOutboxSuccess = async (entry: OutboxEntry, res: any) => {
     if (res?.image_url && entry.payload?.base64) {
       await primeAttachmentCache(res.image_url, `data:${entry.payload.mime_type || 'image/jpeg'};base64,${entry.payload.base64}`);
     }
+    touchEntry(entry.action, entry.entity);
     const ent = entry.entity;
     if (!ent) return;
     const tmp = ent.id as any;
@@ -864,6 +913,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   /** Queue a write and start sending it right away (the sync pass drains the queue first). */
   const queue = (action: string, payload: Record<string, any>, entity?: OutboxEntity) => {
+    touchEntry(action, entity);
     void enqueue({ action, payload, entity }).then(() => { void syncWithGoogleSheets(spreadsheetId, { pull: false }).catch(() => {}); });
   };
 
@@ -898,39 +948,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     })();
   };
 
-  // Approvals/rejections made on this device. A pull that was already running (or a slightly stale
-  // sheet read) must not flip them back to «در انتظار تأیید» before the server shows the same status.
-  const reviewOverrides = useRef<Map<number, { status: 'approved' | 'rejected'; reason?: string; at: number }>>(new Map());
-  const REVIEW_GRACE_MS = 5 * 60 * 1000;
-
-  const applyReviewOverrides = (remote: Transaction[] | undefined): Transaction[] | undefined => {
-    if (!Array.isArray(remote)) return remote;
-    const wanted = new Map<number, { status: 'approved' | 'rejected'; reason?: string }>();
-    const now = Date.now();
-    // 1) recent local decisions (covers a review that was sent while the pull was in flight)
-    reviewOverrides.current.forEach((v, id) => {
-      if (now - v.at < REVIEW_GRACE_MS) wanted.set(id, v);
-      else reviewOverrides.current.delete(id);
-    });
-    // 2) decisions still waiting in the outbox (survives an app restart)
-    for (const e of outboxSnapshot()) {
-      if (e.entity?.type === 'tx:review' && e.entity.id != null && (e.payload?.status === 'approved' || e.payload?.status === 'rejected')) {
-        wanted.set(Number(e.entity.id), { status: e.payload.status, reason: e.payload.rejection_reason });
-      }
-    }
-    if (wanted.size === 0) return remote;
-    return remote.map((t) => {
-      const w = wanted.get(Number(t.id));
-      if (!w) return t;
-      if (t.review_status === w.status) {
-        // The server caught up; the override is no longer needed (unless it is still queued).
-        if (!outboxSnapshot().some((e) => e.entity?.type === 'tx:review' && Number(e.entity.id) === Number(t.id))) reviewOverrides.current.delete(Number(t.id));
-        return t;
-      }
-      return { ...t, review_status: w.status, rejection_reason: w.status === 'rejected' ? (w.reason || t.rejection_reason) : undefined } as Transaction;
-    });
-  };
-
   /** Applies a server snapshot: server wins on the same id; items deleted elsewhere disappear; unsent local items stay. */
   const applyRemoteData = (res: any, applyOpts: { light?: boolean } = {}) => {
     const put = <T extends { id: string | number }>(name: string, remote: T[] | undefined, setter: (v: T[]) => void, opts: { allowEmpty?: boolean } = {}) => {
@@ -939,7 +956,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // An empty answer never erases data this device still holds.
         return;
       }
+      if (tableProtected(name)) return; // a bulk operation on this table is still being sent
       const existing = loadFromStorage<T[]>(name, []);
+      const prot = protectedIds(name);
+      if (prot.size) {
+        // Local edits/deletes that the server has not confirmed yet win over the snapshot.
+        const localById = new Map(existing.map((i) => [String(i.id), i]));
+        remote = remote
+          .filter((r) => !prot.get(String(r.id))?.deleted)
+          .map((r) => (prot.has(String(r.id)) && localById.has(String(r.id)) ? localById.get(String(r.id))! : r));
+      }
       const merged = reconcileEntity(name, remote, existing);
       // Compare complete records, not only IDs. Direct edits in Google Sheets keep the same
       // row IDs, so an ID-only check silently left stale names and other fields on the device.
@@ -961,7 +987,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     put('students', remoteStudents, setStudents);
     if (!anyFailed('schools')) put('schools', res.schools, setSchools);
-    if (!anyFailed('tuition', 'expenses', 'transactions', 'cheques')) put('transactions', applyReviewOverrides(res.transactions), setTransactions);
+    if (!anyFailed('tuition', 'expenses', 'transactions', 'cheques')) put('transactions', res.transactions, setTransactions);
     if (!anyFailed('bank')) put('bank_txs', res.bankTransactions, setBankTransactions);
     if (!anyFailed('cheques')) put('cheques', res.cheques, setCheques);
     if (!anyFailed('categories')) put('categories', res.categories, setCategories);
@@ -1636,7 +1662,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const reviewTx = (id: number, status: 'approved' | 'rejected', reason?: string) => {
     if (!(currentUser?.role === 'senior' || currentUser?.role === 'admin')) return;
-    reviewOverrides.current.set(id, { status, reason, at: Date.now() });
     queue('transaction_review', buildReviewPayload(id, status, reason), { type: 'tx:review', id });
   };
 
@@ -2025,6 +2050,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const matchedTx = transactions.find((t) => t.id === data.matched_transaction_id);
       const route = matchedTx ? txRoute(matchedTx.id, matchedTx.kind) : undefined;
       if (matchedTx && route && route.base !== 'ledger') {
+        touchLocal('bank_txs', id);
+        touchLocal('transactions', matchedTx.id);
         queue('bank_match', {
           ...(isTempId(id) ? {} : { id }),
           school_id: merged.school_id, date: merged.date, amount: merged.amount, tracking_code: merged.tracking_code,
