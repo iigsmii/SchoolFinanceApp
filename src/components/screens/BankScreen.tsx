@@ -104,9 +104,16 @@ export const BankScreen: React.FC = () => {
     addTuitionPayment,
     categories,
     setCurrentScreen,
+    refreshBankData,
   } = useApp();
 
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
+
+  // Pull the bank lists on open so they never need a manual full sync.
+  useEffect(() => {
+    if (isSenior) void refreshBankData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSenior]);
 
   // Navigation Tabs: Unmatched (Inbox) | Daily Feed (روز به روز) | Bank Fees | Matched | Statement | Settings
   const [activeTab, setActiveTab] = useState<'unmatched' | 'daily' | 'fees' | 'matched' | 'statement' | 'terminals_cards'>('unmatched');
