@@ -1,3 +1,4 @@
+import { takeNavHint } from '../../utils/alerts';
 import React, { useState, useMemo, useDeferredValue, useEffect } from 'react';
 import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
@@ -37,7 +38,7 @@ export const TransactionsScreen: React.FC = () => {
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
 
   const [filterKind, setFilterKind] = useState<'all' | 'debt' | 'payment' | 'expense'>('all');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>(() => (takeNavHint('transactions') === 'rejected' ? 'rejected' : 'all'));
   const [searchQuery, setSearchQuery] = useState('');
   const deferredQuery = useDeferredValue(searchQuery);
   const [filterAccount, setFilterAccount] = useState('all');

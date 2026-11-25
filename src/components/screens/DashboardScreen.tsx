@@ -57,6 +57,7 @@ import {
 import { ScreenType, Student } from '../../types';
 import { formatRial, latinDigits, toPersianDigits } from '../../utils/jalali';
 import { playClickSound } from '../../utils/soundEffects';
+import { chequeAlerts, markRejectedSeen, myRejectedTransactions, seenRejectedIds, setNavHint } from '../../utils/alerts';
 
 const CHART_COLORS = ['#62205f', '#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6', '#f43f5e'];
 
@@ -122,6 +123,19 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
   const pendingReviewCount = useMemo(() => {
     return transactions.filter((t) => t.review_status === 'pending' && t.kind !== 'شهریه_بدهی').length;
   }, [transactions]);
+
+  // مدیر: تراکنش‌های ردشده‌ای که هنوز ندیده است؛ مدیر ارشد: چک‌های نیازمند تأیید
+  const [rejectedSeenTick, setRejectedSeenTick] = useState(0);
+  const unseenRejected = useMemo(() => {
+    if (isSenior || !currentUser) return [];
+    const seen = seenRejectedIds(currentUser.id);
+    return myRejectedTransactions(transactions, currentUser).filter((t) => !seen.has(String(t.id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions, currentUser, isSenior, rejectedSeenTick]);
+  const chequeAlertInfo = useMemo(() => (isSenior ? chequeAlerts(cheques) : null), [cheques, isSenior]);
+  const chequeAlertTotal = chequeAlertInfo
+    ? chequeAlertInfo.pendingReview.length + chequeAlertInfo.dueForCollection.length + chequeAlertInfo.notOnAccount.length
+    : 0;
 
   const handleOfflineExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -467,6 +481,79 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
           >
             <CheckCircle2 className="w-4 h-4" />
             <span>مشاهده و بررسی ({pendingReviewCount.toLocaleString('fa-IR')})</span>
+          </button>
+        </div>
+      )}
+
+      {/* Rejected transactions alert for the registering manager */}
+      {!isSenior && unseenRejected.length > 0 && (
+        <div className="p-3 bg-gradient-to-r from-rose-50 via-red-50 to-rose-50 border-2 border-rose-400 rounded-2xl text-rose-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-xs sm:text-sm font-black flex items-center gap-1.5 flex-wrap">
+                <span>{unseenRejected.length.toLocaleString('fa-IR')} تراکنش یا هزینهٔ ثبت‌شدهٔ شما توسط مدیریت ارشد رد شد</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-600 text-white animate-pulse">نیاز به اصلاح</span>
+              </div>
+              <p className="text-[11px] text-rose-800 mt-0.5">
+                {unseenRejected[0].rejection_reason ? `دلیل رد (آخرین مورد): ${unseenRejected[0].rejection_reason}` : 'برای دیدن دلیل رد و اصلاح یا ثبت مجدد، وارد فهرست رد‌شده‌ها شوید.'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              onClick={() => {
+                if (currentUser) markRejectedSeen(currentUser.id, unseenRejected.map((t) => t.id));
+                setNavHint('transactions', 'rejected');
+                setRejectedSeenTick((n) => n + 1);
+                setCurrentScreen('transactions');
+              }}
+              className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-sm active:scale-95 transition-all"
+            >
+              مشاهده ردشده‌ها ({unseenRejected.length.toLocaleString('fa-IR')})
+            </button>
+            <button
+              onClick={() => { if (currentUser) markRejectedSeen(currentUser.id, unseenRejected.map((t) => t.id)); setRejectedSeenTick((n) => n + 1); }}
+              className="p-2 rounded-xl text-rose-700 hover:bg-rose-100"
+              aria-label="بستن هشدار"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Cheque approvals / collection confirmations for the senior manager */}
+      {isSenior && chequeAlertInfo && chequeAlertTotal > 0 && (
+        <div className="p-3 bg-gradient-to-r from-sky-50 via-indigo-50 to-sky-50 border-2 border-sky-400 rounded-2xl text-sky-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-sky-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-xs sm:text-sm font-black flex items-center gap-1.5 flex-wrap">
+                <span>چک‌های نیازمند اقدام شما</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-600 text-white animate-pulse">نیاز به اقدام</span>
+              </div>
+              <ul className="text-[11px] text-sky-900 mt-0.5 space-y-0.5">
+                {chequeAlertInfo.pendingReview.length > 0 && <li>{chequeAlertInfo.pendingReview.length.toLocaleString('fa-IR')} چک در انتظار تأیید</li>}
+                {chequeAlertInfo.dueForCollection.length > 0 && <li>{chequeAlertInfo.dueForCollection.length.toLocaleString('fa-IR')} چک سرحساب‌شده به سررسید رسیده؛ منتظر تأیید وصول یا عدم وصول</li>}
+                {chequeAlertInfo.notOnAccount.length > 0 && <li>{chequeAlertInfo.notOnAccount.length.toLocaleString('fa-IR')} چک تأییدشدهٔ سررسیدرسیده هنوز سرحساب نشده</li>}
+              </ul>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              // اول تأیید چک‌های ثبت‌شده، وگرنه تب «وصول»
+              if (chequeAlertInfo.pendingReview.length > 0) setNavHint('cheques', 'review');
+              else setNavHint('cheques', 'collect');
+              setCurrentScreen('cheques');
+            }}
+            className="w-full sm:w-auto px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-black shadow-sm active:scale-95 transition-all shrink-0"
+          >
+            بررسی چک‌ها ({chequeAlertTotal.toLocaleString('fa-IR')})
           </button>
         </div>
       )}

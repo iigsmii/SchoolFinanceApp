@@ -4,6 +4,7 @@ import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
 import { Cheque } from '../../types';
+import { takeNavHint } from '../../utils/alerts';
 import { formatRial, jalaliFromGregorian, todayJalali, jalaliToIso, latinDigits, todayGregorian } from '../../utils/jalali';
 import { chequeStage, CHEQUE_STAGE_LABEL, isCollectibleCheque, daysToDue, ChequeStage } from '../../utils/cheques';
 import { JalaliDatePicker } from '../JalaliDatePicker';
@@ -70,9 +71,11 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
   } = useApp();
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
 
-  const [activeTab, setActiveTab] = useState<'review' | 'list' | 'collect'>(
-    isSenior && initialMode === 'review' ? 'review' : 'list'
-  );
+  const [activeTab, setActiveTab] = useState<'review' | 'list' | 'collect'>(() => {
+    const hint = isSenior ? takeNavHint('cheques') : null;
+    if (hint === 'collect' || hint === 'review') return hint;
+    return isSenior && initialMode === 'review' ? 'review' : 'list';
+  });
   const [filterType, setFilterType] = useState<string>('all');
 
   // Cheque Modal
