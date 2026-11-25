@@ -20,8 +20,17 @@ const MIN_APK_BYTES = 1024 * 1024;
 /** APK را در حافظه‌ی موقت برنامه دانلود می‌کند و مسیر کامل فایل را برمی‌گرداند. */
 export async function downloadApk(url: string, version: string, onProgress: (p: DownloadProgress) => void): Promise<string> {
   const safeVersion = version.replace(/[^0-9A-Za-z.+-]/g, '_');
-  const path = `updates/SchoolFinanceApp-${safeVersion}.apk`;
+  // مستقیم در ریشه‌ی حافظه‌ی موقت: ساختن زیرپوشه روی بعضی گوشی‌ها/نسخه‌های پلاگین خطای ENOENT می‌داد.
+  const path = `SchoolFinanceApp-${safeVersion}.apk`;
   try { await Filesystem.deleteFile({ path, directory: Directory.Cache }); } catch { /* فایل قبلی وجود ندارد */ }
+  // نسخه‌های قدیمی دانلودشده را پاک می‌کنیم تا حافظه پر نشود.
+  try {
+    const { files } = await Filesystem.readdir({ path: '', directory: Directory.Cache });
+    for (const f of files) {
+      const name = typeof f === 'string' ? f : f.name;
+      if (/^SchoolFinanceApp-.*\.apk$/.test(name)) { try { await Filesystem.deleteFile({ path: name, directory: Directory.Cache }); } catch { /* ignore */ } }
+    }
+  } catch { /* ignore */ }
 
   const listener = await Filesystem.addListener('progress', (event: { url?: string; bytes?: number; contentLength?: number }) => {
     if (event.url && event.url !== url) return;
