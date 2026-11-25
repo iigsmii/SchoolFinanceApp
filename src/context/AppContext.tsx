@@ -1747,6 +1747,14 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
   };
 
   const approveTransaction = async (id: number): Promise<boolean> => {
+    const tx = transactions.find((t) => t.id === id);
+    if (tx?.review_status === 'delete_pending') {
+      setTransactions((prev) => prev.filter((t) => t.id !== id));
+      queue('transaction_delete_review', { id: txServerId(id), status: 'approved' }, { type: 'tx:edit', id });
+      playSuccessSound();
+      logActivity('تأیید حذف تراکنش', `درخواست حذف تراکنش شناسه ${id} توسط مدیر ارشد تأیید شد`, 'transaction', id);
+      return true;
+    }
     setTransactions((prev) =>
       prev.map((t) => (t.id === id ? { ...t, review_status: 'approved', rejection_reason: undefined } : t))
     );
