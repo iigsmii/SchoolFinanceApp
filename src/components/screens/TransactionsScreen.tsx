@@ -131,9 +131,7 @@ export const TransactionsScreen: React.FC = () => {
   const handleApprove = async (txId: number) => {
     setIsSubmittingReview(true);
     try {
-      const target = transactions.find((t) => t.id === txId);
-      if (target?.review_status === 'delete_pending') deleteTransaction(txId);
-      else await approveTransaction(txId);
+      await approveTransaction(txId);
     } finally {
       setIsSubmittingReview(false);
     }
@@ -366,6 +364,7 @@ export const TransactionsScreen: React.FC = () => {
                             در انتظار بررسی مدیر ارشد
                           </span>
                         )}
+                        {status === 'delete_pending' && <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-bold bg-orange-100 text-orange-900 border border-orange-300">درخواست حذف در انتظار تأیید ارشد</span>}
                       </div>
                     </div>
 
@@ -474,7 +473,7 @@ export const TransactionsScreen: React.FC = () => {
                               title="تأیید تراکنش توسط مدیر ارشد"
                             >
                               <Check className="w-3.5 h-3.5" />
-                              <span>تأیید</span>
+                              <span>{status === 'delete_pending' ? 'تأیید حذف' : 'تأیید'}</span>
                             </button>
                           )}
 
