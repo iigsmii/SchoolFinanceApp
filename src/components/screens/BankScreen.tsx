@@ -75,7 +75,7 @@ const LEGACY_DEFAULT_POS_TERMINALS = new Set([
 ]);
 const removeLegacyDefaultTerminals = (items: any[]) =>
   items.filter((item) => !LEGACY_DEFAULT_POS_TERMINALS.has(
-    `${Number(item.schoolId || 0)}:${normalizeDigits(String(item.terminal || '')).replace(/\\D/g, '').replace(/^0+/, '')}`
+    `${Number(item.schoolId || 0)}:${normalizeDigits(String(item.terminal || '')).replace(/\D/g, '').replace(/^0+/, '')}`
   ));
 const normalizeDigits = (value: string) =>
   value.replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
@@ -194,6 +194,7 @@ export const BankScreen: React.FC = () => {
           schoolId: Number(p.schoolId || 0),
           schoolName: p.schoolName || schools.find((sc) => sc.id === Number(p.schoolId || 0))?.name || ''
         })) : null;
+        const cleanedServerTerminals = serverTerminals ? removeLegacyDefaultTerminals(serverTerminals) : null;
         const serverCards = Array.isArray(rules.pettyCashCards) ? rules.pettyCashCards.map((c: any) => ({
           ...c,
           card: String(c.card || ''),
@@ -204,7 +205,7 @@ export const BankScreen: React.FC = () => {
           active: c.active !== false
         })) : null;
         if (res.configured === false) {
-          // First-time migration: preserve this device's configuration, or seed the shared sheet with the app defaults.
+          // First-time migration: preserve explicitly saved device configuration; never invent POS assignments.
           const initialTerminals = localTerminals || [];
           const initialCards = localCards || DEFAULT_SADERAT_CARDS;
           void postToAppsScript({ action: 'bank_rules_save', rules: { version: 1, posTerminals: initialTerminals, pettyCashCards: initialCards } }).then((saved) => {
@@ -217,11 +218,15 @@ export const BankScreen: React.FC = () => {
             localStorage.setItem('school_finance_petty_cards', JSON.stringify(migratedCards));
             setBannerNotice({ text: 'فهرست پایانه‌ها و کارت‌های تن‌خواه در Google Sheets ثبت شد و بین دستگاه‌ها همگام می‌شود.', type: 'success' });
           }).catch(() => {});
-        } else if (serverTerminals && serverCards) {
-          setPosTerminals(serverTerminals);
+        } else if (cleanedServerTerminals && serverCards) {
+          setPosTerminals(cleanedServerTerminals);
           setPettyCashCards(serverCards);
-          localStorage.setItem('school_finance_pos_terminals', JSON.stringify(serverTerminals));
+          localStorage.setItem('school_finance_pos_terminals', JSON.stringify(cleanedServerTerminals));
           localStorage.setItem('school_finance_petty_cards', JSON.stringify(serverCards));
+          // Persist removal of the obsolete built-in sample assignments to the shared source.
+          if (cleanedServerTerminals.length !== serverTerminals.length) {
+            void postToAppsScript({ action: 'bank_rules_save', rules: { version: 1, posTerminals: cleanedServerTerminals, pettyCashCards: serverCards } }).catch(() => {});
+          }
         }
       }).catch(() => { /* retain local offline cache */ });
     }
