@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Header } from '../Header';
+import { setNavHint } from '../../utils/alerts';
 import { Clock, Filter, Search, ChevronDown, Check, Users, UserRound } from 'lucide-react';
 
 const formatActivityDate = (value: unknown): string => {
@@ -34,7 +35,7 @@ const formatActivityDate = (value: unknown): string => {
 };
 
 export const ActivityScreen: React.FC = () => {
-  const { activityLogs, currentUser, users } = useApp();
+  const { activityLogs, currentUser, users, setCurrentScreen } = useApp();
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
   const [selectedManager, setSelectedManager] = useState<string>(isSenior ? 'all' : 'mine');
   const [managerPickerOpen, setManagerPickerOpen] = useState(false);
@@ -219,10 +220,28 @@ export const ActivityScreen: React.FC = () => {
               هنوز فعالیتی ثبت نشده است.
             </div>
           ) : (
-            visibleLogs.map((log) => (
-              <div
+            visibleLogs.map((log) => {
+              const entityType = String(log.entity_type || '').toLowerCase();
+              const entityId = log.entity_id;
+              const isTransactionLink = ['transaction', 'expense', 'tuition', 'tuition_payment', 'tuition_debt'].includes(entityType) && entityId != null;
+              const isBankLink = ['bank_transaction', 'banktransaction', 'bank'].includes(entityType) && entityId != null;
+              const canOpenEntity = isTransactionLink || isBankLink;
+              const openEntity = () => {
+                if (!canOpenEntity) return;
+                if (isTransactionLink) {
+                  setNavHint('transactions', `transaction:${entityId}`);
+                  setCurrentScreen('transactions');
+                } else {
+                  setCurrentScreen('bank');
+                }
+              };
+              return (
+              <button
                 key={log.id}
-                className="space-y-1.5 rounded-2xl border border-[#e5dde8] bg-white p-4 text-xs shadow-sm"
+                type="button"
+                onClick={openEntity}
+                disabled={!canOpenEntity}
+                className={`w-full text-right space-y-1.5 rounded-2xl border border-[#e5dde8] bg-white p-4 text-xs shadow-sm ${canOpenEntity ? 'hover:border-purple-300 hover:bg-purple-50/30 cursor-pointer' : 'cursor-default'}`}
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-2">
@@ -249,8 +268,10 @@ export const ActivityScreen: React.FC = () => {
                     <span>مدرسه: {log.school_name}</span>
                   ) : null}
                 </div>
-              </div>
-            ))
+                {canOpenEntity && <span className="block pt-1 text-[10px] font-black text-purple-700">مشاهده رکورد مرتبط ←</span>}
+              </button>
+              );
+            })
           )}
           {displayedLogs.length > ACTIVITY_PAGE_SIZE && (
             <div className="flex items-center justify-center gap-3 rounded-2xl border border-[#e5dde8] bg-white p-3">
