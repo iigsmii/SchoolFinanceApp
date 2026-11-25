@@ -584,7 +584,7 @@ export const ExpensesScreen: React.FC = () => {
           category_id: formCategoryId,
           amount: amt,
           date: isoDate,
-          tracking_code: formTracking.trim(),
+          tracking_code: latinDigits(formTracking).replace(/\D/g, ''),
           payment_source: formSource,
           petty_cash_card: formSource === 'petty_cash' ? pettyCardFor(formSchoolId) : undefined,
           comment: formComment.trim(),
