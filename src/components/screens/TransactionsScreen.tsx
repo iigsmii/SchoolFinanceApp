@@ -29,6 +29,8 @@ export const TransactionsScreen: React.FC = () => {
     transactions,
     currentUser,
     deleteTransaction,
+    updateTransaction,
+    resubmitTransaction,
     approveTransaction,
     rejectTransaction,
     accentColor,
@@ -43,6 +45,11 @@ export const TransactionsScreen: React.FC = () => {
   const deferredQuery = useDeferredValue(searchQuery);
   const [filterAccount, setFilterAccount] = useState('all');
   const [transactionPage, setTransactionPage] = useState(0);
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [editAmount, setEditAmount] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [editTracking, setEditTracking] = useState('');
+  const [editDescription, setEditDescription] = useState('');
   const TRANSACTION_PAGE_SIZE = 50;
 
   useEffect(() => {
@@ -128,6 +135,23 @@ export const TransactionsScreen: React.FC = () => {
     } finally {
       setIsSubmittingReview(false);
     }
+  };
+
+  const handleEditTx = (tx: Transaction) => {
+    setEditingTx(tx);
+    setEditAmount(String(Number(tx.amount || 0)));
+    setEditDate(String(tx.date || '').slice(0, 10));
+    setEditTracking(String(tx.tracking_code || ''));
+    setEditDescription(String(tx.description || tx.comment || ''));
+  };
+
+  const handleSaveTx = () => {
+    if (!editingTx) return;
+    const amount = Number(editAmount.replace(/[^0-9]/g, ''));
+    if (!Number.isFinite(amount) || amount <= 0 || !editDate) { alert('مبلغ و تاریخ را صحیح وارد کنید.'); return; }
+    updateTransaction(editingTx.id, { amount, date: editDate, tracking_code: editTracking, description: editDescription, comment: editDescription });
+    if ((editingTx.review_status || 'approved') === 'rejected') resubmitTransaction(editingTx.id);
+    setEditingTx(null);
   };
 
   const handleOpenReject = (tx: Transaction) => {
@@ -435,6 +459,7 @@ export const TransactionsScreen: React.FC = () => {
                     </div>
 
                     <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => handleEditTx(t)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg" title="ویرایش تراکنش"><span className="text-xs font-bold">ویرایش</span></button>
                       {/* Senior Manager Quick Approval Buttons */}
                       {isSenior && (
                         <div className="flex items-center gap-1.5">
@@ -492,6 +517,20 @@ export const TransactionsScreen: React.FC = () => {
           )}
         </div>
       </main>
+
+      {editingTx && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-5 space-y-3 shadow-xl">
+            <div className="flex items-center justify-between"><h3 className="font-bold text-[#341648]">ویرایش تراکنش #{editingTx.id}</h3><button type="button" onClick={() => setEditingTx(null)}><X className="w-5 h-5"/></button></div>
+            <label className="block text-xs font-bold">مبلغ (ریال)<input type="tel" inputMode="numeric" autoComplete="off" value={editAmount} onChange={e=>setEditAmount(e.target.value.replace(/\D/g,''))} className="mt-1 w-full border rounded-xl p-3 text-sm font-mono" dir="ltr"/></label>
+            <label className="block text-xs font-bold">تاریخ<input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)} className="mt-1 w-full border rounded-xl p-3 text-sm" dir="ltr"/></label>
+            <label className="block text-xs font-bold">شماره پیگیری<input type="tel" inputMode="numeric" pattern="[0-9]*" autoComplete="off" value={editTracking} onChange={e=>setEditTracking(e.target.value.replace(/\D/g,''))} className="mt-1 w-full border rounded-xl p-3 text-sm font-mono" dir="ltr"/></label>
+            <label className="block text-xs font-bold">شرح<textarea value={editDescription} onChange={e=>setEditDescription(e.target.value)} rows={3} className="mt-1 w-full border rounded-xl p-3 text-sm"/></label>
+            {editingTx.review_status === 'rejected' && <p className="text-xs text-amber-700">پس از ذخیره، تراکنش برای تأیید مجدد مدیر ارشد ارسال می‌شود.</p>}
+            <div className="flex gap-2"><button type="button" onClick={handleSaveTx} className="flex-1 rounded-xl bg-[#62205f] text-white font-bold p-3">ذخیره و ارسال</button><button type="button" onClick={()=>setEditingTx(null)} className="rounded-xl bg-gray-100 p-3">انصراف</button></div>
+          </div>
+        </div>
+      )}
 
       {/* Reject Reason Modal for Senior */}
       {rejectModalTx && (
