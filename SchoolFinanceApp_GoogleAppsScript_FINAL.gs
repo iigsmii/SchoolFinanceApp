@@ -240,7 +240,7 @@ function doPost(e) {
     if (action === 'sync' || action === 'all') return json_(syncPayload_(body));
 
     // POST carries tokens in its body, but read-only actions do not need a write lock.
-    const reads={sync_stamp:syncStamp_,claim_settlements:claimSettlements_,cheques_all:chequesAll_,staff_worklogs:staffWorkLogs_,payroll:payroll_,bank_accounts:bankAccounts_,schools:schools_,staff:staff_,students:students_,tuition:tuition_,expenses:expenses_,transactions:transactions_,bank:bank_,bank_review:bankReview_,bank_rules_get:bankRulesGet_,my_petty_cash_cards:myPettyCashCards_,categories:categories_,messages:messages_,managers:managers_,cheques:cheques_,cheque_list:chequeList_,cheque_alerts:chequeAlerts_,summary:summary_,my_claim:myClaim_,app_version:appVersion_,activity_logs:activityLogs_,parsian_export:parsianExport_,parsian_school_map:parsianSchoolMap_,parsian_student_accounts:parsianStudentAccounts_,attachment_read:attachmentRead_};
+    const reads={alerts_register:alertsRegister_,alerts_unregister:alertsUnregister_,alerts_summary:alertsSummary_,sync_stamp:syncStamp_,claim_settlements:claimSettlements_,cheques_all:chequesAll_,staff_worklogs:staffWorkLogs_,payroll:payroll_,bank_accounts:bankAccounts_,schools:schools_,staff:staff_,students:students_,tuition:tuition_,expenses:expenses_,transactions:transactions_,bank:bank_,bank_review:bankReview_,bank_rules_get:bankRulesGet_,my_petty_cash_cards:myPettyCashCards_,categories:categories_,messages:messages_,managers:managers_,cheques:cheques_,cheque_list:chequeList_,cheque_alerts:chequeAlerts_,summary:summary_,my_claim:myClaim_,app_version:appVersion_,activity_logs:activityLogs_,parsian_export:parsianExport_,parsian_school_map:parsianSchoolMap_,parsian_student_accounts:parsianStudentAccounts_,attachment_read:attachmentRead_};
     if(reads[action])return json_(reads[action](body));
     lock.waitLock(30000);locked=true;writeLockHeld_=true;
     ensureStructure_();
@@ -2215,6 +2215,81 @@ function syncStamp_(b){
   const ss=getActiveSs_();
   return {success:true,stamp:ss?String(ss.getLastUpdated().getTime()):''};
 }
+/* ---------- BACKGROUND ALERTS (Android notifications while the app is closed) ----------
+ * A phone registers once (with its normal login session) and gets a long-lived, read-only "alert token".
+ * A background job on the phone then asks `alerts_summary` every ~15 minutes and shows a notification
+ * for items it has not shown yet. The alert token can only read this short summary, never other data. */
+const ALERT_TOKEN_DAYS_=45;
+function alertsRegister_(b){
+  const u=auth_(b);
+  const l=LockService.getScriptLock(); l.waitLock(10000);
+  try{
+    const props=PropertiesService.getScriptProperties();
+    const token='alt-'+Utilities.getUuid()+Utilities.getUuid().replace(/-/g,'');
+    props.setProperty('alt_'+token,JSON.stringify({uid:String(u.id),exp:Date.now()+ALERT_TOKEN_DAYS_*86400000}));
+    const listKey='altu_'+u.id; let list=[];
+    try{list=JSON.parse(props.getProperty(listKey)||'[]');}catch(_){list=[];}
+    list.push(token);
+    while(list.length>3) props.deleteProperty('alt_'+list.shift());
+    props.setProperty(listKey,JSON.stringify(list));
+    return {success:true,alert_token:token,expires_days:ALERT_TOKEN_DAYS_};
+  } finally { l.releaseLock(); }
+}
+function alertsUnregister_(b){
+  const t=String(b.alert_token||'');
+  if(t) PropertiesService.getScriptProperties().deleteProperty('alt_'+t);
+  return {success:true};
+}
+function alertAuth_(b){
+  const t=String(b.alert_token||'');
+  if(!t || t.indexOf('alt-')!==0) throw new Error('توکن اعلان معتبر نیست.');
+  const raw=PropertiesService.getScriptProperties().getProperty('alt_'+t);
+  if(!raw) throw new Error('توکن اعلان منقضی شده است؛ دوباره وارد برنامه شوید.');
+  let rec; try{rec=JSON.parse(raw);}catch(_){throw new Error('توکن اعلان منقضی شده است؛ دوباره وارد برنامه شوید.');}
+  if(Number(rec.exp)<=Date.now()) throw new Error('توکن اعلان منقضی شده است؛ دوباره وارد برنامه شوید.');
+  const hit=findRow_('Managers',rec.uid);
+  if(!hit || String(hit.obj.active).toLowerCase()==='false') throw new Error('حساب کاربری غیرفعال است.');
+  const u=hit.obj;
+  u.role=String(u.role)==='admin'?'senior':String(u.role);
+  return u;
+}
+function alertsSummary_(b){
+  const u=alertAuth_(b);
+  const today=todayIso_();
+  const senior=(u.role==='senior');
+  const items=[];
+  const add=(key,label,text)=>items.push({key:key,label:label,text:text||''});
+  [['Tuition','T'],['Expenses','E'],['Transactions','L']].forEach(p=>{
+    rows_(p[0]).forEach(x=>{
+      const o=x.obj;
+      if(p[0]==='Transactions' && String(o.source_id||'')!=='') return; // mirror of a tuition/expense row
+      if(String(o.kind||'')==='شهریه_بدهی') return;
+      const st=String(o.review_status||'');
+      if(senior){
+        if(st==='pending') add('tx:'+p[1]+o.id,'تراکنش در انتظار تأیید');
+      } else if(st==='rejected'){
+        const by=String(o.created_by||'');
+        const mine=by!==''?(by===String(u.id)):userCanAccessSchool_(u,o.school_id);
+        if(mine) add('rej:'+p[1]+o.id,'تراکنش ردشده',String(o.rejection_reason||''));
+      }
+    });
+  });
+  if(senior){
+    rows_('Cheques').forEach(x=>{
+      const c=x.obj, st=String(c.status);
+      if(st==='pending'){ add('chq:'+c.id+':p','چک در انتظار تأیید'); return; }
+      if(st!=='approved') return;
+      if(String(c.cheque_type)==='guarantee'||String(c.cheque_purpose)==='guarantee'||String(c.cheque_purpose)==='staff_guarantee') return;
+      const due=String(c.due_date||'');
+      if(!due || due>today) return;
+      const cs=String(c.collection_status||'');
+      if(cs==='on_account') add('chq:'+c.id+':d','چک سررسیدشده در انتظار تأیید وصول');
+      else if(cs==='') add('chq:'+c.id+':n','چک سررسیدشده و سرحساب‌نشده');
+    });
+  }
+  return {success:true,senior:senior,items:items.slice(0,300)};
+}
+
 function bankAccounts_(b){
   auth_(b,['senior','admin']);
   const data=rows_('BankAccounts').map(x=>x.obj).filter(x=>String(x.is_active)!=='false').map(x=>{

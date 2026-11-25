@@ -75,6 +75,7 @@ jobs:
           npx cap sync android
           python scripts/install-native-sms.py
           python scripts/install-native-update.py
+          python scripts/install-native-alerts.py
           .icon-venv/bin/python scripts/generate-icons.py
 
       - name: Set Android version

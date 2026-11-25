@@ -80,6 +80,7 @@ import {
   type DrainResult,
 } from '../services/outbox';
 import { idbGet, idbSet, idbAvailable } from '../services/idb';
+import { enableBackgroundAlerts, disableBackgroundAlerts } from '../services/backgroundAlerts';
 import { primeAttachmentCache, stripInlineImages } from '../services/attachments';
 import {
   playSuccessSound,
@@ -657,6 +658,12 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
 
   const isConnectedToGoogleSheets = !!(spreadsheetId && (lastSyncTime || syncStats));
   const accentColor = THEME_ACCENTS[themeIndex] || THEME_ACCENTS[0];
+
+  // اعلان‌های پس‌زمینه (وقتی برنامه بسته است): پس از ورود یا بازگشت نشست، روی اندروید فعال می‌شود.
+  useEffect(() => {
+    if (currentUser) void enableBackgroundAlerts(currentUser, DEFAULT_WEBAPP_URL);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id]);
 
   // Retry synchronization when connectivity returns; never replace local data with an empty sheet response.
   useEffect(() => {
@@ -2634,6 +2641,7 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
   };
 
   const logout = () => {
+    void disableBackgroundAlerts(DEFAULT_WEBAPP_URL);
     try { localStorage.removeItem('school_finance_auth_token'); } catch {}
     saveToStorage('current_user', null);
     setCurrentUser(null);
