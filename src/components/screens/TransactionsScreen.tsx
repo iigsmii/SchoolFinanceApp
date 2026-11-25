@@ -38,6 +38,9 @@ export const TransactionsScreen: React.FC = () => {
   } = useApp();
 
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
+  const initialTransactionHint = takeNavHint('transactions');
+  const initialTransactionId = initialTransactionHint?.startsWith('transaction:') ? Number(initialTransactionHint.slice('transaction:'.length)) : null;
+  const [focusTransactionId, setFocusTransactionId] = useState<number | null>(initialTransactionId && Number.isFinite(initialTransactionId) ? initialTransactionId : null);
 
   const [filterKind, setFilterKind] = useState<'all' | 'debt' | 'payment' | 'expense'>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>(() => (takeNavHint('transactions') === 'rejected' ? 'rejected' : 'all'));
@@ -91,6 +94,7 @@ export const TransactionsScreen: React.FC = () => {
 
   const filtered = useMemo(() => {
     return scopedTxs.filter((t) => {
+      if (focusTransactionId && Number(t.id) === Number(focusTransactionId)) return true;
       if (filterAccount !== 'all' && t.linked_account_name !== filterAccount) return false;
       if (filterKind === 'debt' && t.kind !== 'شهریه_بدهی') return false;
       if (filterKind === 'payment' && t.kind !== 'شهریه') return false;
@@ -116,11 +120,24 @@ export const TransactionsScreen: React.FC = () => {
       }
       return true;
     }).sort((a, b) => {
+      if (focusTransactionId) {
+        if (Number(a.id) === Number(focusTransactionId)) return -1;
+        if (Number(b.id) === Number(focusTransactionId)) return 1;
+      }
       // Newest first: by transaction date, then by id (ids grow with creation time) as the tie-breaker.
       const byDate = String(b.date || '').localeCompare(String(a.date || ''));
       return byDate !== 0 ? byDate : Number(b.id) - Number(a.id);
     });
-  }, [scopedTxs, filterAccount, filterKind, filterStatus, deferredQuery]);
+  }, [scopedTxs, filterAccount, filterKind, filterStatus, deferredQuery, focusTransactionId]);
+
+  useEffect(() => {
+    if (!focusTransactionId) return;
+    setTransactionPage(0);
+    const timer = window.setTimeout(() => {
+      document.getElementById(`transaction-card-${focusTransactionId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [focusTransactionId, filtered.length]);
 
   const transactionPageCount = Math.max(1, Math.ceil(filtered.length / TRANSACTION_PAGE_SIZE));
   const visibleTransactions = filtered.slice(
@@ -314,7 +331,8 @@ export const TransactionsScreen: React.FC = () => {
               return (
                 <div
                   key={t.id}
-                  className={`bg-white rounded-3xl p-4 sm:p-5 border-2 shadow-xs flex flex-col justify-between gap-3 overflow-hidden transition-all ${cardBorderClass}`}
+                  id={`transaction-card-${t.id}`}
+                  className={`bg-white rounded-3xl p-4 sm:p-5 border-2 shadow-xs flex flex-col justify-between gap-3 overflow-hidden transition-all ${cardBorderClass} ${focusTransactionId === Number(t.id) ? 'ring-4 ring-purple-400 ring-offset-2' : ''}`}
                 >
                   <div className="min-w-0 flex-1 space-y-2">
                     {/* Header Row: Kind Tag & Approval Status Badge */}
