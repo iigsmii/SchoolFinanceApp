@@ -898,6 +898,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     })();
   };
 
+  // Approvals/rejections made on this device. A pull that was already running (or a slightly stale
+  // sheet read) must not flip them back to «در انتظار تأیید» before the server shows the same status.
+  const reviewOverrides = useRef<Map<number, { status: 'approved' | 'rejected'; reason?: string; at: number }>>(new Map());
+  const REVIEW_GRACE_MS = 5 * 60 * 1000;
+
+  const applyReviewOverrides = (remote: Transaction[] | undefined): Transaction[] | undefined => {
+    if (!Array.isArray(remote)) return remote;
+    const wanted = new Map<number, { status: 'approved' | 'rejected'; reason?: string }>();
+    const now = Date.now();
+    // 1) recent local decisions (covers a review that was sent while the pull was in flight)
+    reviewOverrides.current.forEach((v, id) => {
+      if (now - v.at < REVIEW_GRACE_MS) wanted.set(id, v);
+      else reviewOverrides.current.delete(id);
+    });
+    // 2) decisions still waiting in the outbox (survives an app restart)
+    for (const e of outboxSnapshot()) {
+      if (e.entity?.type === 'tx:review' && e.entity.id != null && (e.payload?.status === 'approved' || e.payload?.status === 'rejected')) {
+        wanted.set(Number(e.entity.id), { status: e.payload.status, reason: e.payload.rejection_reason });
+      }
+    }
+    if (wanted.size === 0) return remote;
+    return remote.map((t) => {
+      const w = wanted.get(Number(t.id));
+      if (!w) return t;
+      if (t.review_status === w.status) {
+        // The server caught up; the override is no longer needed (unless it is still queued).
+        if (!outboxSnapshot().some((e) => e.entity?.type === 'tx:review' && Number(e.entity.id) === Number(t.id))) reviewOverrides.current.delete(Number(t.id));
+        return t;
+      }
+      return { ...t, review_status: w.status, rejection_reason: w.status === 'rejected' ? (w.reason || t.rejection_reason) : undefined } as Transaction;
+    });
+  };
+
   /** Applies a server snapshot: server wins on the same id; items deleted elsewhere disappear; unsent local items stay. */
   const applyRemoteData = (res: any, applyOpts: { light?: boolean } = {}) => {
     const put = <T extends { id: string | number }>(name: string, remote: T[] | undefined, setter: (v: T[]) => void, opts: { allowEmpty?: boolean } = {}) => {
@@ -928,7 +961,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     put('students', remoteStudents, setStudents);
     if (!anyFailed('schools')) put('schools', res.schools, setSchools);
-    if (!anyFailed('tuition', 'expenses', 'transactions', 'cheques')) put('transactions', res.transactions, setTransactions);
+    if (!anyFailed('tuition', 'expenses', 'transactions', 'cheques')) put('transactions', applyReviewOverrides(res.transactions), setTransactions);
     if (!anyFailed('bank')) put('bank_txs', res.bankTransactions, setBankTransactions);
     if (!anyFailed('cheques')) put('cheques', res.cheques, setCheques);
     if (!anyFailed('categories')) put('categories', res.categories, setCategories);
@@ -1603,6 +1636,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const reviewTx = (id: number, status: 'approved' | 'rejected', reason?: string) => {
     if (!(currentUser?.role === 'senior' || currentUser?.role === 'admin')) return;
+    reviewOverrides.current.set(id, { status, reason, at: Date.now() });
     queue('transaction_review', buildReviewPayload(id, status, reason), { type: 'tx:review', id });
   };
 
