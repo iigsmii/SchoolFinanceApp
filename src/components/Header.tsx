@@ -3,6 +3,8 @@ import appLogo from '../assets/images/quran_school_finance_logo_1792312844966.jp
 import { useApp } from '../context/AppContext';
 import { ArrowRight, UserCircle, Settings, Cloud, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
+import { FailedSyncDialog } from './FailedSyncDialog';
+import { describeFailedItem } from '../utils/outboxDescribe';
 import { ScreenType } from '../types';
 
 import { toPersianDigits } from '../utils/jalali';
@@ -28,7 +30,15 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack = true }) => {
     failedSyncItems,
     retryFailedSync,
     dismissFailedSync,
+    students,
+    schools,
+    transactions,
+    bankTransactions,
+    cheques,
   } = useApp();
+  const [openFailedKey, setOpenFailedKey] = React.useState<string | null>(null);
+  const [showAllFailed, setShowAllFailed] = React.useState(false);
+  const openFailed = openFailedKey ? failedSyncItems.find((i) => i.key === openFailedKey) : undefined;
 
   const handleSyncClick = async () => {
     if (isConnectedToGoogleSheets) {
@@ -162,17 +172,29 @@ export const Header: React.FC<HeaderProps> = ({ title, showBack = true }) => {
           {failedSyncItems.length > 0 && (
             <div className="rounded-xl bg-red-50 border border-red-200 text-red-800 px-3 py-2 space-y-1.5">
               <div className="font-bold">{failedSyncItems.length.toLocaleString('fa-IR')} مورد در گوگل‌شیت ثبت نشد:</div>
-              {failedSyncItems.slice(0, 5).map((item) => (
-                <div key={item.key} className="flex items-center justify-between gap-2">
-                  <span>{item.label}{item.error ? ` — ${item.error}` : ''}</span>
-                  <button type="button" onClick={() => dismissFailedSync(item.key)} className="px-2 py-0.5 rounded-lg bg-white border border-red-200 font-bold">حذف</button>
-                </div>
-              ))}
+              {(showAllFailed ? failedSyncItems : failedSyncItems.slice(0, 5)).map((item) => {
+                const info = describeFailedItem(item, { students, schools, transactions, bankTransactions, cheques });
+                return (
+                  <div key={item.key} className="flex items-center justify-between gap-2">
+                    <button type="button" onClick={() => setOpenFailedKey(item.key)} className="flex-1 min-w-0 text-right underline decoration-dotted underline-offset-4">
+                      <span className="font-bold">{item.label}</span>
+                      {info.summary ? <span className="text-red-700"> — {info.summary}</span> : null}
+                      {item.error ? <span className="block text-[11px] text-red-600 font-normal">{item.error}</span> : null}
+                      <span className="text-[11px] font-bold text-red-900"> ‹ مشاهدهٔ رکورد</span>
+                    </button>
+                    <button type="button" onClick={() => dismissFailedSync(item.key)} className="px-2 py-0.5 rounded-lg bg-white border border-red-200 font-bold shrink-0">حذف</button>
+                  </div>
+                );
+              })}
+              {failedSyncItems.length > 5 && !showAllFailed && (
+                <button type="button" onClick={() => setShowAllFailed(true)} className="font-bold underline">نمایش همهٔ {failedSyncItems.length.toLocaleString('fa-IR')} مورد</button>
+              )}
               <button type="button" onClick={retryFailedSync} className="px-3 py-1 rounded-lg bg-red-600 text-white font-bold">تلاش مجدد برای همه</button>
             </div>
           )}
         </div>
       )}
+      {openFailed && <FailedSyncDialog item={openFailed} onClose={() => setOpenFailedKey(null)} />}
     </header>
   );
 };

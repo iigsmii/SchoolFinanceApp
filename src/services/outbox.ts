@@ -95,6 +95,18 @@ export async function retryFailedEntries(): Promise<void> {
   await persist();
 }
 
+export async function retryEntry(key: string): Promise<void> {
+  const list = await loadOutbox();
+  const e = list.find((x) => x.key === key);
+  if (e && e.failed) {
+    e.failed = false;
+    e.attempts = 0;
+    e.error = undefined;
+    e.payload = { ...e.payload, request_id: uuid() };
+    await persist();
+  }
+}
+
 export async function dismissEntry(key: string): Promise<void> {
   const list = await loadOutbox();
   const i = list.findIndex((e) => e.key === key);
