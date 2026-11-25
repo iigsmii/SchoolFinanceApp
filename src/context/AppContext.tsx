@@ -79,6 +79,7 @@ import {
   type OutboxEntity,
   type DrainResult,
 } from '../services/outbox';
+import { idbGet, idbSet, idbAvailable } from '../services/idb';
 import { primeAttachmentCache, stripInlineImages } from '../services/attachments';
 import {
   playSuccessSound,
@@ -307,7 +308,57 @@ export const DEFAULT_SMS_CONFIG: SmsConfig = {
 
 const AppContext = createContext<AppContextType | null>(null);
 
+// ───────── Data tables live in IndexedDB, not localStorage ─────────
+// localStorage is capped at ~5 MB for the whole app; thousands of bank-statement rows, students and
+// transactions exceed it and the save used to fail silently (lists were empty after a restart).
+// These tables are kept in memory, mirrored to IndexedDB (debounced) and migrated once from the old
+// localStorage copy. AppProvider renders only after they were read, so state starts from stored data.
+const DATA_TABLES = [
+  'students', 'schools', 'transactions', 'cheques', 'bank_txs', 'bank_accounts', 'categories', 'users',
+  'staff_members', 'staff_work_logs', 'payroll_payments', 'senior_msgs', 'manager_feedbacks', 'sms_logs', 'activity_logs',
+];
+const BIG_KEYS = new Set<string>([...DATA_TABLES, ...DATA_TABLES.map((t) => `synced_ids_${t}`)]);
+const bigCache = new Map<string, any>();
+const bigTimers = new Map<string, ReturnType<typeof setTimeout>>();
+let bigLoaded = false;
+let bigUseIdb = true;
+const bigIdbKey = (key: string) => `big_${key}`;
+const bigReady: Promise<void> = (async () => {
+  bigUseIdb = await idbAvailable();
+  await Promise.all(Array.from(BIG_KEYS).map(async (key) => {
+    try {
+      const fromIdb = bigUseIdb ? await idbGet(bigIdbKey(key)) : undefined;
+      if (fromIdb !== undefined) {
+        bigCache.set(key, fromIdb);
+        try { localStorage.removeItem(`school_finance_${key}`); } catch { /* ignore */ }
+        return;
+      }
+      const raw = localStorage.getItem(`school_finance_${key}`);
+      if (raw) {
+        const v = JSON.parse(raw);
+        bigCache.set(key, v);
+        // The old copy is only removed after IndexedDB confirmed the write.
+        if (bigUseIdb && (await idbSet(bigIdbKey(key), v))) { try { localStorage.removeItem(`school_finance_${key}`); } catch { /* ignore */ } }
+      }
+    } catch (e) {
+      console.warn(`Could not load ${key} from storage`, e);
+    }
+  }));
+  bigLoaded = true;
+})();
+const flushBig = (key: string) => {
+  const t = bigTimers.get(key);
+  if (t) { clearTimeout(t); bigTimers.delete(key); }
+  void idbSet(bigIdbKey(key), bigCache.get(key)).then((ok) => { if (!ok) console.error(`Failed to save ${key} to IndexedDB`); });
+};
+if (typeof window !== 'undefined') {
+  const flushAll = () => { for (const key of Array.from(bigTimers.keys())) flushBig(key); };
+  window.addEventListener('pagehide', flushAll);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushAll(); });
+}
+
 function loadFromStorage<T>(key: string, fallback: T): T {
+  if (BIG_KEYS.has(key) && bigCache.has(key)) return bigCache.get(key) as T;
   try {
     const item = localStorage.getItem(`school_finance_${key}`);
     return item ? JSON.parse(item) : fallback;
@@ -317,6 +368,18 @@ function loadFromStorage<T>(key: string, fallback: T): T {
 }
 
 function saveToStorage<T>(key: string, value: T) {
+  if (BIG_KEYS.has(key)) {
+    // Before the stored copy is loaded, the initial (possibly empty) state must not overwrite it.
+    if (!bigLoaded) return;
+    bigCache.set(key, value);
+    if (bigUseIdb) {
+      const old = bigTimers.get(key);
+      if (old) clearTimeout(old);
+      bigTimers.set(key, setTimeout(() => flushBig(key), 400));
+      return;
+    }
+    // No IndexedDB on this device: fall back to localStorage below.
+  }
   try {
     localStorage.setItem(`school_finance_${key}`, JSON.stringify(value));
   } catch (e) {
@@ -401,7 +464,7 @@ function reconcileEntity<T extends { id: string | number }>(name: string, remote
   return merged;
 }
 
-export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [themeIndex, setThemeIndexState] = useState<number>(() => loadFromStorage('theme_index', 0));
   const [fontScale, setFontScaleState] = useState<number>(() => loadFromStorage('font_scale', 1));
 
@@ -1085,6 +1148,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!opts.force && Date.now() - bankRefreshAt.current < 20000) return true;
     const p = (async () => {
       try {
+        await bigReady;
         // فقط بانک و حساب‌های بانکی؛ مدرسه‌ها و تراکنش‌ها برای نام مدرسه و شناسه‌ی تطبیق‌ها لازم‌اند اما اعمال نمی‌شوند.
         const res = await loadDataFromAppsScript(DEFAULT_WEBAPP_URL, { only: ['bank', 'bankAccounts', 'schools', 'transactions'] });
         if (!res.success) return false;
@@ -1103,6 +1167,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const runSync = async (targetSheetId?: string, pull: boolean = true): Promise<boolean> => {
+    await bigReady;
     const sId = extractSpreadsheetId(targetSheetId || spreadsheetId || DEFAULT_SPREADSHEET_ID);
     setSyncStatus('syncing');
     setSyncError(null);
@@ -2702,6 +2767,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       </div>
     </AppContext.Provider>
   );
+};
+
+/** Waits until the stored tables were read from IndexedDB, then mounts the real provider. */
+export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [ready, setReady] = useState(bigLoaded);
+  useEffect(() => {
+    let alive = true;
+    void bigReady.then(() => { if (alive) setReady(true); });
+    return () => { alive = false; };
+  }, []);
+  if (!ready) {
+    return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', color: '#64748b' }}>در حال بارگذاری اطلاعات...</div>;
+  }
+  return <AppProviderInner>{children}</AppProviderInner>;
 };
 
 export const useApp = () => {
