@@ -624,6 +624,7 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
   useEffect(() => saveToStorage('transactions', stripInlineImages(transactions)), [transactions]);
   useEffect(() => saveToStorage('cheques', stripInlineImages(cheques)), [cheques]);
   useEffect(() => saveToStorage('bank_txs', bankTransactions), [bankTransactions]);
+  useEffect(() => saveToStorage('bank_accounts', bankAccounts), [bankAccounts]);
   useEffect(() => saveToStorage('senior_msgs', seniorMessages), [seniorMessages]);
   useEffect(() => saveToStorage('activity_logs', activityLogs), [activityLogs]);
   useEffect(() => saveToStorage('manager_feedbacks', stripInlineImages(feedbacks)), [feedbacks]);
