@@ -137,6 +137,16 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
     ? chequeAlertInfo.pendingReview.length + chequeAlertInfo.dueForCollection.length + chequeAlertInfo.notOnAccount.length
     : 0;
 
+  const openAlertTransaction = (transactionId: number) => {
+    setNavHint('transactions', `transaction:${transactionId}`);
+    setCurrentScreen('transactions');
+  };
+
+  const openAlertCheque = (chequeId: number, tab: 'review' | 'collect') => {
+    setNavHint('cheques', `${tab}:cheque:${chequeId}`);
+    setCurrentScreen('cheques');
+  };
+
   const handleOfflineExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -473,6 +483,15 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
               <p className="text-[11px] text-amber-800 mt-0.5">
                 توسط مدیران مدارس ثبت شده و برای اعمال قطعی و نمایش با رنگ سبز نیاز به تأیید مدیریت ارشد دارد.
               </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {transactions.filter((t) => t.review_status === 'pending' && t.kind !== 'شهریه_بدهی').slice(0, 8).map((t) => (
+                  <button key={t.id} type="button" onClick={() => openAlertTransaction(t.id)} className="rounded-lg border border-amber-300 bg-white/80 px-2 py-1 text-[10px] font-bold text-amber-900 hover:bg-amber-100">
+                    سند #{t.id} · {t.student_name || t.expense_category_name || t.description || 'تراکنش'} · {formatRial(t.amount || t.debit || t.credit || 0)} ریال
+                    <span className="mr-1 underline">مشاهده ←</span>
+                  </button>
+                ))}
+                {pendingReviewCount > 8 && <span className="self-center text-[10px] text-amber-800">و { (pendingReviewCount - 8).toLocaleString('fa-IR')} مورد دیگر</span>}
+              </div>
             </div>
           </div>
           <button
@@ -500,6 +519,16 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
               <p className="text-[11px] text-rose-800 mt-0.5">
                 {unseenRejected[0].rejection_reason ? `دلیل رد (آخرین مورد): ${unseenRejected[0].rejection_reason}` : 'برای دیدن دلیل رد و اصلاح یا ثبت مجدد، وارد فهرست رد‌شده‌ها شوید.'}
               </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {unseenRejected.slice(0, 8).map((t) => (
+                  <button key={t.id} type="button" onClick={() => {
+                    if (currentUser) markRejectedSeen(currentUser.id, [t.id]);
+                    openAlertTransaction(t.id);
+                  }} className="rounded-lg border border-rose-300 bg-white/80 px-2 py-1 text-[10px] font-bold text-rose-900 hover:bg-rose-100">
+                    سند #{t.id} · {t.student_name || t.expense_category_name || t.description || 'تراکنش'} · مشاهده دلیل رد ←
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -542,6 +571,23 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
                 {chequeAlertInfo.dueForCollection.length > 0 && <li>{chequeAlertInfo.dueForCollection.length.toLocaleString('fa-IR')} چک سرحساب‌شده به سررسید رسیده؛ منتظر تأیید وصول یا عدم وصول</li>}
                 {chequeAlertInfo.notOnAccount.length > 0 && <li>{chequeAlertInfo.notOnAccount.length.toLocaleString('fa-IR')} چک تأییدشدهٔ سررسیدرسیده هنوز سرحساب نشده</li>}
               </ul>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {chequeAlertInfo.pendingReview.slice(0, 6).map((c) => (
+                  <button key={c.id} type="button" onClick={() => openAlertCheque(c.id, 'review')} className="rounded-lg border border-sky-300 bg-white/80 px-2 py-1 text-[10px] font-bold text-sky-900 hover:bg-sky-100">
+                    {c.student_name} · چک #{c.id} · بررسی ←
+                  </button>
+                ))}
+                {chequeAlertInfo.dueForCollection.slice(0, 6).map((c) => (
+                  <button key={c.id} type="button" onClick={() => openAlertCheque(c.id, 'collect')} className="rounded-lg border border-sky-300 bg-white/80 px-2 py-1 text-[10px] font-bold text-sky-900 hover:bg-sky-100">
+                    {c.student_name} · چک #{c.id} · تأیید وصول ←
+                  </button>
+                ))}
+                {chequeAlertInfo.notOnAccount.slice(0, 6).map((c) => (
+                  <button key={c.id} type="button" onClick={() => openAlertCheque(c.id, 'collect')} className="rounded-lg border border-sky-300 bg-white/80 px-2 py-1 text-[10px] font-bold text-sky-900 hover:bg-sky-100">
+                    {c.student_name} · چک #{c.id} · سرحساب‌کردن ←
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <button
