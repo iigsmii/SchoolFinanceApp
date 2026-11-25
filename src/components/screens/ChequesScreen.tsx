@@ -73,12 +73,24 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
   } = useApp();
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
 
+  const initialChequeHint = isSenior ? takeNavHint('cheques') : null;
+  const initialChequeMatch = initialChequeHint?.match(/^(review|collect):cheque:(\d+)$/);
+  const initialChequeId = initialChequeMatch ? Number(initialChequeMatch[2]) : null;
+  const [focusChequeId, setFocusChequeId] = useState<number | null>(initialChequeId && Number.isFinite(initialChequeId) ? initialChequeId : null);
   const [activeTab, setActiveTab] = useState<'review' | 'list' | 'collect'>(() => {
-    const hint = isSenior ? takeNavHint('cheques') : null;
-    if (hint === 'collect' || hint === 'review') return hint;
+    if (initialChequeMatch) return initialChequeMatch[1] as 'review' | 'collect';
+    if (initialChequeHint === 'collect' || initialChequeHint === 'review') return initialChequeHint;
     return isSenior && initialMode === 'review' ? 'review' : 'list';
   });
   const [filterType, setFilterType] = useState<string>('all');
+
+  React.useEffect(() => {
+    if (!focusChequeId) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(`cheque-card-${focusChequeId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [focusChequeId, activeTab]);
 
   // Cheque Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -506,7 +518,8 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
               return (
                 <div
                   key={c.id}
-                  className="bg-white rounded-3xl p-5 border border-[#e5dde8] shadow-xs space-y-3 hover:border-purple-300 transition-all"
+                  id={`cheque-card-${c.id}`}
+                  className={`bg-white rounded-3xl p-5 border border-[#e5dde8] shadow-xs space-y-3 hover:border-purple-300 transition-all ${focusChequeId === Number(c.id) ? 'ring-4 ring-sky-400 ring-offset-2' : ''}`}
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-gray-100 gap-2">
                     <div>
