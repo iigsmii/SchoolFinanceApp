@@ -403,7 +403,7 @@ export const apiSaveExpense = async (exp: Partial<Transaction> & { amount: numbe
 /** Review / Approve or Reject a transaction. `source` identifies the Tuition/Expenses row. */
 export const buildReviewPayload = (
   id: number,
-  status: 'approved' | 'rejected',
+  status: 'approved' | 'rejected' | 'pending',
   rejectionReason?: string
 ): Record<string, any> => {
   if (id >= 200000000 && id < 900000000) {
@@ -421,7 +421,7 @@ export const buildReviewPayload = (
     rejection_reason: rejectionReason || '',
   };
 };
-export const apiReviewTransaction = async (id: number, status: 'approved' | 'rejected', rejectionReason?: string) =>
+export const apiReviewTransaction = async (id: number, status: 'approved' | 'rejected' | 'pending', rejectionReason?: string) =>
   postToAppsScript(buildReviewPayload(id, status, rejectionReason));
 
 export const apiSaveCheque = async (cheque: Partial<Cheque> & { amount: number }) =>
