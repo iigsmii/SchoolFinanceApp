@@ -517,7 +517,7 @@ export const ExpensesScreen: React.FC = () => {
     setFormCategoryId(String(t.expense_category_id || '1'));
     setFormAmount(Number(t.amount).toLocaleString('en-US'));
     setFormJalaliDate(jalaliFromGregorian(t.date));
-    setFormTracking(t.tracking_code || '');
+    setFormTracking(latinDigits(String(t.tracking_code || '')));
     setFormSource(t.payment_source === 'own' || t.payment_source === 'bank' ? (t.payment_source as any) : 'petty_cash');
     setSelectedPettyCard(cleanCardDigits(t.petty_cash_card));
     setFormComment(t.description || t.comment || '');
@@ -566,7 +566,7 @@ export const ExpensesScreen: React.FC = () => {
           date: isoDate,
           expense_category_id: formCategoryId,
           expense_category_name: cat?.name || 'هزینه',
-          tracking_code: formTracking.trim(),
+          tracking_code: latinDigits(formTracking).replace(/\D/g, ''),
           payment_source: formSource,
           payment_method: formSource,
           petty_cash_card: formSource === 'petty_cash' ? pettyCardFor(formSchoolId) : '',
@@ -1230,7 +1230,7 @@ export const ExpensesScreen: React.FC = () => {
                     pattern="[0-9]*"
                     autoComplete="off"
                     value={formTracking}
-                    onChange={(e) => setFormTracking(e.target.value.replace(/\D/g, ''))}
+                    onChange={(e) => setFormTracking(latinDigits(e.target.value).replace(/\D/g, ''))}
                     placeholder="شماره پیگیری عددی"
                     className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left focus:outline-hidden"
                     dir="ltr"
