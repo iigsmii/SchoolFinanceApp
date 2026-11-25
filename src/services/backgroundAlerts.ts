@@ -6,6 +6,9 @@ interface BackgroundAlertsPlugin {
   requestPermission(): Promise<{ granted: boolean }>;
   start(options: { url: string; token: string; userId: string }): Promise<void>;
   stop(): Promise<void>;
+  status(): Promise<{ notifications: boolean; batteryIgnoring: boolean; manufacturer: string }>;
+  requestIgnoreBatteryOptimizations(): Promise<void>;
+  openAutoStartSettings(): Promise<void>;
 }
 const Plugin = registerPlugin<BackgroundAlertsPlugin>('BackgroundAlerts');
 
@@ -35,8 +38,10 @@ export async function enableBackgroundAlerts(user: { id: number | string }, webA
       token = String(r.alert_token);
       try { localStorage.setItem(STORE_KEY, JSON.stringify({ token, userId: String(user.id), at: Date.now() })); } catch { /* ignore */ }
     }
+    // اجازه‌ی اعلان: پنجره‌ی خود سیستم داخل برنامه باز می‌شود (بدون رفتن به تنظیمات).
     await Plugin.requestPermission().catch(() => undefined);
     await Plugin.start({ url: webAppUrl, token, userId: String(user.id) });
+    await askBatteryOnce();
   } catch (e) {
     console.warn('Background alerts setup failed:', e);
   }
@@ -51,4 +56,44 @@ export async function disableBackgroundAlerts(webAppUrl: string): Promise<void> 
   if (stored?.token) {
     try { await postToAppsScript({ action: 'alerts_unregister', alert_token: stored.token }, webAppUrl); } catch { /* ignore */ }
   }
+}
+
+const BATTERY_ASKED_KEY = 'school_finance_battery_asked';
+
+/** یک‌بار (بعد از ورود) درخواست «اجازه‌ی کار در پس‌زمینه» را با پنجره‌ی خود سیستم نشان می‌دهد. */
+async function askBatteryOnce(): Promise<void> {
+  try {
+    if (localStorage.getItem(BATTERY_ASKED_KEY)) return;
+    const st = await Plugin.status();
+    if (st.batteryIgnoring) return;
+    localStorage.setItem(BATTERY_ASKED_KEY, '1');
+    const ok = typeof window !== 'undefined' && typeof window.confirm === 'function'
+      ? window.confirm('برای رسیدن اعلان‌ها وقتی برنامه بسته است، باید اجازه‌ی «کار در پس‌زمینه» به برنامه داده شود. در پنجره‌ی بعدی گزینه‌ی «اجازه» را بزنید.')
+      : true;
+    if (ok) await Plugin.requestIgnoreBatteryOptimizations();
+  } catch { /* ignore */ }
+}
+
+export interface AlertsPermissionState { notifications: boolean; batteryIgnoring: boolean; manufacturer: string }
+
+export async function getAlertsPermissionState(): Promise<AlertsPermissionState | null> {
+  if (!canUseBackgroundAlerts()) return null;
+  try { return await Plugin.status(); } catch { return null; }
+}
+
+/** دکمه‌ی «فعال‌سازی کامل» در تنظیمات: همه‌ی مجوزها را یکی‌یکی با پنجره‌ی خود سیستم می‌پرسد. */
+export async function setupBackgroundAlertsInteractive(user: { id: number | string }, webAppUrl: string): Promise<AlertsPermissionState | null> {
+  if (!canUseBackgroundAlerts()) return null;
+  try { localStorage.removeItem(BATTERY_ASKED_KEY); } catch { /* ignore */ }
+  await enableBackgroundAlerts(user, webAppUrl);
+  let st = await getAlertsPermissionState();
+  if (st && !st.batteryIgnoring) {
+    try { await Plugin.requestIgnoreBatteryOptimizations(); } catch { /* ignore */ }
+    st = await getAlertsPermissionState();
+  }
+  return st;
+}
+
+export async function openAutoStartSettings(): Promise<void> {
+  if (canUseBackgroundAlerts()) { try { await Plugin.openAutoStartSettings(); } catch { /* ignore */ } }
 }

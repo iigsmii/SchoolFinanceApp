@@ -18,6 +18,12 @@ if "android.permission.POST_NOTIFICATIONS" not in content:
         '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />' + nl + "    <application",
         1,
     )
+if "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" not in content:
+    content = content.replace(
+        "<application",
+        '    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />' + nl + "    <application",
+        1,
+    )
 manifest.write_text(content)
 
 # ---- WorkManager dependency
@@ -168,9 +174,14 @@ public class AlertsWorker extends Worker {
 (pkg / "BackgroundAlertsPlugin.java").write_text("""package com.iigsmii.schoolfinance;
 
 import android.Manifest;
+import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.os.Build;
+import android.os.PowerManager;
+import android.provider.Settings;
 import androidx.work.Constraints;
 import androidx.work.ExistingPeriodicWorkPolicy;
 import androidx.work.ExistingWorkPolicy;
@@ -225,6 +236,63 @@ public class BackgroundAlertsPlugin extends Plugin {
   OneTimeWorkRequest once = new OneTimeWorkRequest.Builder(AlertsWorker.class).setConstraints(constraints).build();
   WorkManager.getInstance(ctx).enqueueUniqueWork(WORK + "_now", ExistingWorkPolicy.REPLACE, once);
   call.resolve();
+ }
+
+ private boolean ignoringBattery() {
+  if (Build.VERSION.SDK_INT < 23) return true;
+  PowerManager pm = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+  return pm != null && pm.isIgnoringBatteryOptimizations(getContext().getPackageName());
+ }
+
+ @PluginMethod public void status(PluginCall call) {
+  JSObject r = new JSObject();
+  r.put("notifications", Build.VERSION.SDK_INT < 33 || getPermissionState("notifications") == PermissionState.GRANTED);
+  r.put("batteryIgnoring", ignoringBattery());
+  r.put("manufacturer", Build.MANUFACTURER == null ? "" : Build.MANUFACTURER.toLowerCase());
+  call.resolve(r);
+ }
+
+ /** Shows the system dialog "allow the app to always run in the background?" inside the app. */
+ @PluginMethod public void requestIgnoreBatteryOptimizations(PluginCall call) {
+  if (ignoringBattery()) { call.resolve(); return; }
+  try {
+   Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getContext().getPackageName()));
+   i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+   getContext().startActivity(i);
+   call.resolve();
+  } catch (Exception e) {
+   try {
+    Intent i = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    getContext().startActivity(i);
+    call.resolve();
+   } catch (Exception e2) { call.reject("battery dialog failed: " + e2.getMessage()); }
+  }
+ }
+
+ /** Android has no API to grant "auto start"; this only opens the vendor screen where the user switches it on. */
+ @PluginMethod public void openAutoStartSettings(PluginCall call) {
+  String[][] targets = new String[][] {
+   {"com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"},
+   {"com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"},
+   {"com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity"},
+   {"com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"},
+  };
+  Context ctx = getContext();
+  for (String[] t : targets) {
+   try {
+    Intent i = new Intent();
+    i.setComponent(new ComponentName(t[0], t[1]));
+    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    if (i.resolveActivity(ctx.getPackageManager()) != null) { ctx.startActivity(i); call.resolve(); return; }
+   } catch (Exception ignored) { }
+  }
+  try {
+   Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + ctx.getPackageName()));
+   i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+   ctx.startActivity(i);
+   call.resolve();
+  } catch (Exception e) { call.reject("settings failed: " + e.getMessage()); }
  }
 
  @PluginMethod public void stop(PluginCall call) {
