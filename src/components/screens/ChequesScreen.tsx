@@ -647,7 +647,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                     </div>
                   )}
 
-                  {c.status === 'rejected' && (isSenior || String((c as any).created_by || '') === String(currentUser?.id || '')) && (
+                  {(isSenior || String((c as any).created_by || '') === String(currentUser?.id || '')) && (
                     <div className="flex justify-end pt-1">
                       <button
                         type="button"
@@ -731,7 +731,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                   <CreditCard className="w-5 h-5" />
                 </div>
                 <h3 className="text-base font-bold text-[#341648]">
-                  {editingCheque ? 'ویرایش چک ردشده و ارسال مجدد' : 'ثبت چک جدید (صیادی / غیر صیادی / قرض‌الحسنه / ضمانتی)'}
+                  {editingCheque ? 'ویرایش چک و ارسال برای بررسی مجدد' : 'ثبت چک جدید (صیادی / غیر صیادی / قرض‌الحسنه / ضمانتی)'}
                 </h3>
               </div>
               <button
@@ -803,7 +803,10 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                     شناسه صیاد (۱۶ رقم) <span className="text-rose-500">*</span>
                   </label>
                   <input
-                    type="text"
+                    type="tel"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="off"
                     maxLength={16}
                     value={sayadId}
                     onChange={(e) => setSayadId(e.target.value.replace(/\D/g, ''))}
