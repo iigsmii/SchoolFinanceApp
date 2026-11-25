@@ -201,7 +201,7 @@ function doGet(e) {
     if(action==='my_claim') return json_(myClaim_(b));
     if(action==='app_version') return json_(appVersion_(b));
     if(action==='activity_logs')return json_(activityLogs_(b));
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.24.11',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.24.12',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
@@ -2123,6 +2123,18 @@ function chequeUpdate_(b){
   if(b.note!==undefined||b.description!==undefined) patch.description=String(b.description!==undefined?b.description:b.note);
   if(b.due_date!==undefined&&String(b.due_date)!=='') patch.due_date=date_(b.due_date);
   if(b.cheque_type!==undefined&&['sayad','non_sayad','gharzolhasane','guarantee'].indexOf(String(b.cheque_type))>=0) patch.cheque_type=String(b.cheque_type);
+  if(b.attachment_url!==undefined) patch.image_url=String(b.attachment_url||'');
+  // Only a rejected cheque can be resubmitted. Reset the two review confirmations
+  // so the senior manager must re-check the corrected cheque from scratch.
+  if(String(c.status)==='rejected' && String(b.status||'')==='pending'){
+    patch.status='pending';
+    patch.received_confirmed=false;
+    patch.in_favor_confirmed=false;
+    patch.approved_at='';
+    patch.approved_by='';
+  } else if(b.status!==undefined && String(b.status)!==String(c.status)){
+    throw new Error('تغییر مستقیم وضعیت چک مجاز نیست؛ فقط چک ردشده قابل ارسال مجدد است.');
+  }
   if(!approved){
     if(b.amount!==undefined){ const a=amount_(b.amount); if(a<=0) throw new Error('مبلغ نامعتبر است.'); patch.amount=a; }
     if(b.sayad_id!==undefined){ const s=digits_(b.sayad_id); if(s&&!/^\d{16}$/.test(s)) throw new Error('شناسه صیاد چک باید دقیقاً ۱۶ رقمی باشد.'); if(s&&rows_('Cheques').some(x=>String(x.obj.sayad_id)===s&&String(x.obj.id)!==String(c.id))) throw new Error('این شناسه صیادی قبلاً ثبت شده است.'); patch.sayad_id=s; }
