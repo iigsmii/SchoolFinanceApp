@@ -131,7 +131,9 @@ export const TransactionsScreen: React.FC = () => {
   const handleApprove = async (txId: number) => {
     setIsSubmittingReview(true);
     try {
-      await approveTransaction(txId);
+      const target = transactions.find((t) => t.id === txId);
+      if (target?.review_status === 'delete_pending') deleteTransaction(txId);
+      else await approveTransaction(txId);
     } finally {
       setIsSubmittingReview(false);
     }
