@@ -206,8 +206,8 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
     setChequeType(c.cheque_type || 'sayad');
     setBankName(c.bank_name || IRANIAN_BANKS[0]);
     setChequePurpose(c.cheque_purpose || 'tuition');
-    setSayadId(c.sayad_id || '');
-    setChequeNumber(c.cheque_number || '');
+    setSayadId(latinDigits(String(c.sayad_id || '')).replace(/\D/g, ''));
+    setChequeNumber(latinDigits(String(c.cheque_number || '')));
     setIssuerName(c.issuer_name || c.student_name || '');
     setAmountStr(Number(c.amount || 0).toLocaleString('en-US'));
     setDueDateJalali(jalaliFromGregorian(c.due_date));
@@ -231,7 +231,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
     }
 
     if (chequeType === 'sayad') {
-      const cleanSayad = sayadId.replace(/\D/g, '').trim();
+      const cleanSayad = latinDigits(sayadId).replace(/\D/g, '').trim();
       if (cleanSayad.length !== 16) {
         setFormError('شناسه صیاد چک باید دقیقاً ۱۶ رقم باشد.');
         return;
@@ -256,8 +256,8 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
     if (editingCheque) {
       updateCheque(editingCheque.id, {
         amount: amt,
-        sayad_id: chequeType === 'sayad' ? sayadId.trim() : '',
-        cheque_number: chequeNumber.trim(),
+        sayad_id: chequeType === 'sayad' ? latinDigits(sayadId).replace(/\D/g, '') : '',
+        cheque_number: latinDigits(chequeNumber).trim(),
         bank_name: bankName,
         cheque_type: chequeType,
         cheque_purpose: chequePurpose,
@@ -277,8 +277,8 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
         school_id: selectedSchoolId,
         school_name: schoolObj?.name || 'مدرسه',
         amount: amt,
-        sayad_id: chequeType === 'sayad' ? sayadId.trim() : undefined,
-        cheque_number: chequeNumber.trim() || undefined,
+        sayad_id: chequeType === 'sayad' ? latinDigits(sayadId).replace(/\D/g, '') : undefined,
+        cheque_number: latinDigits(chequeNumber).trim() || undefined,
         bank_name: bankName,
         cheque_type: chequeType,
         cheque_purpose: chequePurpose,
@@ -809,7 +809,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                     autoComplete="off"
                     maxLength={16}
                     value={sayadId}
-                    onChange={(e) => setSayadId(e.target.value.replace(/\D/g, ''))}
+                    onChange={(e) => setSayadId(latinDigits(e.target.value).replace(/\D/g, ''))}
                     placeholder="مثال: 1234567890123456"
                     className="w-full px-4 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left focus:outline-hidden"
                     dir="ltr"
@@ -823,7 +823,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                   <input
                     type="text"
                     value={chequeNumber}
-                    onChange={(e) => setChequeNumber(e.target.value)}
+                    onChange={(e) => setChequeNumber(latinDigits(e.target.value))}
                     placeholder="مثال: ۸۹۰/۴۴۲ یا بدون شماره صیادی"
                     className="w-full px-4 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left focus:outline-hidden"
                     dir="ltr"
