@@ -74,6 +74,7 @@ import {
   rewriteOutbox,
   dismissEntry,
   retryFailedEntries,
+  retryEntry,
   drainOutbox,
   type OutboxEntry,
   type OutboxEntity,
@@ -152,8 +153,9 @@ interface AppContextType {
   /** تازه‌سازی سریع فقط بانک و حساب‌های بانکی (بدون همگام‌سازی کامل)؛ هنگام باز شدن صفحه‌های بانک صدا زده می‌شود. */
   refreshBankData: (opts?: { force?: boolean }) => Promise<boolean>;
   pendingSyncCount: number;
-  failedSyncItems: Array<{ key: string; action: string; label: string; error: string }>;
+  failedSyncItems: Array<{ key: string; action: string; label: string; error: string; payload?: Record<string, any>; entity?: OutboxEntity }>;
   retryFailedSync: () => void;
+  retryFailedSyncOne: (key: string) => void;
   dismissFailedSync: (key: string) => void;
   syncStats: { studentsCount: number; transactionsCount: number; chequesCount: number; expensesCount: number } | null;
 
@@ -782,13 +784,13 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
   // Every change is applied locally at once, written to a durable queue, then sent to Google
   // Sheets in order. Locally created records carry a temporary id that is replaced by the
   // server id once the write is confirmed.
-  const [outboxInfo, setOutboxInfo] = useState<{ pending: number; failed: Array<{ key: string; action: string; label: string; error: string }> }>({ pending: 0, failed: [] });
+  const [outboxInfo, setOutboxInfo] = useState<{ pending: number; failed: Array<{ key: string; action: string; label: string; error: string; payload?: Record<string, any>; entity?: OutboxEntity }> }>({ pending: 0, failed: [] });
 
   const refreshOutboxInfo = () => {
     const list = outboxSnapshot();
     setOutboxInfo({
       pending: list.filter((e) => !e.failed).length,
-      failed: list.filter((e) => e.failed).map((e) => ({ key: e.key, action: e.action, label: ACTION_LABELS[e.action] || e.action, error: e.error || '' })),
+      failed: list.filter((e) => e.failed).map((e) => ({ key: e.key, action: e.action, label: ACTION_LABELS[e.action] || e.action, error: e.error || '', payload: e.payload, entity: e.entity })),
     });
   };
 
@@ -1009,6 +1011,10 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
 
   const retryFailedSync = () => {
     void retryFailedEntries().then(() => syncWithGoogleSheets(spreadsheetId)).catch(() => {});
+  };
+
+  const retryFailedSyncOne = (key: string) => {
+    void retryEntry(key).then(() => syncWithGoogleSheets(spreadsheetId)).catch(() => {});
   };
 
   const dismissFailedSync = (key: string) => {
@@ -2742,6 +2748,7 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
         pendingSyncCount: outboxInfo.pending,
         failedSyncItems: outboxInfo.failed,
         retryFailedSync,
+        retryFailedSyncOne,
         dismissFailedSync,
         syncStats,
         addStudent,
