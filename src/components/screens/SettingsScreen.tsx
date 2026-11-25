@@ -22,6 +22,7 @@ import { DEFAULT_SPREADSHEET_ID, postToAppsScript } from '../../services/googleS
 import { toPersianDigits } from '../../utils/jalali';
 import packageJson from '../../../package.json';
 import { UpdateOverlay, UpdateInfo } from '../AppUpdatePrompt';
+import { BackgroundAlertsCard } from '../BackgroundAlertsCard';
 
 const THEME_NAMES = [
   { name: 'بنفش سلطنتی (اصلی)', color: '#62205f' },
@@ -187,6 +188,7 @@ export const SettingsScreen: React.FC<{ googleOnly?: boolean }> = ({ googleOnly 
 
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-5">
         {!googleOnly && <>
+        <BackgroundAlertsCard />
         {/* Simple update checker: no manager-only fields or duplicate version panels */}
         <section className="bg-white rounded-3xl p-5 border border-[#e5dde8] shadow-xs space-y-4">
           <button
