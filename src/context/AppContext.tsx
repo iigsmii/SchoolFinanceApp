@@ -1767,7 +1767,7 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
     setTransactions((prev) => prev.map((t) => t.id === id
       ? { ...t, review_status: 'pending', rejection_reason: undefined }
       : t));
-    queue('transaction_review', buildReviewPayload(txServerId(id), 'pending'), { type: 'tx:review', id });
+    queue('transaction_review', buildReviewPayload(id, 'pending'), { type: 'tx:review', id });
     logActivity('ارسال مجدد تراکنش', `تراکنش ردشده شناسه ${id} پس از اصلاح مجدداً ارسال شد`, 'transaction', id);
   };
 
