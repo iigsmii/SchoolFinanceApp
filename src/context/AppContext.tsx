@@ -192,6 +192,7 @@ interface AppContextType {
   updateTransaction: (id: number, data: Partial<Transaction>) => void;
   approveTransaction: (id: number) => Promise<boolean>;
   rejectTransaction: (id: number, reason?: string) => Promise<boolean>;
+  resubmitTransaction: (id: number) => void;
 
   // Expense ops
   addExpense: (data: {
@@ -1760,6 +1761,16 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
     return true;
   };
 
+  const resubmitTransaction = (id: number) => {
+    const tx = transactions.find((t) => t.id === id);
+    if (!tx || tx.review_status !== 'rejected') return;
+    setTransactions((prev) => prev.map((t) => t.id === id
+      ? { ...t, review_status: 'pending', rejection_reason: undefined }
+      : t));
+    queue('transaction_review', buildReviewPayload(txServerId(id), 'pending'), { type: 'tx:review', id });
+    logActivity('ارسال مجدد تراکنش', `تراکنش ردشده شناسه ${id} پس از اصلاح مجدداً ارسال شد`, 'transaction', id);
+  };
+
   const addExpense = (data: {
     category_id: string;
     amount: number;
@@ -1996,6 +2007,8 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
       if (data[k] !== undefined) changes[k] = data[k];
     });
     if (data.note !== undefined) changes.description = data.note;
+    if (data.attachment_url !== undefined) changes.attachment_url = data.attachment_url;
+    if (data.status === 'pending') { changes.status = 'pending'; changes.received_confirmed = false; changes.in_favor_confirmed = false; }
     if (Object.keys(changes).length === 0) return;
     void (async () => {
       if (isTempId(id) && await patchQueuedAdd('cheque', id, { ...changes, ...(changes.issue_date ? { date: changes.issue_date } : {}) })) return;
@@ -2721,6 +2734,7 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
         updateTransaction,
         approveTransaction,
         rejectTransaction,
+        resubmitTransaction,
         addExpense,
         addPettyCashIncome,
         deleteExpense,
