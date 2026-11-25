@@ -240,7 +240,7 @@ function doPost(e) {
     if (action === 'sync' || action === 'all') return json_(syncPayload_(body));
 
     // POST carries tokens in its body, but read-only actions do not need a write lock.
-    const reads={claim_settlements:claimSettlements_,cheques_all:chequesAll_,staff_worklogs:staffWorkLogs_,payroll:payroll_,bank_accounts:bankAccounts_,schools:schools_,staff:staff_,students:students_,tuition:tuition_,expenses:expenses_,transactions:transactions_,bank:bank_,bank_review:bankReview_,bank_rules_get:bankRulesGet_,my_petty_cash_cards:myPettyCashCards_,categories:categories_,messages:messages_,managers:managers_,cheques:cheques_,cheque_list:chequeList_,cheque_alerts:chequeAlerts_,summary:summary_,my_claim:myClaim_,app_version:appVersion_,activity_logs:activityLogs_,parsian_export:parsianExport_,parsian_school_map:parsianSchoolMap_,parsian_student_accounts:parsianStudentAccounts_,attachment_read:attachmentRead_};
+    const reads={sync_stamp:syncStamp_,claim_settlements:claimSettlements_,cheques_all:chequesAll_,staff_worklogs:staffWorkLogs_,payroll:payroll_,bank_accounts:bankAccounts_,schools:schools_,staff:staff_,students:students_,tuition:tuition_,expenses:expenses_,transactions:transactions_,bank:bank_,bank_review:bankReview_,bank_rules_get:bankRulesGet_,my_petty_cash_cards:myPettyCashCards_,categories:categories_,messages:messages_,managers:managers_,cheques:cheques_,cheque_list:chequeList_,cheque_alerts:chequeAlerts_,summary:summary_,my_claim:myClaim_,app_version:appVersion_,activity_logs:activityLogs_,parsian_export:parsianExport_,parsian_school_map:parsianSchoolMap_,parsian_student_accounts:parsianStudentAccounts_,attachment_read:attachmentRead_};
     if(reads[action])return json_(reads[action](body));
     lock.waitLock(30000);locked=true;writeLockHeld_=true;
     ensureStructure_();
@@ -2208,6 +2208,13 @@ function payrollDelete_(b){
 }
 
 /* ---------- BANK ACCOUNTS (definitions) ---------- */
+// Cheap change detector for the app: the spreadsheet's last-modified time. When it did not move the
+// phone skips the full download (the 60-second auto sync used to hit every table every minute).
+function syncStamp_(b){
+  auth_(b);
+  const ss=getActiveSs_();
+  return {success:true,stamp:ss?String(ss.getLastUpdated().getTime()):''};
+}
 function bankAccounts_(b){
   auth_(b,['senior','admin']);
   const data=rows_('BankAccounts').map(x=>x.obj).filter(x=>String(x.is_active)!=='false').map(x=>{

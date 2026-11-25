@@ -123,7 +123,7 @@ const requestJson = async (
   }
 };
 
-const READ_ONLY_ACTIONS = ['app_version', 'bank_rules_get', 'my_petty_cash_cards', 'claim_settlements'];
+const READ_ONLY_ACTIONS = ['app_version', 'bank_rules_get', 'my_petty_cash_cards', 'claim_settlements', 'sync_stamp'];
 
 /**
  * Sends a mutation to the Google Apps Script Web App
@@ -783,11 +783,26 @@ export const loadDataFromExcelFile = async (
 };
 
 /**
+ * مهر آخرین تغییر فایل شیت (ارزان: یک درخواست کوچک). اگر تغییری نباشد، همگام‌سازی خودکار نیازی به
+ * دریافت دوباره‌ی همه‌ی جدول‌ها ندارد. null یعنی نامشخص (باید همگام‌سازی کامل انجام شود).
+ */
+export const fetchSyncStamp = async (webAppUrl: string = DEFAULT_WEBAPP_URL): Promise<string | null> => {
+  try {
+    const r: any = await postToAppsScript({ action: 'sync_stamp' }, webAppUrl);
+    return r?.success && r.stamp ? String(r.stamp) : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
  * Apps Script Web App Endpoint loader
  * Syncs all data in one atomic, reliable request with zero session error
  */
 export const loadDataFromAppsScript = async (
-  webAppUrl: string = DEFAULT_WEBAPP_URL
+  webAppUrl: string = DEFAULT_WEBAPP_URL,
+  /** only: فقط همین جدول‌ها دریافت شوند (برای تازه‌سازی سریع یک صفحه)؛ بقیه «دریافت‌نشده» حساب می‌شوند و روی گوشی دست‌نخورده می‌مانند. */
+  options: { only?: string[] } = {}
 ): Promise<SheetLoadResult & { staff: StaffMember[] }> => {
   const cleanUrl = webAppUrl.trim().replace(/\/+$/, '');
   const diagnostics: string[] = [];
@@ -871,7 +886,8 @@ export const loadDataFromAppsScript = async (
 
   // Apps Script allows only a limited number of simultaneous executions (shared by all users),
   // so run a few parts at a time: the important ones first, the big bank table last.
-  const queue = PARTS.filter((p) => !p.seniorOnly || isSeniorRole).sort((a, b) => Number(!!b.core) - Number(!!a.core) || Number(a.key === 'bank') - Number(b.key === 'bank'));
+  const onlySet = options.only && options.only.length ? new Set(options.only) : null;
+  const queue = PARTS.filter((p) => (!p.seniorOnly || isSeniorRole) && (!onlySet || onlySet.has(p.key))).sort((a, b) => Number(!!b.core) - Number(!!a.core) || Number(a.key === 'bank') - Number(b.key === 'bank'));
   const outcomes: PartOutcome[] = [];
   // Keep Apps Script concurrency modest; the transaction reader has a larger budget
   // because it enriches each ledger row with student/expense metadata.
@@ -885,7 +901,7 @@ export const loadDataFromAppsScript = async (
   const byKey: Record<string, PartOutcome> = {};
   outcomes.forEach((o) => (byKey[o.key] = o));
   const studentsPart = byKey.students;
-  if (!studentsPart?.data) {
+  if (!onlySet && !studentsPart?.data) {
     // Without the student list there is nothing trustworthy to apply.
     if (studentsPart?.net) return failResult(studentsPart.net.message, studentsPart.net.kind);
     return failResult(`دریافت دانش‌آموزان انجام نشد: ${studentsPart?.serverError || 'پاسخ سرور دریافت نشد.'}`, 'server');
@@ -898,6 +914,8 @@ export const loadDataFromAppsScript = async (
   });
   rawData.bankTransactions = rawData.bank;
   const failedParts = outcomes.filter((o) => !o.data && !o.auth);
+  // جدول‌هایی که اصلاً درخواست نشدند هم «دریافت‌نشده» هستند تا روی گوشی پاک/بازنویسی نشوند.
+  const notRequestedKeys = onlySet ? PARTS.filter((p) => !onlySet.has(p.key)).map((p) => p.key) : [];
   const partialError = failedParts.length
     ? `بخشی از اطلاعات دریافت نشد (${failedParts.map((o) => `${o.label}: ${o.net?.message || o.serverError || 'نامشخص'}`).join('، ')}). سایر بخش‌ها بروزرسانی شد.`
     : undefined;
@@ -1149,7 +1167,7 @@ export const loadDataFromAppsScript = async (
 
   return {
     success: true,
-    failedParts: failedParts.map((o) => o.key),
+    failedParts: [...failedParts.map((o) => o.key), ...notRequestedKeys],
     partialError: partialError && diagnostics.length ? `${partialError} [${diagnostics.join(' | ')}]` : partialError,
     students,
     schools,

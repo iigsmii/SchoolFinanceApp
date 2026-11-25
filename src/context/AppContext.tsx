@@ -44,6 +44,7 @@ import {
   DEFAULT_WEBAPP_URL,
   OWNER_EMAIL,
   loadDataFromAppsScript,
+  fetchSyncStamp,
   loadDataFromExcelFile,
   loadDataFromPublicGoogleSheet,
   classifyFetchError,
@@ -146,6 +147,8 @@ interface AppContextType {
   connectWithGoogle: () => Promise<boolean>;
   disconnectGoogle: () => Promise<void>;
   syncWithGoogleSheets: (targetSheetId?: string) => Promise<boolean>;
+  /** تازه‌سازی سریع فقط بانک و حساب‌های بانکی (بدون همگام‌سازی کامل)؛ هنگام باز شدن صفحه‌های بانک صدا زده می‌شود. */
+  refreshBankData: (opts?: { force?: boolean }) => Promise<boolean>;
   pendingSyncCount: number;
   failedSyncItems: Array<{ key: string; action: string; label: string; error: string }>;
   retryFailedSync: () => void;
@@ -594,7 +597,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Retry synchronization when connectivity returns; never replace local data with an empty sheet response.
   useEffect(() => {
     const onOnline = () => {
-      if (currentUser) void syncWithGoogleSheets(spreadsheetId);
+      if (currentUser) void syncIfChanged();
     };
     window.addEventListener('online', onOnline);
     return () => window.removeEventListener('online', onOnline);
@@ -618,7 +621,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const handleVisibility = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         if (!isUserTyping()) {
-          void syncWithGoogleSheets(spreadsheetId);
+          void syncIfChanged();
         }
       }
     };
@@ -628,7 +631,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const intervalId = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         if (!isUserTyping()) {
-          void syncWithGoogleSheets(spreadsheetId);
+          void syncIfChanged();
         }
       }
     }, 60000);
@@ -896,7 +899,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   /** Applies a server snapshot: server wins on the same id; items deleted elsewhere disappear; unsent local items stay. */
-  const applyRemoteData = (res: any) => {
+  const applyRemoteData = (res: any, applyOpts: { light?: boolean } = {}) => {
     const put = <T extends { id: string | number }>(name: string, remote: T[] | undefined, setter: (v: T[]) => void, opts: { allowEmpty?: boolean } = {}) => {
       if (!Array.isArray(remote)) return;
       if (remote.length === 0 && !opts.allowEmpty) {
@@ -935,6 +938,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!anyFailed('staffWorkLogs')) put('staff_work_logs', res.staffWorkLogs, setStaffWorkLogs);
     if (!anyFailed('payroll')) put('payroll_payments', res.payroll, setPayrollPayments);
     if (!anyFailed('bankAccounts')) put('bank_accounts', res.bankAccounts, setBankAccounts);
+    // تازه‌سازی سبک (فقط بانک): آمار و زمان آخرین همگام‌سازی کامل را تغییر نمی‌دهد.
+    if (applyOpts.light) return;
     if (res.stats) {
       setSyncStats(res.stats);
       saveToStorage('sync_stats', res.stats);
@@ -950,6 +955,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const syncLock = useRef<Promise<boolean> | null>(null);
+  // مهر آخرین تغییرِ شیت در آخرین همگام‌سازی کامل و موفق؛ برای پرهیز از دریافت بی‌دلیل.
+  const lastStamp = useRef<string | null>(null);
+  const lastFullSyncAt = useRef(0);
+  const bankRefreshAt = useRef(0);
+  const bankRefreshLock = useRef<Promise<boolean> | null>(null);
   const syncAgain = useRef(false);
   const syncAgainPull = useRef(false);
 
@@ -994,6 +1004,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     })();
     syncLock.current = p;
+    return p;
+  };
+
+  /**
+   * همگام‌سازی خودکار (دوره‌ای / برگشت به برنامه / برگشتن اینترنت): اگر فایل شیت از آخرین دریافت کامل تغییری
+   * نکرده باشد فقط صف ارسال خالی می‌شود و جدول‌ها دوباره دانلود نمی‌شوند. دکمه‌های دستی همیشه کامل همگام می‌کنند.
+   */
+  const syncIfChanged = async (): Promise<boolean> => {
+    const stale = Date.now() - lastFullSyncAt.current > 10 * 60 * 1000;
+    if (!stale && lastStamp.current) {
+      const stamp = await fetchSyncStamp(DEFAULT_WEBAPP_URL);
+      if (stamp && stamp === lastStamp.current) return syncWithGoogleSheets(spreadsheetId, { pull: false });
+    }
+    return syncWithGoogleSheets(spreadsheetId);
+  };
+
+  const refreshBankData = async (opts: { force?: boolean } = {}): Promise<boolean> => {
+    if (bankRefreshLock.current) return bankRefreshLock.current;
+    // تا ۲۰ ثانیه بعد از آخرین تازه‌سازی دوباره درخواست نمی‌دهیم (باز و بسته شدن پشت‌سرهم صفحه).
+    if (!opts.force && Date.now() - bankRefreshAt.current < 20000) return true;
+    const p = (async () => {
+      try {
+        // فقط بانک و حساب‌های بانکی؛ مدرسه‌ها و تراکنش‌ها برای نام مدرسه و شناسه‌ی تطبیق‌ها لازم‌اند اما اعمال نمی‌شوند.
+        const res = await loadDataFromAppsScript(DEFAULT_WEBAPP_URL, { only: ['bank', 'bankAccounts', 'schools', 'transactions'] });
+        if (!res.success) return false;
+        const apply = { ...res, failedParts: [...(res.failedParts || []), 'schools', 'transactions', 'tuition', 'expenses', 'cheques'] };
+        applyRemoteData(apply, { light: true });
+        bankRefreshAt.current = Date.now();
+        return !res.failedParts?.includes('bank');
+      } catch {
+        return false;
+      } finally {
+        bankRefreshLock.current = null;
+      }
+    })();
+    bankRefreshLock.current = p;
     return p;
   };
 
@@ -1043,8 +1089,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       setSyncStageText('دریافت آخرین اطلاعات از سرور Google Sheets...');
       setSyncProgress(65);
+      const stampPromise = fetchSyncStamp(DEFAULT_WEBAPP_URL);
       const gasResult = await loadDataFromAppsScript(DEFAULT_WEBAPP_URL);
       if (gasResult && gasResult.success) {
+        if (!gasResult.partialError) { lastStamp.current = await stampPromise; lastFullSyncAt.current = Date.now(); } else { lastStamp.current = null; }
         setSyncProgress(90);
         setSyncStageText('بروزرسانی داده‌ها و ثبت در حافظه...');
         applyRemoteData(gasResult);
@@ -2519,6 +2567,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         connectWithGoogle,
         disconnectGoogle,
         syncWithGoogleSheets,
+        refreshBankData,
         pendingSyncCount: outboxInfo.pending,
         failedSyncItems: outboxInfo.failed,
         retryFailedSync,

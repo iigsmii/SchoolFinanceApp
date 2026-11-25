@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useDeferredValue } from 'react';
+import React, { useState, useMemo, useDeferredValue, useEffect } from 'react';
 import SchoolSelect from '../SchoolSelect';
 import { useBackClose } from '../../hooks/useBackClose';
 import { useApp } from '../../context/AppContext';
@@ -67,9 +67,16 @@ export const BankAccountsScreen: React.FC = () => {
     currentUser,
     accentColor,
     setCurrentScreen,
+    refreshBankData,
   } = useApp();
 
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
+
+  // Pull the bank lists on open so they never need a manual full sync.
+  useEffect(() => {
+    if (isSenior) void refreshBankData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSenior]);
 
   // Selected Bank Account for Ledger View (null = all accounts)
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(() => {
