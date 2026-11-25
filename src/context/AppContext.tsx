@@ -79,7 +79,7 @@ import {
   type OutboxEntity,
   type DrainResult,
 } from '../services/outbox';
-import { idbGet, idbSet } from '../services/idb';
+import { idbGet, idbSet, idbAvailable } from '../services/idb';
 import { primeAttachmentCache, stripInlineImages } from '../services/attachments';
 import {
   playSuccessSound,
@@ -308,34 +308,42 @@ export const DEFAULT_SMS_CONFIG: SmsConfig = {
 
 const AppContext = createContext<AppContextType | null>(null);
 
-// ───────── Large tables live in IndexedDB, not localStorage ─────────
-// localStorage is capped at ~5 MB for the whole app; thousands of bank-statement rows exceed it and the
-// save used to fail silently (the list was empty after a restart). These keys are kept in memory,
-// mirrored to IndexedDB (debounced) and migrated from the old localStorage copy on first run.
-const BIG_KEYS = new Set<string>(['bank_txs', 'activity_logs']);
+// ───────── Data tables live in IndexedDB, not localStorage ─────────
+// localStorage is capped at ~5 MB for the whole app; thousands of bank-statement rows, students and
+// transactions exceed it and the save used to fail silently (lists were empty after a restart).
+// These tables are kept in memory, mirrored to IndexedDB (debounced) and migrated once from the old
+// localStorage copy. AppProvider renders only after they were read, so state starts from stored data.
+const DATA_TABLES = [
+  'students', 'schools', 'transactions', 'cheques', 'bank_txs', 'bank_accounts', 'categories', 'users',
+  'staff_members', 'staff_work_logs', 'payroll_payments', 'senior_msgs', 'manager_feedbacks', 'sms_logs', 'activity_logs',
+];
+const BIG_KEYS = new Set<string>([...DATA_TABLES, ...DATA_TABLES.map((t) => `synced_ids_${t}`)]);
 const bigCache = new Map<string, any>();
 const bigTimers = new Map<string, ReturnType<typeof setTimeout>>();
 let bigLoaded = false;
+let bigUseIdb = true;
 const bigIdbKey = (key: string) => `big_${key}`;
 const bigReady: Promise<void> = (async () => {
-  for (const key of BIG_KEYS) {
+  bigUseIdb = await idbAvailable();
+  await Promise.all(Array.from(BIG_KEYS).map(async (key) => {
     try {
-      const fromIdb = await idbGet(bigIdbKey(key));
+      const fromIdb = bigUseIdb ? await idbGet(bigIdbKey(key)) : undefined;
       if (fromIdb !== undefined) {
         bigCache.set(key, fromIdb);
         try { localStorage.removeItem(`school_finance_${key}`); } catch { /* ignore */ }
-      } else {
-        const raw = localStorage.getItem(`school_finance_${key}`);
-        if (raw) {
-          const v = JSON.parse(raw);
-          bigCache.set(key, v);
-          if (await idbSet(bigIdbKey(key), v)) { try { localStorage.removeItem(`school_finance_${key}`); } catch { /* ignore */ } }
-        }
+        return;
+      }
+      const raw = localStorage.getItem(`school_finance_${key}`);
+      if (raw) {
+        const v = JSON.parse(raw);
+        bigCache.set(key, v);
+        // The old copy is only removed after IndexedDB confirmed the write.
+        if (bigUseIdb && (await idbSet(bigIdbKey(key), v))) { try { localStorage.removeItem(`school_finance_${key}`); } catch { /* ignore */ } }
       }
     } catch (e) {
-      console.warn(`Could not load ${key} from IndexedDB`, e);
+      console.warn(`Could not load ${key} from storage`, e);
     }
-  }
+  }));
   bigLoaded = true;
 })();
 const flushBig = (key: string) => {
@@ -364,10 +372,13 @@ function saveToStorage<T>(key: string, value: T) {
     // Before the stored copy is loaded, the initial (possibly empty) state must not overwrite it.
     if (!bigLoaded) return;
     bigCache.set(key, value);
-    const old = bigTimers.get(key);
-    if (old) clearTimeout(old);
-    bigTimers.set(key, setTimeout(() => flushBig(key), 400));
-    return;
+    if (bigUseIdb) {
+      const old = bigTimers.get(key);
+      if (old) clearTimeout(old);
+      bigTimers.set(key, setTimeout(() => flushBig(key), 400));
+      return;
+    }
+    // No IndexedDB on this device: fall back to localStorage below.
   }
   try {
     localStorage.setItem(`school_finance_${key}`, JSON.stringify(value));
@@ -453,7 +464,7 @@ function reconcileEntity<T extends { id: string | number }>(name: string, remote
   return merged;
 }
 
-export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [themeIndex, setThemeIndexState] = useState<number>(() => loadFromStorage('theme_index', 0));
   const [fontScale, setFontScaleState] = useState<number>(() => loadFromStorage('font_scale', 1));
 
@@ -598,25 +609,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     expensesCount: number;
   } | null>(() => loadFromStorage('sync_stats', null));
 
-  const [bigHydrated, setBigHydrated] = useState(false);
-  // Once IndexedDB has been read, bring the big tables into state (keeping anything already there).
-  useEffect(() => {
-    let alive = true;
-    void bigReady.then(() => {
-      if (!alive) return;
-      const bank = bigCache.get('bank_txs');
-      if (Array.isArray(bank) && bank.length) {
-        setBankTransactions((prev) => (prev.length === 0 ? bank : prev.length < bank.length ? mergeCloudAndLocal(prev, bank) : prev));
-      }
-      const logs = bigCache.get('activity_logs');
-      if (Array.isArray(logs) && logs.length) {
-        setActivityLogs((prev) => (prev.length === 0 ? logs : prev.length < logs.length ? mergeCloudAndLocal(prev as any, logs as any) as any : prev));
-      }
-      // The persist effects skipped writing before the load finished; this makes them run once more.
-      setBigHydrated(true);
-    });
-    return () => { alive = false; };
-  }, []);
   useEffect(() => saveToStorage('theme_index', themeIndex), [themeIndex]);
   useEffect(() => {
     saveToStorage('font_scale', fontScale);
@@ -631,9 +623,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => saveToStorage('students', students), [students]);
   useEffect(() => saveToStorage('transactions', stripInlineImages(transactions)), [transactions]);
   useEffect(() => saveToStorage('cheques', stripInlineImages(cheques)), [cheques]);
-  useEffect(() => saveToStorage('bank_txs', bankTransactions), [bankTransactions, bigHydrated]);
+  useEffect(() => saveToStorage('bank_txs', bankTransactions), [bankTransactions]);
   useEffect(() => saveToStorage('senior_msgs', seniorMessages), [seniorMessages]);
-  useEffect(() => saveToStorage('activity_logs', activityLogs), [activityLogs, bigHydrated]);
+  useEffect(() => saveToStorage('activity_logs', activityLogs), [activityLogs]);
   useEffect(() => saveToStorage('manager_feedbacks', stripInlineImages(feedbacks)), [feedbacks]);
   useEffect(() => saveToStorage('sms_logs', smsLogs), [smsLogs]);
   useEffect(() => saveToStorage('auto_sms_enabled', autoSmsEnabled), [autoSmsEnabled]);
@@ -2775,6 +2767,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       </div>
     </AppContext.Provider>
   );
+};
+
+/** Waits until the stored tables were read from IndexedDB, then mounts the real provider. */
+export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [ready, setReady] = useState(bigLoaded);
+  useEffect(() => {
+    let alive = true;
+    void bigReady.then(() => { if (alive) setReady(true); });
+    return () => { alive = false; };
+  }, []);
+  if (!ready) {
+    return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit', color: '#64748b' }}>در حال بارگذاری اطلاعات...</div>;
+  }
+  return <AppProviderInner>{children}</AppProviderInner>;
 };
 
 export const useApp = () => {

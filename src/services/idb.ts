@@ -77,3 +77,8 @@ export async function idbDelete(key: string): Promise<void> {
     }
   });
 }
+
+/** true when real IndexedDB works (otherwise values only live in memory and must not replace localStorage). */
+export async function idbAvailable(): Promise<boolean> {
+  return !!(await openDb());
+}
