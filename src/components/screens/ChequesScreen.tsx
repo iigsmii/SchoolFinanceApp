@@ -63,6 +63,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
     chequeCollection,
     bankAccounts,
     addDirectCheque,
+    updateCheque,
     deleteCheque,
     currentUser,
     accentColor,
@@ -80,6 +81,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
 
   // Cheque Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingCheque, setEditingCheque] = useState<Cheque | null>(null);
   useBackClose(isModalOpen, () => setIsModalOpen(false));
   const [chequeType, setChequeType] = useState<'sayad' | 'non_sayad' | 'gharzolhasane' | 'guarantee'>('sayad');
   const [bankName, setBankName] = useState(IRANIAN_BANKS[0]);
@@ -180,6 +182,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
   };
 
   const handleOpenAddModal = () => {
+    setEditingCheque(null);
     setChequeType('sayad');
     setBankName(IRANIAN_BANKS[0]);
     setChequePurpose('tuition');
@@ -193,6 +196,25 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
     setSelectedStudentId(undefined);
     setNote('');
     setAttachment('');
+    setFormError('');
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditCheque = (c: Cheque) => {
+    setEditingCheque(c);
+    setChequeType(c.cheque_type || 'sayad');
+    setBankName(c.bank_name || IRANIAN_BANKS[0]);
+    setChequePurpose(c.cheque_purpose || 'tuition');
+    setSayadId(c.sayad_id || '');
+    setChequeNumber(c.cheque_number || '');
+    setIssuerName(c.issuer_name || c.student_name || '');
+    setAmountStr(Number(c.amount || 0).toLocaleString('en-US'));
+    setDueDateJalali(jalaliFromGregorian(c.due_date));
+    setIssueDateJalali(jalaliFromGregorian(c.issue_date));
+    setSelectedSchoolId(c.school_id);
+    setSelectedStudentId(c.student_id || undefined);
+    setNote(c.note || '');
+    setAttachment(c.attachment_url || '');
     setFormError('');
     setIsModalOpen(true);
   };
@@ -230,28 +252,48 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
 
     const displayName = studentObj ? studentObj.name : issuerName.trim();
 
-    addDirectCheque({
-      student_id: selectedStudentId || 0,
-      student_name: displayName,
-      school_id: selectedSchoolId,
-      school_name: schoolObj?.name || 'مدرسه',
-      amount: amt,
-      sayad_id: chequeType === 'sayad' ? sayadId.trim() : undefined,
-      cheque_number: chequeNumber.trim() || undefined,
-      bank_name: bankName,
-      cheque_type: chequeType,
-      cheque_purpose: chequePurpose,
-      issuer_name: issuerName.trim() || displayName,
-      due_date: jalaliToIso(dueDateJalali),
-      issue_date: jalaliToIso(issueDateJalali),
-      received_confirmed: true,
-      in_favor_confirmed: true,
-      status: 'approved',
-      note: note.trim(),
-      attachment_url: attachment,
-    });
+    if (editingCheque) {
+      updateCheque(editingCheque.id, {
+        amount: amt,
+        sayad_id: chequeType === 'sayad' ? sayadId.trim() : '',
+        cheque_number: chequeNumber.trim(),
+        bank_name: bankName,
+        cheque_type: chequeType,
+        cheque_purpose: chequePurpose,
+        issuer_name: issuerName.trim() || displayName,
+        due_date: jalaliToIso(dueDateJalali),
+        issue_date: jalaliToIso(issueDateJalali),
+        note: note.trim(),
+        attachment_url: attachment,
+        status: 'pending',
+        received_confirmed: false,
+        in_favor_confirmed: false,
+      });
+    } else {
+      addDirectCheque({
+        student_id: selectedStudentId || 0,
+        student_name: displayName,
+        school_id: selectedSchoolId,
+        school_name: schoolObj?.name || 'مدرسه',
+        amount: amt,
+        sayad_id: chequeType === 'sayad' ? sayadId.trim() : undefined,
+        cheque_number: chequeNumber.trim() || undefined,
+        bank_name: bankName,
+        cheque_type: chequeType,
+        cheque_purpose: chequePurpose,
+        issuer_name: issuerName.trim() || displayName,
+        due_date: jalaliToIso(dueDateJalali),
+        issue_date: jalaliToIso(issueDateJalali),
+        received_confirmed: true,
+        in_favor_confirmed: true,
+        status: 'approved',
+        note: note.trim(),
+        attachment_url: attachment,
+      });
+    }
 
     setIsModalOpen(false);
+    setEditingCheque(null);
   };
 
   const getTypeBadge = (c: Cheque) => {
@@ -675,7 +717,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                   <CreditCard className="w-5 h-5" />
                 </div>
                 <h3 className="text-base font-bold text-[#341648]">
-                  ثبت چک جدید (صیادی / غیر صیادی / قرض‌الحسنه / ضمانتی)
+                  {editingCheque ? 'ویرایش چک ردشده و ارسال مجدد' : 'ثبت چک جدید (صیادی / غیر صیادی / قرض‌الحسنه / ضمانتی)'}
                 </h3>
               </div>
               <button
