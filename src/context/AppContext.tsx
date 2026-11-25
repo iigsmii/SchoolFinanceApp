@@ -797,10 +797,59 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // ───────── Local-change journal ─────────
+  // Every change made on this device is protected from being overwritten by a server snapshot
+  // until the server shows it: while it waits in the outbox, and for a grace period after it was
+  // sent (a pull that started before the send finished returns the old row). Without this an
+  // approved transaction, an edit or a delete could "come back" after a sync.
+  const localJournal = useRef<Map<string, { deleted: boolean; at: number }>>(new Map());
+  const wholeTableJournal = useRef<Map<string, number>>(new Map());
+  const LOCAL_GRACE_MS = 5 * 60 * 1000;
+  const ENTITY_TABLE: Record<string, string> = {
+    student: 'students', tuition: 'transactions', expense: 'transactions', petty_income: 'transactions', tx: 'transactions',
+    cheque: 'cheques', category: 'categories', manager: 'users', school: 'schools', bank_account: 'bank_accounts',
+    message: 'senior_msgs', staff: 'staff_members', worklog: 'staff_work_logs', payroll: 'payroll_payments', bank: 'bank_txs',
+  };
+  // bank:match carries the matched transaction's id (the bank row is protected explicitly), so it maps to nothing here.
+  const tableOf = (type: string): string | undefined => (type === 'bank:match' ? undefined : ENTITY_TABLE[type.split(':')[0]]);
+  const touchLocal = (table: string | undefined, id: any, deleted = false) => {
+    if (!table || id == null || id === '') return;
+    localJournal.current.set(`${table}:${id}`, { deleted, at: Date.now() });
+  };
+  const touchEntry = (action: string, entity?: OutboxEntity) => {
+    if (action === 'bank_reconcile') {
+      wholeTableJournal.current.set('bank_txs', Date.now());
+      wholeTableJournal.current.set('transactions', Date.now());
+    }
+    if (!entity || entity.id == null) return;
+    touchLocal(tableOf(entity.type), entity.id, /_delete$/.test(action));
+  };
+  /** Ids of `table` whose local version must win over the server snapshot right now. */
+  const protectedIds = (table: string): Map<string, { deleted: boolean }> => {
+    const out = new Map<string, { deleted: boolean }>();
+    const now = Date.now();
+    localJournal.current.forEach((v, k) => {
+      if (now - v.at > LOCAL_GRACE_MS) { localJournal.current.delete(k); return; }
+      if (k.startsWith(`${table}:`)) out.set(k.slice(table.length + 1), { deleted: v.deleted });
+    });
+    for (const e of outboxSnapshot()) {
+      if (!e.entity || e.entity.id == null || e.entity.type.indexOf(':') < 0) continue; // plain adds are kept by temp id
+      if (tableOf(e.entity.type) !== table) continue;
+      out.set(String(e.entity.id), { deleted: /_delete$/.test(e.action) });
+    }
+    return out;
+  };
+  const tableProtected = (table: string): boolean => {
+    const at = wholeTableJournal.current.get(table);
+    if (at && Date.now() - at < LOCAL_GRACE_MS) return true;
+    return outboxSnapshot().some((e) => e.action === 'bank_reconcile' && (table === 'bank_txs' || table === 'transactions'));
+  };
+
   const onOutboxSuccess = async (entry: OutboxEntry, res: any) => {
     if (res?.image_url && entry.payload?.base64) {
       await primeAttachmentCache(res.image_url, `data:${entry.payload.mime_type || 'image/jpeg'};base64,${entry.payload.base64}`);
     }
+    touchEntry(entry.action, entry.entity);
     const ent = entry.entity;
     if (!ent) return;
     const tmp = ent.id as any;
@@ -864,6 +913,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   /** Queue a write and start sending it right away (the sync pass drains the queue first). */
   const queue = (action: string, payload: Record<string, any>, entity?: OutboxEntity) => {
+    touchEntry(action, entity);
     void enqueue({ action, payload, entity }).then(() => { void syncWithGoogleSheets(spreadsheetId, { pull: false }).catch(() => {}); });
   };
 
@@ -906,7 +956,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // An empty answer never erases data this device still holds.
         return;
       }
+      if (tableProtected(name)) return; // a bulk operation on this table is still being sent
       const existing = loadFromStorage<T[]>(name, []);
+      const prot = protectedIds(name);
+      if (prot.size) {
+        // Local edits/deletes that the server has not confirmed yet win over the snapshot.
+        const localById = new Map(existing.map((i) => [String(i.id), i]));
+        remote = remote
+          .filter((r) => !prot.get(String(r.id))?.deleted)
+          .map((r) => (prot.has(String(r.id)) && localById.has(String(r.id)) ? localById.get(String(r.id))! : r));
+      }
       const merged = reconcileEntity(name, remote, existing);
       // Compare complete records, not only IDs. Direct edits in Google Sheets keep the same
       // row IDs, so an ID-only check silently left stale names and other fields on the device.
@@ -1991,6 +2050,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const matchedTx = transactions.find((t) => t.id === data.matched_transaction_id);
       const route = matchedTx ? txRoute(matchedTx.id, matchedTx.kind) : undefined;
       if (matchedTx && route && route.base !== 'ledger') {
+        touchLocal('bank_txs', id);
+        touchLocal('transactions', matchedTx.id);
         queue('bank_match', {
           ...(isTempId(id) ? {} : { id }),
           school_id: merged.school_id, date: merged.date, amount: merged.amount, tracking_code: merged.tracking_code,
