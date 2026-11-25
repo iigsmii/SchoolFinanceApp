@@ -295,6 +295,8 @@ function doPost(e) {
       case 'transactions': result=transactions_(body); break;
       case 'finance_transaction': result=financeTransactionAdd_(body); break;
       case 'transaction_delete': result=transactionDelete_(body); break;
+      case 'transaction_delete_request': result=transactionDeleteRequest_(body); break;
+      case 'transaction_delete_review': result=transactionDeleteReview_(body); break;
       case 'transaction_update': result=transactionUpdate_(body); break;
       case 'bank': result=bank_(body); break;
       case 'bank_review': result=bankReview_(body); break;
@@ -1327,6 +1329,38 @@ function transactionUpdate_(b) {
   return {success:true};
 }
 
+function transactionDeleteRequest_(b){
+  const u=auth_(b);
+  const hit=findRow_('Transactions',b.id); if(!hit) throw new Error('تراکنش یافت نشد.');
+  const t=hit.obj;
+  if(isSenior_(u)) throw new Error('مدیر ارشد می‌تواند حذف را مستقیماً انجام دهد.');
+  if(String(t.created_by)!==String(u.id)||!userCanAccessSchool_(u,t.school_id)) throw new Error('فقط ثبت‌کننده مجاز به درخواست حذف است.');
+  if(String(t.review_status||'approved')!=='approved') throw new Error('فقط تراکنش تأییدشده قابل درخواست حذف است.');
+  patchRow_('Transactions',hit.row,{review_status:'delete_pending',delete_requested:true,delete_requested_by:String(u.id),delete_requested_at:now_()});
+  const kind=String(t.kind||''),sourceId=String(t.source_id||'');
+  const table=kind==='expense'?'Expenses':(['payment','debt'].indexOf(kind)>=0?'Tuition':'');
+  if(table&&sourceId){const src=findRow_(table,sourceId);if(src)patchRow_(table,src.row,{review_status:'delete_pending',delete_requested:true,delete_requested_by:String(u.id),delete_requested_at:now_()});}
+  return {success:true,review_status:'delete_pending'};
+}
+function transactionDeleteReview_(b){
+  const u=auth_(b,['senior','admin']);
+  const status=String(b.status||'');
+  if(status!=='approved'&&status!=='rejected') throw new Error('وضعیت بررسی حذف نامعتبر است.');
+  const hit=findRow_('Transactions',b.id); if(!hit) throw new Error('تراکنش یافت نشد.');
+  const t=hit.obj;
+  if(String(t.review_status)!=='delete_pending') throw new Error('این تراکنش درخواست حذف در انتظار بررسی ندارد.');
+  const kind=String(t.kind||''),sourceId=String(t.source_id||'');
+  const table=kind==='expense'?'Expenses':(['payment','debt'].indexOf(kind)>=0?'Tuition':'');
+  if(status==='rejected'){
+    patchRow_('Transactions',hit.row,{review_status:'approved',delete_requested:false,delete_rejection_reason:String(b.rejection_reason||'').slice(0,500)});
+    if(table&&sourceId){const src=findRow_(table,sourceId);if(src)patchRow_(table,src.row,{review_status:'approved',delete_requested:false,delete_rejection_reason:String(b.rejection_reason||'').slice(0,500)});}
+    return {success:true,review_status:'approved',delete_rejected:true};
+  }
+  if(table&&sourceId) softDeleteBySource_(table,sourceId);
+  rows_('Transactions').forEach(x=>{if(String(x.obj.id)===String(t.id)||String(x.obj.source_id)===sourceId&&sourceId)voidRecord_('Transactions',x.row);});
+  return {success:true,deleted:true};
+}
+
 function transactionDelete_(b) {
   const u=auth_(b);
   const hit=findRow_('Transactions',b.id);
@@ -2036,7 +2070,7 @@ function syncPayload_(b){
     const bankData=(bank_(b)||{}).data||[];
     return {
       success:true,
-      backend_version:'2.24.14',
+      backend_version:'2.24.15',
       students:(students_(b)||{}).data||[],
       schools:(schools_(b)||{}).data||[],
       staff:(staff_(b)||{}).data||[],
