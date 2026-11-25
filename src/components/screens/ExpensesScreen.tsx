@@ -83,6 +83,7 @@ export const ExpensesScreen: React.FC = () => {
     deleteExpense,
     approveTransaction,
     rejectTransaction,
+    resubmitTransaction,
     addCategory,
     toggleCategory,
   } = useApp();
@@ -575,6 +576,9 @@ export const ExpensesScreen: React.FC = () => {
           tafsili_code: schoolTafsili,
           attachment_url: formAttachment,
         });
+        if (editingExpense.review_status === 'rejected') {
+          resubmitTransaction(editingExpense.id);
+        }
       } else {
         addExpense({
           category_id: formCategoryId,
