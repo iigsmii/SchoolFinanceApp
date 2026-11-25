@@ -1225,10 +1225,13 @@ export const ExpensesScreen: React.FC = () => {
                     شماره پیگیری فاکتور <span className="text-rose-500">*</span>
                   </label>
                   <input
-                    type="text"
+                    type="tel"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    autoComplete="off"
                     value={formTracking}
-                    onChange={(e) => setFormTracking(e.target.value)}
-                    placeholder="مثال: BNK-44812"
+                    onChange={(e) => setFormTracking(e.target.value.replace(/\D/g, ''))}
+                    placeholder="شماره پیگیری عددی"
                     className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left focus:outline-hidden"
                     dir="ltr"
                   />
