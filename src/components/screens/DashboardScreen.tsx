@@ -78,6 +78,10 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
     syncProgress,
     syncStageText,
     syncError,
+    pendingSyncCount,
+    failedSyncItems,
+    retryFailedSync,
+    dismissFailedSync,
     lastSyncTime,
     syncWithGoogleSheets,
     connectWithGoogle,
@@ -136,6 +140,18 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
   const chequeAlertTotal = chequeAlertInfo
     ? chequeAlertInfo.pendingReview.length + chequeAlertInfo.dueForCollection.length + chequeAlertInfo.notOnAccount.length
     : 0;
+
+  const openSyncIssue = (action: string) => {
+    const a = String(action || '').toLowerCase();
+    if (a.includes('student')) setCurrentScreen('students');
+    else if (a.includes('cheque')) setCurrentScreen('cheques');
+    else if (a.includes('expense') || a.includes('petty')) setCurrentScreen('expenses');
+    else if (a.includes('bank')) setCurrentScreen('bank');
+    else if (a.includes('staff') || a.includes('payroll')) setCurrentScreen('staff');
+    else if (a.includes('school')) setCurrentScreen('schools');
+    else if (a.includes('transaction') || a.includes('tuition')) setCurrentScreen('transactions');
+    else setCurrentScreen('settings');
+  };
 
   const openAlertTransaction = (transactionId: number) => {
     setNavHint('transactions', `transaction:${transactionId}`);
@@ -452,6 +468,41 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
             />
           </div>
         </div>
+      )}
+
+      {(syncError || failedSyncItems.length > 0 || pendingSyncCount > 0) && (
+        <section className="rounded-2xl border-2 border-rose-300 bg-rose-50 p-3 space-y-2 shadow-xs" dir="rtl">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-rose-900 font-black text-xs sm:text-sm">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>اخطارهای همگام‌سازی</span>
+            </div>
+            <button type="button" onClick={() => setCurrentScreen('settings')} className="text-[10px] font-bold text-rose-800 underline">جزئیات همگام‌سازی</button>
+          </div>
+          {syncError && (
+            <button type="button" onClick={() => setCurrentScreen('settings')} className="w-full text-right rounded-xl border border-rose-200 bg-white p-2.5 text-[11px] text-rose-800 font-semibold">
+              {syncError}
+              <span className="block mt-1 text-[10px] underline">برای بررسی و رفع خطا لمس کنید</span>
+            </button>
+          )}
+          {pendingSyncCount > 0 && (
+            <div className="rounded-xl bg-amber-50 border border-amber-200 p-2 text-[11px] text-amber-900 font-bold">
+              {pendingSyncCount.toLocaleString('fa-IR')} تغییر در صف ارسال به گوگل باقی مانده است.
+            </div>
+          )}
+          {failedSyncItems.slice(0, 8).map((item) => (
+            <div key={item.key} className="rounded-xl bg-white border border-rose-200 p-2.5 flex items-center justify-between gap-2">
+              <button type="button" onClick={() => openSyncIssue(item.action)} className="min-w-0 flex-1 text-right">
+                <span className="block text-[11px] font-black text-rose-900">{item.label} — ارسال ناموفق</span>
+                <span className="block mt-1 text-[10px] text-rose-700 break-words">{item.error || 'برای مشاهده جزئیات و پیگیری لمس کنید'}</span>
+              </button>
+              <button type="button" onClick={() => dismissFailedSync(item.key)} className="shrink-0 rounded-lg px-2 py-1 text-[10px] font-bold text-gray-600 border border-gray-200">حذف</button>
+            </div>
+          ))}
+          <div className="flex justify-end">
+            <button type="button" onClick={retryFailedSync} className="rounded-lg bg-rose-700 px-3 py-1.5 text-[11px] font-bold text-white">تلاش مجدد برای ارسال</button>
+          </div>
+        </section>
       )}
 
       {offlineSuccessNotice && (
