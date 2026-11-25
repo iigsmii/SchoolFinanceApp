@@ -1686,9 +1686,16 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
 
   const deleteTransaction = (id: number) => {
     const tx = transactions.find((t) => t.id === id);
+    if (!tx) return;
+    const isSeniorUser = currentUser?.role === 'senior' || currentUser?.role === 'admin';
+    if ((tx.review_status || 'approved') === 'approved' && !isSeniorUser) {
+      setTransactions((prev) => prev.map((t) => t.id === id ? { ...t, review_status: 'delete_pending' } : t));
+      logActivity('درخواست حذف تراکنش', `درخواست حذف تراکنش تأییدشده شناسه ${id} برای بررسی مدیر ارشد`, 'transaction', id);
+      queue('transaction_delete_request', { id: txServerId(id) }, { type: 'tx:review', id });
+      return;
+    }
     setTransactions((prev) => prev.filter((t) => t.id !== id));
     logActivity('حذف تراکنش', `حذف تراکنش مالی شناسه ${id}`, 'transaction', id);
-    if (!tx) return;
     const route = txRoute(id, tx.kind);
     void (async () => {
       if (route.pending) {
@@ -1750,6 +1757,14 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
   };
 
   const rejectTransaction = async (id: number, reason?: string): Promise<boolean> => {
+    const tx = transactions.find((t) => t.id === id);
+    if (tx?.review_status === 'delete_pending') {
+      setTransactions((prev) => prev.map((t) => t.id === id ? { ...t, review_status: 'approved' } : t));
+      queue('transaction_delete_review', { id: txServerId(id), status: 'rejected', rejection_reason: reason || 'درخواست حذف رد شد' }, { type: 'tx:review', id });
+      logActivity('رد درخواست حذف تراکنش', `درخواست حذف تراکنش شناسه ${id} رد شد`, 'transaction', id);
+      playAlertSound();
+      return true;
+    }
     setTransactions((prev) =>
       prev.map((t) =>
         t.id === id ? { ...t, review_status: 'rejected', rejection_reason: reason || 'عدم تأیید توسط مدیریت ارشد' } : t
