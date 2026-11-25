@@ -79,6 +79,7 @@ import {
   type OutboxEntity,
   type DrainResult,
 } from '../services/outbox';
+import { idbGet, idbSet } from '../services/idb';
 import { primeAttachmentCache, stripInlineImages } from '../services/attachments';
 import {
   playSuccessSound,
@@ -307,7 +308,49 @@ export const DEFAULT_SMS_CONFIG: SmsConfig = {
 
 const AppContext = createContext<AppContextType | null>(null);
 
+// ───────── Large tables live in IndexedDB, not localStorage ─────────
+// localStorage is capped at ~5 MB for the whole app; thousands of bank-statement rows exceed it and the
+// save used to fail silently (the list was empty after a restart). These keys are kept in memory,
+// mirrored to IndexedDB (debounced) and migrated from the old localStorage copy on first run.
+const BIG_KEYS = new Set<string>(['bank_txs', 'activity_logs']);
+const bigCache = new Map<string, any>();
+const bigTimers = new Map<string, ReturnType<typeof setTimeout>>();
+let bigLoaded = false;
+const bigIdbKey = (key: string) => `big_${key}`;
+const bigReady: Promise<void> = (async () => {
+  for (const key of BIG_KEYS) {
+    try {
+      const fromIdb = await idbGet(bigIdbKey(key));
+      if (fromIdb !== undefined) {
+        bigCache.set(key, fromIdb);
+        try { localStorage.removeItem(`school_finance_${key}`); } catch { /* ignore */ }
+      } else {
+        const raw = localStorage.getItem(`school_finance_${key}`);
+        if (raw) {
+          const v = JSON.parse(raw);
+          bigCache.set(key, v);
+          if (await idbSet(bigIdbKey(key), v)) { try { localStorage.removeItem(`school_finance_${key}`); } catch { /* ignore */ } }
+        }
+      }
+    } catch (e) {
+      console.warn(`Could not load ${key} from IndexedDB`, e);
+    }
+  }
+  bigLoaded = true;
+})();
+const flushBig = (key: string) => {
+  const t = bigTimers.get(key);
+  if (t) { clearTimeout(t); bigTimers.delete(key); }
+  void idbSet(bigIdbKey(key), bigCache.get(key)).then((ok) => { if (!ok) console.error(`Failed to save ${key} to IndexedDB`); });
+};
+if (typeof window !== 'undefined') {
+  const flushAll = () => { for (const key of Array.from(bigTimers.keys())) flushBig(key); };
+  window.addEventListener('pagehide', flushAll);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushAll(); });
+}
+
 function loadFromStorage<T>(key: string, fallback: T): T {
+  if (BIG_KEYS.has(key) && bigCache.has(key)) return bigCache.get(key) as T;
   try {
     const item = localStorage.getItem(`school_finance_${key}`);
     return item ? JSON.parse(item) : fallback;
@@ -317,6 +360,15 @@ function loadFromStorage<T>(key: string, fallback: T): T {
 }
 
 function saveToStorage<T>(key: string, value: T) {
+  if (BIG_KEYS.has(key)) {
+    // Before the stored copy is loaded, the initial (possibly empty) state must not overwrite it.
+    if (!bigLoaded) return;
+    bigCache.set(key, value);
+    const old = bigTimers.get(key);
+    if (old) clearTimeout(old);
+    bigTimers.set(key, setTimeout(() => flushBig(key), 400));
+    return;
+  }
   try {
     localStorage.setItem(`school_finance_${key}`, JSON.stringify(value));
   } catch (e) {
@@ -546,6 +598,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     expensesCount: number;
   } | null>(() => loadFromStorage('sync_stats', null));
 
+  const [bigHydrated, setBigHydrated] = useState(false);
+  // Once IndexedDB has been read, bring the big tables into state (keeping anything already there).
+  useEffect(() => {
+    let alive = true;
+    void bigReady.then(() => {
+      if (!alive) return;
+      const bank = bigCache.get('bank_txs');
+      if (Array.isArray(bank) && bank.length) {
+        setBankTransactions((prev) => (prev.length === 0 ? bank : prev.length < bank.length ? mergeCloudAndLocal(prev, bank) : prev));
+      }
+      const logs = bigCache.get('activity_logs');
+      if (Array.isArray(logs) && logs.length) {
+        setActivityLogs((prev) => (prev.length === 0 ? logs : prev.length < logs.length ? mergeCloudAndLocal(prev as any, logs as any) as any : prev));
+      }
+      // The persist effects skipped writing before the load finished; this makes them run once more.
+      setBigHydrated(true);
+    });
+    return () => { alive = false; };
+  }, []);
   useEffect(() => saveToStorage('theme_index', themeIndex), [themeIndex]);
   useEffect(() => {
     saveToStorage('font_scale', fontScale);
@@ -560,9 +631,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => saveToStorage('students', students), [students]);
   useEffect(() => saveToStorage('transactions', stripInlineImages(transactions)), [transactions]);
   useEffect(() => saveToStorage('cheques', stripInlineImages(cheques)), [cheques]);
-  useEffect(() => saveToStorage('bank_txs', bankTransactions), [bankTransactions]);
+  useEffect(() => saveToStorage('bank_txs', bankTransactions), [bankTransactions, bigHydrated]);
   useEffect(() => saveToStorage('senior_msgs', seniorMessages), [seniorMessages]);
-  useEffect(() => saveToStorage('activity_logs', activityLogs), [activityLogs]);
+  useEffect(() => saveToStorage('activity_logs', activityLogs), [activityLogs, bigHydrated]);
   useEffect(() => saveToStorage('manager_feedbacks', stripInlineImages(feedbacks)), [feedbacks]);
   useEffect(() => saveToStorage('sms_logs', smsLogs), [smsLogs]);
   useEffect(() => saveToStorage('auto_sms_enabled', autoSmsEnabled), [autoSmsEnabled]);
@@ -1085,6 +1156,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!opts.force && Date.now() - bankRefreshAt.current < 20000) return true;
     const p = (async () => {
       try {
+        await bigReady;
         // فقط بانک و حساب‌های بانکی؛ مدرسه‌ها و تراکنش‌ها برای نام مدرسه و شناسه‌ی تطبیق‌ها لازم‌اند اما اعمال نمی‌شوند.
         const res = await loadDataFromAppsScript(DEFAULT_WEBAPP_URL, { only: ['bank', 'bankAccounts', 'schools', 'transactions'] });
         if (!res.success) return false;
@@ -1103,6 +1175,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const runSync = async (targetSheetId?: string, pull: boolean = true): Promise<boolean> => {
+    await bigReady;
     const sId = extractSpreadsheetId(targetSheetId || spreadsheetId || DEFAULT_SPREADSHEET_ID);
     setSyncStatus('syncing');
     setSyncError(null);
