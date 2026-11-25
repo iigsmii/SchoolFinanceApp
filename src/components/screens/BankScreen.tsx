@@ -58,16 +58,28 @@ import { openAttachment } from '../../services/attachments';
 import { isUncollectedChequeTx } from '../../utils/cheques';
 import { setNavHint } from '../../utils/alerts';
 
-// Standard 7 POS Terminals mapped to Schools 1-7
-export const DEFAULT_POS_TERMINALS = [
-  { terminal: '21435312', schoolId: 1, schoolName: 'دبستان غیر دولتی نور ۱' },
-  { terminal: '91370748', schoolId: 2, schoolName: 'دبستان غیر دولتی نور ۲' },
-  { terminal: '21435311', schoolId: 3, schoolName: 'دبستان غیر دولتی تبیان ۱' },
-  { terminal: '21435313', schoolId: 4, schoolName: 'دبستان غیر دولتی تبیان ۲' },
-  { terminal: '99213505', schoolId: 5, schoolName: 'مهدالرضا(ع) شعبه مرکزی صبح' },
-  { terminal: '91370739', schoolId: 6, schoolName: 'مهدالرضا(ع) شعبه مرکزی عصر' },
-  { terminal: '91370741', schoolId: 7, schoolName: 'مهدالرضا(ع) شعبه ابراهیم خلیل' },
-];
+// POS terminals must be explicitly registered by the senior manager.
+// Never pre-assign terminals to schools: school IDs/order can differ between deployments.
+export const DEFAULT_POS_TERMINALS: Array<{ terminal: string; schoolId: number; schoolName: string }> = [];
+
+// Remove the obsolete hard-coded mappings shipped by older builds. These were
+// sample assumptions, not verified terminal registrations.
+const LEGACY_DEFAULT_POS_TERMINALS = new Set([
+  '1:21435312',
+  '2:91370748',
+  '3:21435311',
+  '4:21435313',
+  '5:99213505',
+  '6:91370739',
+  '7:91370741',
+]);
+const removeLegacyDefaultTerminals = (items: any[]) =>
+  items.filter((item) => !LEGACY_DEFAULT_POS_TERMINALS.has(
+    `${Number(item.schoolId || 0)}:${normalizeDigits(String(item.terminal || '')).replace(/\\D/g, '').replace(/^0+/, '')}`
+  ));
+const normalizeDigits = (value: string) =>
+  value.replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+       .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
 
 // Standard 10 Bank Saderat Petty Cash Cards
 export const DEFAULT_SADERAT_CARDS = [
@@ -166,7 +178,7 @@ export const BankScreen: React.FC = () => {
     let cancelled = false;
     try {
       const savedTerminals = localStorage.getItem('school_finance_pos_terminals');
-      if (savedTerminals) setPosTerminals(JSON.parse(savedTerminals));
+      if (savedTerminals) setPosTerminals(removeLegacyDefaultTerminals(JSON.parse(savedTerminals)));
       const savedCards = localStorage.getItem('school_finance_petty_cards');
       if (savedCards) setPettyCashCards(JSON.parse(savedCards));
     } catch { /* use defaults if local cache is invalid */ }
@@ -174,7 +186,7 @@ export const BankScreen: React.FC = () => {
       void postToAppsScript({ action: 'bank_rules_get' }).then((res) => {
         if (cancelled || !res?.success || !res.rules) return;
         const rules = res.rules;
-        const localTerminals = (() => { try { const v = localStorage.getItem('school_finance_pos_terminals'); return v ? JSON.parse(v) : null; } catch { return null; } })();
+        const localTerminals = (() => { try { const v = localStorage.getItem('school_finance_pos_terminals'); return v ? removeLegacyDefaultTerminals(JSON.parse(v)) : null; } catch { return null; } })();
         const localCards = (() => { try { const v = localStorage.getItem('school_finance_petty_cards'); return v ? JSON.parse(v) : null; } catch { return null; } })();
         const serverTerminals = Array.isArray(rules.posTerminals) ? rules.posTerminals.map((p: any) => ({
           ...p,
@@ -193,7 +205,7 @@ export const BankScreen: React.FC = () => {
         })) : null;
         if (res.configured === false) {
           // First-time migration: preserve this device's configuration, or seed the shared sheet with the app defaults.
-          const initialTerminals = localTerminals || DEFAULT_POS_TERMINALS;
+          const initialTerminals = localTerminals || [];
           const initialCards = localCards || DEFAULT_SADERAT_CARDS;
           void postToAppsScript({ action: 'bank_rules_save', rules: { version: 1, posTerminals: initialTerminals, pettyCashCards: initialCards } }).then((saved) => {
             if (cancelled || !saved?.success) return;
