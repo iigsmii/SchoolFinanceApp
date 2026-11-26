@@ -40,7 +40,7 @@ export const TuitionTrendsScreen: React.FC<{ embedded?: boolean }> = ({ embedded
   // Filter transactions
   const tuitionTxs = useMemo(() => {
     return transactions.filter((t) => {
-      if (t.kind !== 'شهریه') return false;
+      if (t.kind !== 'شهریه' || t.review_status === 'rejected') return false;
       if (selectedSchoolId !== 0 && t.school_id !== selectedSchoolId) return false;
       if (!isSenior && t.school_id !== currentUser?.school_id) return false;
       return true;

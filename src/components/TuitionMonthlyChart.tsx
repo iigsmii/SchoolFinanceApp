@@ -31,7 +31,7 @@ export const TuitionMonthlyChart: React.FC<TuitionMonthlyChartProps> = ({ transa
 
   const monthlySums: Record<string, number> = Object.fromEntries(last6Months.map((item) => [item.key, 0]));
   transactions.forEach((t) => {
-    if (t.kind !== 'شهریه') return;
+    if (t.kind !== 'شهریه' || t.review_status === 'rejected') return;
     const [gy, gm, gd] = t.date.substring(0, 10).split('-').map(Number);
     if (!gy || !gm || !gd) return;
     try {

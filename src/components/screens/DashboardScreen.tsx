@@ -200,6 +200,7 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
     const expenseByCategory: Record<string, number> = {};
 
     financialTxs.forEach((t) => {
+      if (t.review_status === 'rejected') return;
       if (t.kind === 'شهریه_بدهی') {
         totalTuitionAssigned += t.debit || 0;
       } else if (t.kind === 'شهریه') {
