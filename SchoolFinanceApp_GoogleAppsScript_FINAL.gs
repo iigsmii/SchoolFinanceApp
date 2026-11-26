@@ -1363,8 +1363,13 @@ function transactionDeleteReview_(b){
   const u=auth_(b,['senior','admin']);
   const status=String(b.status||'');
   if(status!=='approved'&&status!=='rejected') throw new Error('وضعیت بررسی حذف نامعتبر است.');
-  const hit=findRow_('Transactions',b.id); if(!hit) throw new Error('تراکنش یافت نشد.');
+  // Include voided rows so a retry after a successful server write is idempotent.
+  // Otherwise a lost response can make the client retry and keep showing a stale request.
+  const allTransactions=rows_('Transactions',true);
+  const hit=allTransactions.find(x=>String(x.obj.id)===String(b.id));
+  if(!hit) throw new Error('تراکنش یافت نشد.');
   const t=hit.obj;
+  if(String(t.voided)==='true') return {success:true,deleted:true,already_deleted:true};
   if(String(t.review_status)!=='delete_pending') throw new Error('این تراکنش درخواست حذف در انتظار بررسی ندارد.');
   const kind=String(t.kind||''),sourceId=String(t.source_id||'');
   const table=kind==='expense'?'Expenses':(['payment','debt'].indexOf(kind)>=0?'Tuition':'');
