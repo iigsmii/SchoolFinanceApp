@@ -1,6 +1,49 @@
 import { Student, Transaction } from '../types';
 import { formatRial, jalaliFromGregorian, todayGregorian } from './jalali';
 
+/** Only approved tuition ledger entries affect a student's tuition balance. */
+const TUITION_LEDGER_KINDS = new Set(['شهریه_بدهی', 'شهریه', 'تخفیف_شهریه']);
+
+export const toTuitionAmount = (value: unknown): number => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const normalized = String(value ?? '')
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+    .replace(/[٬,،\s]/g, '')
+    .replace(/[^0-9.-]/g, '');
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? amount : 0;
+};
+
+export function calculateStudentTuitionBalance(studentId: number, transactions: Transaction[]) {
+  const ledgerTransactions = transactions.filter((t) => {
+    if (Number(t.student_id) !== Number(studentId) || !TUITION_LEDGER_KINDS.has(String(t.kind || ''))) return false;
+    const status = String(t.review_status || 'approved').toLowerCase();
+    return status !== 'pending' && status !== 'rejected' && status !== 'delete_pending';
+  });
+  let totalDebit = 0;
+  let totalCredit = 0;
+  ledgerTransactions.forEach((t) => {
+    const debit = t.debit == null
+      ? (t.kind === 'شهریه_بدهی' ? toTuitionAmount(t.amount) : 0)
+      : toTuitionAmount(t.debit);
+    const credit = t.credit == null
+      ? (t.kind === 'شهریه' || t.kind === 'تخفیف_شهریه' ? toTuitionAmount(t.amount) : 0)
+      : toTuitionAmount(t.credit);
+    totalDebit += debit;
+    totalCredit += credit;
+  });
+  const balance = totalDebit - totalCredit;
+  return {
+    transactions: ledgerTransactions,
+    totalDebit,
+    totalCredit,
+    balance,
+    debt: Math.max(0, balance),
+    credit: Math.max(0, -balance),
+  };
+}
+
 export interface OverdueStudentInfo {
   student: Student;
   balance: number;
@@ -79,14 +122,10 @@ export function calculateStudentOverdue(
   transactions: Transaction[],
   template?: string
 ): OverdueStudentInfo {
-  const studentTxs = transactions.filter((t) => t.student_id === student.id);
-  let totalDebit = 0;
-  let totalCredit = 0;
-  studentTxs.forEach((t) => {
-    totalDebit += t.debit || 0;
-    totalCredit += t.credit || 0;
-  });
-  const balance = totalDebit - totalCredit;
+  const ledger = calculateStudentTuitionBalance(student.id, transactions);
+  const studentTxs = ledger.transactions;
+  const totalCredit = ledger.totalCredit;
+  const balance = ledger.balance;
 
   if (balance <= 0) {
     return {
