@@ -3,6 +3,8 @@ import SchoolSelect from '../SchoolSelect';
 import { useApp } from '../../context/AppContext';
 import { matchesStudentSearch } from '../../utils/studentSearch';
 import { DashboardClock } from '../DashboardClock';
+import { FailedSyncDialog } from '../FailedSyncDialog';
+import { describeFailedItem } from '../../utils/outboxDescribe';
 import { TuitionMonthlyChart } from '../TuitionMonthlyChart';
 import { ManagerFeedbackModal } from '../ManagerFeedbackModal';
 import { PersianSearchInput } from '../PersianSearchInput';
@@ -70,6 +72,7 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
     students,
     transactions,
     cheques,
+    bankTransactions,
     categories,
     getStudentBalance,
     isConnectedToGoogleSheets,
@@ -90,6 +93,9 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
   } = useApp();
 
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
+
+  const [openFailedKey, setOpenFailedKey] = useState<string | null>(null);
+  const openFailed = openFailedKey ? failedSyncItems.find((i) => i.key === openFailedKey) : undefined;
 
   // State for offline excel feedback
   const [offlineSuccessNotice, setOfflineSuccessNotice] = useState<string | null>(null);
@@ -125,7 +131,7 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
 
   // Pending items for Senior Manager review
   const pendingReviewCount = useMemo(() => {
-    return transactions.filter((t) => t.review_status === 'pending' && t.kind !== 'شهریه_بدهی').length;
+    return transactions.filter((t) => (t.review_status === 'pending' || t.review_status === 'delete_pending') && t.kind !== 'شهریه_بدهی').length;
   }, [transactions]);
 
   // مدیر: تراکنش‌های ردشده‌ای که هنوز ندیده است؛ مدیر ارشد: چک‌های نیازمند تأیید
@@ -140,18 +146,6 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
   const chequeAlertTotal = chequeAlertInfo
     ? chequeAlertInfo.pendingReview.length + chequeAlertInfo.dueForCollection.length + chequeAlertInfo.notOnAccount.length
     : 0;
-
-  const openSyncIssue = (action: string) => {
-    const a = String(action || '').toLowerCase();
-    if (a.includes('student')) setCurrentScreen('students');
-    else if (a.includes('cheque')) setCurrentScreen('cheques');
-    else if (a.includes('expense') || a.includes('petty')) setCurrentScreen('expenses');
-    else if (a.includes('bank')) setCurrentScreen('bank');
-    else if (a.includes('staff') || a.includes('payroll')) setCurrentScreen('staff');
-    else if (a.includes('school')) setCurrentScreen('schools');
-    else if (a.includes('transaction') || a.includes('tuition')) setCurrentScreen('transactions');
-    else setCurrentScreen('settings');
-  };
 
   const openAlertTransaction = (transactionId: number) => {
     setNavHint('transactions', `transaction:${transactionId}`);
@@ -471,39 +465,62 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
       )}
 
       {(syncError || failedSyncItems.length > 0 || pendingSyncCount > 0) && (
-        <section className="rounded-2xl border-2 border-rose-300 bg-rose-50 p-3 space-y-2 shadow-xs" dir="rtl">
+        <section
+          className={`rounded-3xl border p-4 space-y-3 shadow-xs ${failedSyncItems.length > 0 || syncError ? 'border-rose-200 bg-gradient-to-br from-rose-50 to-white' : 'border-amber-200 bg-amber-50/60'}`}
+          dir="rtl"
+        >
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-rose-900 font-black text-xs sm:text-sm">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>اخطارهای همگام‌سازی</span>
+            <div className={`flex items-center gap-2 font-black text-xs sm:text-sm ${failedSyncItems.length > 0 || syncError ? 'text-rose-900' : 'text-amber-900'}`}>
+              <span className={`w-8 h-8 rounded-xl flex items-center justify-center ${failedSyncItems.length > 0 || syncError ? 'bg-rose-100' : 'bg-amber-100'}`}>
+                <AlertCircle className="w-4 h-4 shrink-0" />
+              </span>
+              <span>
+                {failedSyncItems.length > 0
+                  ? `${failedSyncItems.length.toLocaleString('fa-IR')} مورد در گوگل‌شیت ثبت نشد`
+                  : syncError
+                  ? 'خطا در همگام‌سازی'
+                  : `${pendingSyncCount.toLocaleString('fa-IR')} تغییر در صف ارسال`}
+              </span>
             </div>
-            <button type="button" onClick={() => setCurrentScreen('settings')} className="text-[10px] font-bold text-rose-800 underline">جزئیات همگام‌سازی</button>
+            {failedSyncItems.length > 0 && (
+              <button type="button" onClick={retryFailedSync} className="rounded-xl bg-rose-700 hover:bg-rose-800 px-3 py-1.5 text-[11px] font-bold text-white active:scale-95 transition-all">تلاش مجدد برای همه</button>
+            )}
           </div>
+
           {syncError && (
-            <button type="button" onClick={() => setCurrentScreen('settings')} className="w-full text-right rounded-xl border border-rose-200 bg-white p-2.5 text-[11px] text-rose-800 font-semibold">
+            <button type="button" onClick={() => setCurrentScreen('settings')} className="w-full text-right rounded-2xl border border-rose-200 bg-white p-3 text-[11px] text-rose-800 font-semibold">
               {syncError}
-              <span className="block mt-1 text-[10px] underline">برای بررسی و رفع خطا لمس کنید</span>
+              <span className="block mt-1 text-[10px] font-black underline decoration-dotted">بررسی در تنظیمات ←</span>
             </button>
           )}
-          {pendingSyncCount > 0 && (
-            <div className="rounded-xl bg-amber-50 border border-amber-200 p-2 text-[11px] text-amber-900 font-bold">
-              {pendingSyncCount.toLocaleString('fa-IR')} تغییر در صف ارسال به گوگل باقی مانده است.
+
+          {pendingSyncCount > 0 && failedSyncItems.length === 0 && !syncError && (
+            <p className="text-[11px] leading-6 text-amber-900">این تغییرها روی دستگاه ذخیره شده‌اند و با اتصال به اینترنت خودکار به گوگل‌شیت می‌روند.</p>
+          )}
+
+          {failedSyncItems.length > 0 && (
+            <div className="space-y-2">
+              {failedSyncItems.slice(0, 6).map((item) => {
+                const info = describeFailedItem(item, { students, schools, transactions, bankTransactions, cheques });
+                return (
+                  <div key={item.key} className="rounded-2xl bg-white border border-rose-100 p-3 flex items-center justify-between gap-2">
+                    <button type="button" onClick={() => setOpenFailedKey(item.key)} className="min-w-0 flex-1 text-right">
+                      <span className="block text-[12px] font-black text-rose-900">{item.label}{info.summary ? ` — ${info.summary}` : ''}</span>
+                      {item.error && <span className="block mt-0.5 text-[10px] text-rose-700 break-words">{item.error}</span>}
+                      <span className="block mt-1 text-[10px] font-black text-purple-800">مشاهده رکورد و چاره‌جویی ←</span>
+                    </button>
+                    <button type="button" onClick={() => dismissFailedSync(item.key)} className="shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-bold text-gray-600 border border-gray-200 hover:bg-gray-50">حذف</button>
+                  </div>
+                );
+              })}
+              {failedSyncItems.length > 6 && (
+                <p className="text-[10px] text-rose-800 text-center">و {(failedSyncItems.length - 6).toLocaleString('fa-IR')} مورد دیگر (در تنظیمات همگام‌سازی)</p>
+              )}
             </div>
           )}
-          {failedSyncItems.slice(0, 8).map((item) => (
-            <div key={item.key} className="rounded-xl bg-white border border-rose-200 p-2.5 flex items-center justify-between gap-2">
-              <button type="button" onClick={() => openSyncIssue(item.action)} className="min-w-0 flex-1 text-right">
-                <span className="block text-[11px] font-black text-rose-900">{item.label} — ارسال ناموفق</span>
-                <span className="block mt-1 text-[10px] text-rose-700 break-words">{item.error || 'برای مشاهده جزئیات و پیگیری لمس کنید'}</span>
-              </button>
-              <button type="button" onClick={() => dismissFailedSync(item.key)} className="shrink-0 rounded-lg px-2 py-1 text-[10px] font-bold text-gray-600 border border-gray-200">حذف</button>
-            </div>
-          ))}
-          <div className="flex justify-end">
-            <button type="button" onClick={retryFailedSync} className="rounded-lg bg-rose-700 px-3 py-1.5 text-[11px] font-bold text-white">تلاش مجدد برای ارسال</button>
-          </div>
         </section>
       )}
+      {openFailed && <FailedSyncDialog item={openFailed} onClose={() => setOpenFailedKey(null)} />}
 
       {offlineSuccessNotice && (
         <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center justify-between gap-2">
@@ -535,9 +552,9 @@ export const DashboardScreen: React.FC<{ overviewOnly?: boolean }> = ({ overview
                 توسط مدیران مدارس ثبت شده و برای اعمال قطعی و نمایش با رنگ سبز نیاز به تأیید مدیریت ارشد دارد.
               </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {transactions.filter((t) => t.review_status === 'pending' && t.kind !== 'شهریه_بدهی').slice(0, 8).map((t) => (
+                {transactions.filter((t) => (t.review_status === 'pending' || t.review_status === 'delete_pending') && t.kind !== 'شهریه_بدهی').slice(0, 8).map((t) => (
                   <button key={t.id} type="button" onClick={() => openAlertTransaction(t.id)} className="rounded-lg border border-amber-300 bg-white/80 px-2 py-1 text-[10px] font-bold text-amber-900 hover:bg-amber-100">
-                    سند #{t.id} · {t.student_name || t.expense_category_name || t.description || 'تراکنش'} · {formatRial(t.amount || t.debit || t.credit || 0)} ریال
+                    {t.review_status === 'delete_pending' ? 'درخواست حذف · ' : ''}سند #{t.id} · {t.student_name || t.expense_category_name || t.description || 'تراکنش'} · {formatRial(t.amount || t.debit || t.credit || 0)} ریال
                     <span className="mr-1 underline">مشاهده ←</span>
                   </button>
                 ))}

@@ -46,7 +46,7 @@ const HEADERS = {
   ParsianAccounts: ['id','account_name','account_code','school_id','category','active'],
   Settings: ['key','value','updated_at'],
   ActivityLogs: ['id','date','user_id','username','user_name','role','school_id','action','entity_type','entity_id','description','details'],
-  Cheques: ['id','date','student_id','school_id','amount','sayad_id','due_date','description','created_by','created_at','payment_method','received_confirmed','in_favor_confirmed','status','approved_at','approved_by','bank_reconciled','bank_status','bank_date','image_url','bank_name','cheque_type','cheque_number','issuer_name','cheque_purpose','collection_status','on_account_date','on_account_by','deposit_bank_account_id','cleared_date','cleared_by','tuition_id','transaction_id']
+  Cheques: ['id','date','student_id','school_id','amount','sayad_id','due_date','description','created_by','created_at','payment_method','received_confirmed','in_favor_confirmed','status','approved_at','approved_by','bank_reconciled','bank_status','bank_date','image_url','bank_name','cheque_type','cheque_number','issuer_name','cheque_purpose','collection_status','on_account_date','on_account_by','deposit_bank_account_id','cleared_date','cleared_by','tuition_id','transaction_id','return_date','returned_by','return_reason','return_reversed']
 };
 
 const DEFAULT_CATEGORIES = [
@@ -201,14 +201,14 @@ function doGet(e) {
     if(action==='my_claim') return json_(myClaim_(b));
     if(action==='app_version') return json_(appVersion_(b));
     if(action==='activity_logs')return json_(activityLogs_(b));
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.24.13',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.25.0',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
 function ensureStructure_() {
   const cache=CacheService.getScriptCache();
   const ss = SpreadsheetApp.openById(CFG.SPREADSHEET_ID);
-  if(cache.get('structure_ready_v220')==='1' && ss.getSheetByName('Requests')) return;
+  if(cache.get('structure_ready_v221')==='1' && ss.getSheetByName('Requests')) return;
   CFG.SHEETS.forEach(name => {
     let sh = ss.getSheetByName(name);
     if (!sh) sh = ss.insertSheet(name);
@@ -220,7 +220,7 @@ function ensureStructure_() {
     }
     sh.setFrozenRows(1);
   });
-  cache.put('structure_ready_v220','1',300);
+  cache.put('structure_ready_v221','1',300);
 }
 
 let writeLockHeld_=false;
@@ -247,7 +247,7 @@ function doPost(e) {
     ensureCoreData_();
     if (!body.request_id) body.request_id = Utilities.getUuid() + '-' + Utilities.getUuid();
     // Durable deduplication survives app restarts and lost network responses.
-    const guarded=['tuition_add','tuition_bulk_debt','expense_add','finance_transaction','cheque_review','cheque_collection','cheque_add','staff_worklog_add','payroll_add','bank_account_add','message_add','category_add','manager_add','school_add','staff_add','bank_upload'];
+    const guarded=['tuition_add','tuition_bulk_debt','expense_add','finance_transaction','cheque_review','cheque_collection','cheque_return','cheque_add','staff_worklog_add','payroll_add','bank_account_add','message_add','category_add','manager_add','school_add','staff_add','bank_upload'];
     if(guarded.indexOf(action)>=0){
       const user=auth_(body);
       const fingerprint=Object.keys(body).filter(k=>k!=='token'&&k!=='request_id').sort().map(k=>[k,body[k]]);
@@ -315,6 +315,7 @@ function doPost(e) {
       case 'cheque_list': result=chequeList_(body); break;
       case 'cheque_review': result=chequeReview_(body); break;
       case 'cheque_collection': result=chequeCollection_(body); break;
+      case 'cheque_return': result=chequeReturn_(body); break;
       case 'cheque_add': result=chequeAdd_(body); break;
       case 'cheque_update': result=chequeUpdate_(body); break;
       case 'cheque_delete': result=chequeDelete_(body); break;
@@ -1131,7 +1132,9 @@ function tuitionUpdate_(b) {
   if(!hit) throw new Error('رکورد شهریه یافت نشد.');
   if(u.role!=='senior' && String(hit.obj.created_by)!==String(u.id)) throw new Error('فقط ثبت‌کننده یا مدیر ارشد می‌تواند ویرایش کند.');
   const r=hit.obj;
-  assertEditable_('Tuition',r);
+  assertNoPendingDelete_(r);
+  assertEditableForEdit_('Tuition',r);
+  if(String(r.type)==='payment') assertNotChequePayment_(r.id);
   const amount=b.amount!==undefined?amount_(b.amount):Number(r.amount);
   if(!Number.isSafeInteger(amount)||amount<=0)throw new Error('مبلغ نامعتبر است.');
   const newMethod=(b.payment_method!==undefined&&String(b.payment_method).trim()!=='')?String(b.payment_method).trim():(r.payment_source||'');
@@ -1143,7 +1146,8 @@ function tuitionUpdate_(b) {
     r.created_by,r.created_at,r.reconciled,r.approved,newMethod
   ]);
   rows_('Transactions').forEach(x=>{const t=x.obj;if(String(t.source_id)===String(r.id)&&(t.kind==='payment'||t.kind==='debt'))updateRow_('Transactions',x.row,[t.id,b.date!==undefined?date_(b.date):r.date,t.school_id,t.kind,amount,b.description!==undefined?b.description:r.description,b.tracking_code!==undefined?b.tracking_code:r.tracking_code,r.image_url,t.created_by,t.created_at,t.reconciled,t.approved,t.source_id,newMethod]);});
-  return {success:true};
+  if(String(r.type)==='payment') requeueSource_('Tuition',hit.row,r.id,['payment']);
+  return {success:true,review_status:String(r.type)==='payment'?'pending':String(r.review_status||'approved')};
 }
 
 function tuitionDelete_(b) {
@@ -1151,8 +1155,11 @@ function tuitionDelete_(b) {
   const hit=findRow_('Tuition',b.id);
   if(!hit) throw new Error('رکورد شهریه یافت نشد.');
   if(u.role!=='senior' && String(hit.obj.created_by)!==String(u.id)) throw new Error('فقط ثبت‌کننده یا مدیر ارشد می‌تواند حذف کند.');
-  softDeleteBySource_('Tuition',b.id);
-  softDeleteTransaction_(b.id,'tuition');
+  const sr=isSenior_(u);
+  if(String(hit.obj.review_status||'')==='delete_pending'&&!sr) throw new Error('درخواست حذف این سند در انتظار بررسی مدیر ارشد است.');
+  if(String(hit.obj.type)==='payment') assertNotChequePayment_(hit.obj.id);
+  softDeleteBySource_('Tuition',b.id,sr);
+  softDeleteTransaction_(b.id,'tuition',sr);
   return {success:true};
 }
 
@@ -1200,7 +1207,8 @@ function expenseUpdate_(b) {
   if(!hit) throw new Error('هزینه یافت نشد.');
   if(u.role!=='senior' && String(hit.obj.created_by)!==String(u.id)) throw new Error('فقط ثبت‌کننده یا مدیر ارشد می‌تواند ویرایش کند.');
   const r=hit.obj;
-  assertEditable_('Expenses',r);
+  assertNoPendingDelete_(r);
+  assertEditableForEdit_('Expenses',r);
   const tracking=b.tracking_code!==undefined?String(b.tracking_code):String(r.tracking_code);
   if(!tracking.trim()) throw new Error('شماره پیگیری الزامی است.');
   let newCategory=b.category!==undefined?String(b.category):String(r.category||'');
@@ -1217,7 +1225,8 @@ function expenseUpdate_(b) {
     patchRow_('Expenses',hit.row,{petty_cash_card:card});
     rows_('Transactions').forEach(x=>{ if(String(x.obj.source_id)===String(r.id)&&String(x.obj.kind)==='expense') patchRow_('Transactions',x.row,{petty_cash_card:card}); });
   }
-  return {success:true};
+  requeueSource_('Expenses',hit.row,r.id,['expense']);
+  return {success:true,review_status:'pending'};
 }
 
 function expenseDelete_(b) {
@@ -1225,8 +1234,10 @@ function expenseDelete_(b) {
   const hit=findRow_('Expenses',b.id);
   if(!hit) throw new Error('هزینه یافت نشد.');
   if(u.role!=='senior' && String(hit.obj.created_by)!==String(u.id)) throw new Error('فقط ثبت‌کننده یا مدیر ارشد می‌تواند حذف کند.');
-  softDeleteBySource_('Expenses',b.id);
-  softDeleteTransaction_(b.id,'expense');
+  const sr=isSenior_(u);
+  if(String(hit.obj.review_status||'')==='delete_pending'&&!sr) throw new Error('درخواست حذف این سند در انتظار بررسی مدیر ارشد است.');
+  softDeleteBySource_('Expenses',b.id,sr);
+  softDeleteTransaction_(b.id,'expense',sr);
   return {success:true};
 }
 
@@ -1304,10 +1315,12 @@ function transactionUpdate_(b) {
   const u=auth_(b);
   const hit=findRow_('Transactions',b.id);
   if(!hit) throw new Error('تراکنش یافت نشد.');
-  assertEditable_('Transactions',hit.obj);
+  assertNoPendingDelete_(hit.obj);
+  assertEditableForEdit_('Transactions',hit.obj);
   if(u.role!=='senior' && String(hit.obj.created_by)!==String(u.id)) throw new Error('دسترسی مجاز نیست.');
   const kind=String(hit.obj.kind||'');
   const sourceId=hit.obj.source_id;
+  if(kind==='payment') assertNotChequePayment_(sourceId);
   const amount=b.amount!==undefined?amount_(b.amount):Number(hit.obj.amount);
   if(amount<=0) throw new Error('مبلغ نامعتبر است.');
   const description=String(b.description!==undefined?b.description:(b.comment!==undefined?b.comment:hit.obj.description));
@@ -1322,11 +1335,13 @@ function transactionUpdate_(b) {
     if(!src) throw new Error('رکورد اصلی هزینه یافت نشد.');
     updateRow_('Expenses',src.row,[src.obj.id,date,src.obj.school_id,src.obj.category,amount,description,b.tracking_code!==undefined?String(b.tracking_code):src.obj.tracking_code,src.obj.image_url,src.obj.created_by,src.obj.created_at,src.obj.reconciled,src.obj.approved,src.obj.payment_source||'bank']);
   } else if(['cash_receipt','cash_payment','cheque_receipt','cheque_payment'].indexOf(kind)>=0) {
-    patchRow_('Transactions',hit.row,{date:date,amount:amount,description:description,tracking_code:b.tracking_code!==undefined?String(b.tracking_code):hit.obj.tracking_code});
-    return {success:true};
+    patchRow_('Transactions',hit.row,{date:date,amount:amount,description:description,tracking_code:b.tracking_code!==undefined?String(b.tracking_code):hit.obj.tracking_code,approved:false,review_status:'pending',rejection_reason:''});
+    return {success:true,review_status:'pending'};
   } else throw new Error('ویرایش این نوع تراکنش پشتیبانی نمی‌شود.');
   updateRow_('Transactions',hit.row,[hit.obj.id,date,hit.obj.school_id,kind,amount,description,b.tracking_code!==undefined?String(b.tracking_code):hit.obj.tracking_code,hit.obj.image_url,hit.obj.created_by,hit.obj.created_at,hit.obj.reconciled,hit.obj.approved,sourceId,hit.obj.payment_source||'bank']);
-  return {success:true};
+  if(kind==='payment') requeueSource_('Tuition',findRow_('Tuition',sourceId).row,sourceId,['payment']);
+  else if(kind==='expense') requeueSource_('Expenses',findRow_('Expenses',sourceId).row,sourceId,['expense']);
+  return {success:true,review_status:'pending'};
 }
 
 function transactionDeleteRequest_(b){
@@ -1336,6 +1351,8 @@ function transactionDeleteRequest_(b){
   if(isSenior_(u)) throw new Error('مدیر ارشد می‌تواند حذف را مستقیماً انجام دهد.');
   if(String(t.created_by)!==String(u.id)||!userCanAccessSchool_(u,t.school_id)) throw new Error('فقط ثبت‌کننده مجاز به درخواست حذف است.');
   if(String(t.review_status||'approved')!=='approved') throw new Error('فقط تراکنش تأییدشده قابل درخواست حذف است.');
+  assertEditableForEdit_('Transactions',t);
+  if(String(t.kind)==='payment'&&String(t.source_id||'')!=='') assertNotChequePayment_(t.source_id);
   patchRow_('Transactions',hit.row,{review_status:'delete_pending',delete_requested:true,delete_requested_by:String(u.id),delete_requested_at:now_()});
   const kind=String(t.kind||''),sourceId=String(t.source_id||'');
   const table=kind==='expense'?'Expenses':(['payment','debt'].indexOf(kind)>=0?'Tuition':'');
@@ -1356,7 +1373,9 @@ function transactionDeleteReview_(b){
     if(table&&sourceId){const src=findRow_(table,sourceId);if(src)patchRow_(table,src.row,{review_status:'approved',delete_requested:false,delete_rejection_reason:String(b.rejection_reason||'').slice(0,500)});}
     return {success:true,review_status:'approved',delete_rejected:true};
   }
-  if(table&&sourceId) softDeleteBySource_(table,sourceId);
+  assertEditableForEdit_('Transactions',t);
+  if(String(t.kind)==='payment'&&sourceId) assertNotChequePayment_(sourceId);
+  if(table&&sourceId) softDeleteBySource_(table,sourceId,true);
   rows_('Transactions').forEach(x=>{if(String(x.obj.id)===String(t.id)||String(x.obj.source_id)===sourceId&&sourceId)voidRecord_('Transactions',x.row);});
   return {success:true,deleted:true};
 }
@@ -1365,12 +1384,15 @@ function transactionDelete_(b) {
   const u=auth_(b);
   const hit=findRow_('Transactions',b.id);
   if(!hit) throw new Error('تراکنش یافت نشد.');
-  assertEditable_('Transactions',hit.obj);
-  if(u.role!=='senior' && String(hit.obj.created_by)!==String(u.id)) throw new Error('دسترسی مجاز نیست.');
+  const sr=isSenior_(u);
+  if(sr) assertEditableForEdit_('Transactions',hit.obj); else assertEditable_('Transactions',hit.obj);
+  if(!sr && String(hit.obj.created_by)!==String(u.id)) throw new Error('دسترسی مجاز نیست.');
+  if(!sr && String(hit.obj.review_status||'')==='delete_pending') throw new Error('درخواست حذف این سند در انتظار بررسی مدیر ارشد است.');
   const kind=String(hit.obj.kind||'');
   const sourceId=hit.obj.source_id;
-  if(kind==='expense') softDeleteBySource_('Expenses',sourceId);
-  if(kind==='payment'||kind==='debt') softDeleteBySource_('Tuition',sourceId);
+  if(kind==='payment'&&String(sourceId||'')!=='') assertNotChequePayment_(sourceId);
+  if(kind==='expense') softDeleteBySource_('Expenses',sourceId,sr);
+  if(kind==='payment'||kind==='debt') softDeleteBySource_('Tuition',sourceId,sr);
   voidRecord_('Transactions',hit.row);
   return {success:true};
 }
@@ -2070,7 +2092,7 @@ function syncPayload_(b){
     const bankData=(bank_(b)||{}).data||[];
     return {
       success:true,
-      backend_version:'2.24.15',
+      backend_version:'2.25.0',
       students:(students_(b)||{}).data||[],
       schools:(schools_(b)||{}).data||[],
       staff:(staff_(b)||{}).data||[],
@@ -2146,36 +2168,76 @@ function chequeAdd_(b){
 }
 
 function chequeUpdate_(b){
-  const u=auth_(b);
-  const hit=findRow_('Cheques',b.id); if(!hit) throw new Error('چک یافت نشد.');
-  const c=hit.obj;
-  if(!isSenior_(u)&&!userCanAccessSchool_(u,c.school_id)) throw new Error('دسترسی مجاز نیست.');
-  if(!isSenior_(u)&&String(c.created_by)!==String(u.id)) throw new Error('فقط ثبت‌کننده یا مدیر ارشد می‌تواند چک را ویرایش کند.');
-  const approved=String(c.status)==='approved'||String(c.status)==='paid';
-  const patch={};
-  ['bank_name','cheque_number','issuer_name','cheque_purpose'].forEach(k=>{ if(b[k]!==undefined) patch[k]=String(b[k]===null?'':b[k]); });
-  if(b.note!==undefined||b.description!==undefined) patch.description=String(b.description!==undefined?b.description:b.note);
-  if(b.due_date!==undefined&&String(b.due_date)!=='') patch.due_date=date_(b.due_date);
-  if(b.cheque_type!==undefined&&['sayad','non_sayad','gharzolhasane','guarantee'].indexOf(String(b.cheque_type))>=0) patch.cheque_type=String(b.cheque_type);
-  if(b.attachment_url!==undefined) patch.image_url=String(b.attachment_url||'');
-  // Any cheque edit is resubmitted for senior review. Approved cheques are not
-  // silently altered: their review flags are cleared and the status returns to pending.
-  if(b.status!==undefined && String(b.status)==='pending'){
-    patch.status='pending';
-    patch.received_confirmed=false;
-    patch.in_favor_confirmed=false;
-    patch.approved_at='';
-    patch.approved_by='';
-  } else if(b.status!==undefined && String(b.status)!==String(c.status)){
-    throw new Error('تغییر مستقیم وضعیت چک مجاز نیست؛ برای ویرایش باید مجدداً در انتظار تأیید قرار گیرد.');
-  }
-  if(!approved || String(b.status||'')==='pending'){
-    if(b.amount!==undefined){ const a=amount_(b.amount); if(a<=0) throw new Error('مبلغ نامعتبر است.'); patch.amount=a; }
-    if(b.sayad_id!==undefined){ const s=digits_(b.sayad_id); if(s&&!/^\d{16}$/.test(s)) throw new Error('شناسه صیاد چک باید دقیقاً ۱۶ رقمی باشد.'); if(s&&rows_('Cheques').some(x=>String(x.obj.sayad_id)===s&&String(x.obj.id)!==String(c.id))) throw new Error('این شناسه صیادی قبلاً ثبت شده است.'); patch.sayad_id=s; }
+  const lock=writeLock_();
+  lock.waitLock(30000);
+  try{
+    const u=auth_(b);
+    const hit=findRow_('Cheques',b.id); if(!hit) throw new Error('چک یافت نشد.');
+    const c=hit.obj;
+    if(!isSenior_(u)&&!userCanAccessSchool_(u,c.school_id)) throw new Error('دسترسی مجاز نیست.');
+    if(!isSenior_(u)&&String(c.created_by)!==String(u.id)) throw new Error('فقط ثبت‌کننده یا مدیر ارشد می‌تواند چک را ویرایش کند.');
+    const status=String(c.status||'pending'), cs=String(c.collection_status||'');
+    if(['paid','bounced','returned'].indexOf(status)>=0||['cleared','not_cleared','returned'].indexOf(cs)>=0)
+      throw new Error('چکِ وصول‌شده، برگشتی یا عودت‌داده‌شده قابل ویرایش نیست.');
+    if(String(c.bank_reconciled)==='true') throw new Error('این چک با صورتحساب بانک تطبیق شده و قابل ویرایش نیست.');
+    const patch={};
+    ['bank_name','cheque_number','issuer_name','cheque_purpose'].forEach(k=>{ if(b[k]!==undefined) patch[k]=String(b[k]===null?'':b[k]); });
+    if(b.note!==undefined||b.description!==undefined) patch.description=String(b.description!==undefined?b.description:b.note);
+    if(b.due_date!==undefined&&String(b.due_date)!=='') patch.due_date=date_(b.due_date);
+    let newImage='';
+    if(b.base64){ const img=saveAttachmentIfAny_(b,'cheque',c.id,u.id); if(img&&img.url){ patch.image_url=img.url; newImage=img.url; } }
     if(b.issue_date!==undefined&&String(b.issue_date)!=='') patch.date=date_(b.issue_date);
-  }
-  patchRow_('Cheques',hit.row,patch);
-  return {success:true,approved_locked:approved};
+    if(b.cheque_type!==undefined&&['sayad','non_sayad','gharzolhasane','guarantee'].indexOf(String(b.cheque_type))>=0) patch.cheque_type=String(b.cheque_type);
+    if(b.amount!==undefined){ const a=amount_(b.amount); if(!(a>0)) throw new Error('مبلغ نامعتبر است.'); patch.amount=a; }
+    if(b.sayad_id!==undefined){
+      const sy=digits_(b.sayad_id);
+      if(sy&&!/^\d{16}$/.test(sy)) throw new Error('شناسه صیاد چک باید دقیقاً ۱۶ رقمی باشد.');
+      if(sy&&rows_('Cheques').some(x=>String(x.obj.sayad_id)===sy&&String(x.obj.id)!==String(c.id))) throw new Error('این شناسه صیادی قبلاً ثبت شده است.');
+      patch.sayad_id=sy;
+    }
+    // A cheque that was already approved had produced a student payment: take it back, it is created again on re-approval.
+    let reversed=false;
+    if(status==='approved'){
+      const l=chequeLedger_(c);
+      if(l.ledger&&String(l.ledger.obj.reconciled)==='true') throw new Error('پرداخت مربوط به این چک با بانک تطبیق شده و قابل ویرایش نیست.');
+      if(l.tuition) voidRecord_('Tuition',l.tuition.row);
+      if(l.ledger) voidRecord_('Transactions',l.ledger.row);
+      reversed=!!(l.tuition||l.ledger);
+      patch.tuition_id=''; patch.transaction_id='';
+    }
+    Object.assign(patch,{status:'pending',received_confirmed:false,in_favor_confirmed:false,approved_at:'',approved_by:'',collection_status:'',on_account_date:'',on_account_by:'',deposit_bank_account_id:''});
+    patchRow_('Cheques',hit.row,patch);
+    SpreadsheetApp.flush();
+    return {success:true,status:'pending',requeued:true,ledger_reversed:reversed,image_url:newImage};
+  } finally { lock.releaseLock(); }
+}
+/** عودت چک به صاحبش (فقط مدیر ارشد): چک از چرخه‌ی وصول خارج می‌شود؛ اگر پرداخت شهریه‌ی آن در دفتر بود برگشت می‌خورد. */
+function chequeReturn_(b){
+  const lock=writeLock_();
+  lock.waitLock(30000);
+  try{
+    const u=auth_(b,['senior','admin']);
+    const hit=findRow_('Cheques',b.id); if(!hit) throw new Error('چک یافت نشد.');
+    const c=hit.obj;
+    const status=String(c.status||'pending'), cs=String(c.collection_status||'');
+    if(status==='returned'||cs==='returned') return {success:true,already_processed:true,status:'returned',collection_status:'returned'};
+    if(status==='paid'||cs==='cleared') throw new Error('چک وصول‌شده و واریز‌شده به بانک قابل عودت نیست.');
+    if(String(c.bank_reconciled)==='true') throw new Error('این چک با صورتحساب بانک تطبیق شده و قابل عودت نیست.');
+    const d=String(b.date||'').trim()?date_(b.date):todayIso_();
+    const reason=String(b.reason||b.note||'').trim().slice(0,300);
+    let reversed=false;
+    if(status==='approved'){
+      const l=chequeLedger_(c);
+      if(l.ledger&&String(l.ledger.obj.reconciled)==='true') throw new Error('پرداخت مربوط به این چک با بانک تطبیق شده است.');
+      if(l.tuition) voidRecord_('Tuition',l.tuition.row);
+      if(l.ledger) voidRecord_('Transactions',l.ledger.row);
+      reversed=!!(l.tuition||l.ledger);
+    }
+    patchRow_('Cheques',hit.row,{status:'returned',collection_status:'returned',return_date:d,returned_by:u.id,return_reason:reason,return_reversed:reversed});
+    SpreadsheetApp.flush();
+    addSystemMessage_('↩️ چک '+(c.sayad_id||c.cheque_number||c.id)+' به مبلغ '+c.amount+' به صاحبش عودت داده شد'+(reason?' ('+reason+')':'')+(reversed?'؛ پرداخت شهریه‌ی آن از دفتر دانش‌آموز برگشت خورد.':'.'),c.school_id);
+    return {success:true,status:'returned',collection_status:'returned',return_date:d,return_reversed:reversed};
+  } finally { lock.releaseLock(); }
 }
 function chequeDelete_(b){
   const u=auth_(b);
@@ -2313,6 +2375,7 @@ function alertsSummary_(b){
       const st=String(o.review_status||'');
       if(senior){
         if(st==='pending') add('tx:'+p[1]+o.id,'تراکنش در انتظار تأیید');
+        else if(st==='delete_pending') add('del:'+p[1]+o.id,'درخواست حذف تراکنش');
       } else if(st==='rejected'){
         const by=String(o.created_by||'');
         const mine=by!==''?(by===String(u.id)):userCanAccessSchool_(u,o.school_id);
@@ -2619,7 +2682,7 @@ function auditAfterAction_(action,b,result) {
   sh.appendRow([nextId_('ActivityLogs'),now_(),u.id,u.username||'',u.name||'',u.role||'',u.school_id||'',action,entityType,entityId,description,JSON.stringify(auditDetails_(action,b,result))]);
 }
 function auditDescription_(action,b,r){
-  const map={student_add:'افزودن دانش‌آموز',student_update:'ویرایش دانش‌آموز',student_delete:'حذف/غیرفعال‌کردن دانش‌آموز',students_import:'ورود دانش‌آموزان از Excel',tuition_add:'ثبت بدهی/پرداخت شهریه',tuition_bulk_debt:'ثبت گروهی بدهی شهریه',tuition_update:'ویرایش رکورد شهریه',tuition_delete:'حذف رکورد شهریه',expense_add:'ثبت هزینه',expense_update:'ویرایش هزینه',expense_delete:'حذف هزینه',transaction_delete:'حذف تراکنش',transaction_review:'بررسی تراکنش',bank_reconcile:'تطبیق تراکنش‌های بانک',bank_upload:'ورود فایل بانک',cheque_add:'ثبت چک',cheque_update:'ویرایش چک',cheque_delete:'حذف چک',staff_worklog_add:'ثبت کارکرد پرسنل',staff_worklog_delete:'حذف کارکرد پرسنل',payroll_add:'ثبت پرداخت حقوق/بیمه',payroll_delete:'حذف پرداخت حقوق/بیمه',bank_account_add:'تعریف حساب بانکی',bank_account_update:'ویرایش حساب بانکی',bank_account_delete:'حذف حساب بانکی',manager_add:'افزودن مدیر',manager_update:'ویرایش مدیر',manager_delete:'حذف/غیرفعال‌کردن مدیر',manager_import_attached:'همگام‌سازی مدیران',school_add:'افزودن مدرسه',school_update:'ویرایش مدرسه',school_delete:'غیرفعال‌کردن مدرسه',message_add:'ارسال پیام به مدیران',message_delete:'حذف پیام',category_add:'افزودن دسته هزینه',category_update:'ویرایش دسته هزینه',category_delete:'غیرفعال‌کردن دسته هزینه',parsian_export:'خروجی Excel پارسیان',claim_settle:'تسویه طلب مدیر'};
+  const map={student_add:'افزودن دانش‌آموز',student_update:'ویرایش دانش‌آموز',student_delete:'حذف/غیرفعال‌کردن دانش‌آموز',students_import:'ورود دانش‌آموزان از Excel',tuition_add:'ثبت بدهی/پرداخت شهریه',tuition_bulk_debt:'ثبت گروهی بدهی شهریه',tuition_update:'ویرایش رکورد شهریه',tuition_delete:'حذف رکورد شهریه',expense_add:'ثبت هزینه',expense_update:'ویرایش هزینه',expense_delete:'حذف هزینه',transaction_delete:'حذف تراکنش',transaction_review:'بررسی تراکنش',bank_reconcile:'تطبیق تراکنش‌های بانک',bank_upload:'ورود فایل بانک',cheque_add:'ثبت چک',cheque_update:'ویرایش چک',cheque_return:'عودت چک',cheque_delete:'حذف چک',staff_worklog_add:'ثبت کارکرد پرسنل',staff_worklog_delete:'حذف کارکرد پرسنل',payroll_add:'ثبت پرداخت حقوق/بیمه',payroll_delete:'حذف پرداخت حقوق/بیمه',bank_account_add:'تعریف حساب بانکی',bank_account_update:'ویرایش حساب بانکی',bank_account_delete:'حذف حساب بانکی',manager_add:'افزودن مدیر',manager_update:'ویرایش مدیر',manager_delete:'حذف/غیرفعال‌کردن مدیر',manager_import_attached:'همگام‌سازی مدیران',school_add:'افزودن مدرسه',school_update:'ویرایش مدرسه',school_delete:'غیرفعال‌کردن مدرسه',message_add:'ارسال پیام به مدیران',message_delete:'حذف پیام',category_add:'افزودن دسته هزینه',category_update:'ویرایش دسته هزینه',category_delete:'غیرفعال‌کردن دسته هزینه',parsian_export:'خروجی Excel پارسیان',claim_settle:'تسویه طلب مدیر'};
   let d=map[action]||action;
   if(action==='tuition_bulk_debt') d+=' | '+String(r.added||0)+' نفر | '+String(r.amount||0)+' ریال | '+String(r.description||'');
   else if(action==='students_import') d+=' | '+String(r.added||0)+' اضافه | '+String(r.skipped||0)+' تکراری | '+String(r.invalid||0)+' نیازمند اصلاح';
@@ -2659,7 +2722,7 @@ function appVersion_(b){
     notes:settings['android_update_notes']||'',
     force_update:String(settings['android_force_update']||'false').toLowerCase()==='true',
     release_enabled:String(settings['android_release_enabled']||'false').toLowerCase()==='true',
-    backend_version:'2.24.13'
+    backend_version:'2.25.0'
   };
 }
 
@@ -2797,6 +2860,28 @@ function rotateAdminPassword(){
     return {success:true,message:'رمز تغییر کرد؛ نشست‌های قبلی معتبر نیستند.'};
   }finally{lock.releaseLock();}
 }
+/** Editing is allowed for pending, rejected AND approved records; every edit sends the record back to the approval queue.
+ *  Only records already matched with a bank statement row stay locked. */
+/** ویرایش سندی که درخواست حذفش در انتظار مدیر ارشد است ممکن نیست. */
+function assertNoPendingDelete_(r){
+  if(String(r.review_status||'')==='delete_pending')throw new Error('برای این سند درخواست حذف در انتظار بررسی است؛ تا تعیین تکلیف قابل ویرایش نیست.');
+}
+function assertEditableForEdit_(name,r){
+  if(String(r.reconciled)==='true')throw new Error('این سند با صورتحساب بانک تطبیق شده و قابل ویرایش نیست؛ ابتدا تطبیق بانکی آن را لغو کنید.');
+  if(name!=='Transactions'&&rows_('Transactions').some(x=>String(x.obj.source_id)===String(r.id)&&(name==='Expenses'?x.obj.kind==='expense':['payment','debt'].indexOf(x.obj.kind)>=0)&&String(x.obj.reconciled)==='true'))
+    throw new Error('تراکنش مرتبط با صورتحساب بانک تطبیق شده است؛ ابتدا تطبیق بانکی آن را لغو کنید.');
+}
+/** After an edit: back to «در انتظار تأیید» on the source row and its ledger mirror rows. */
+function requeueSource_(table,srcRow,sourceId,ledgerKinds){
+  const patch={approved:false,review_status:'pending',rejection_reason:''};
+  patchRow_(table,srcRow,patch);
+  rows_('Transactions').forEach(x=>{ if(String(x.obj.source_id)===String(sourceId)&&ledgerKinds.indexOf(String(x.obj.kind))>=0) patchRow_('Transactions',x.row,patch); });
+}
+/** A payment made by cheque is changed through the cheque itself. */
+function assertNotChequePayment_(tuitionId){
+  if(rows_('Cheques').some(x=>String(x.obj.tuition_id)===String(tuitionId)&&['returned','bounced'].indexOf(String(x.obj.status))<0))
+    throw new Error('این پرداخت از روی یک چک ساخته شده است؛ مشخصات را از صفحه‌ی چک‌ها ویرایش کنید.');
+}
 function assertEditable_(name,r){
   if(String(r.approved)==='true'||String(r.reconciled)==='true')throw new Error('سند تأیید یا تطبیق‌شده قابل ویرایش/حذف نیست؛ ابتدا فرایند اصلاح حسابداری انجام شود.');
   if(name!=='Transactions'&&rows_('Transactions').some(x=>String(x.obj.source_id)===String(r.id)&&(name==='Expenses'?x.obj.kind==='expense':['payment','debt'].indexOf(x.obj.kind)>=0)&&(String(x.obj.approved)==='true'||String(x.obj.reconciled)==='true')))
@@ -2919,19 +3004,22 @@ function updateRow_(name,row,values) {
   });
 }
 
-function softDeleteBySource_(name,id) {
+/** allowApproved: مدیر ارشد می‌تواند سند تأییدشده را حذف کند (به‌جز سند تطبیق‌شده با بانک). */
+function softDeleteBySource_(name,id,allowApproved) {
   const hit=findRow_(name,id);
   if(hit) {
     const r=hit.obj;
-    assertEditable_(name,r);voidRecord_(name,hit.row);
+    if(allowApproved) assertEditableForEdit_(name,r); else assertEditable_(name,r);
+    voidRecord_(name,hit.row);
   }
 }
 
-function softDeleteTransaction_(sourceId,sourceType) {
+function softDeleteTransaction_(sourceId,sourceType,allowApproved) {
   rows_('Transactions').forEach(x=>{
     if(String(x.obj.source_id)===String(sourceId)&&(sourceType==='expense'?x.obj.kind==='expense':['payment','debt'].indexOf(x.obj.kind)>=0)) {
       const r=x.obj;
-      assertEditable_('Transactions',r);voidRecord_('Transactions',x.row);
+      if(allowApproved) assertEditableForEdit_('Transactions',r); else assertEditable_('Transactions',r);
+      voidRecord_('Transactions',x.row);
     }
   });
 }

@@ -225,12 +225,16 @@ export const ActivityScreen: React.FC = () => {
               const entityId = log.entity_id;
               const isTransactionLink = ['transaction', 'expense', 'tuition', 'tuition_payment', 'tuition_debt'].includes(entityType) && entityId != null;
               const isBankLink = ['bank_transaction', 'banktransaction', 'bank'].includes(entityType) && entityId != null;
-              const canOpenEntity = isTransactionLink || isBankLink;
+              const isChequeLink = entityType === 'cheque' && entityId != null;
+              const canOpenEntity = isTransactionLink || isBankLink || isChequeLink;
               const openEntity = () => {
                 if (!canOpenEntity) return;
                 if (isTransactionLink) {
                   setNavHint('transactions', `transaction:${entityId}`);
                   setCurrentScreen('transactions');
+                } else if (isChequeLink) {
+                  setNavHint('cheques', `list:cheque:${entityId}`);
+                  setCurrentScreen('cheques');
                 } else {
                   setCurrentScreen('bank');
                 }

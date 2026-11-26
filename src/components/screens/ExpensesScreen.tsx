@@ -83,7 +83,6 @@ export const ExpensesScreen: React.FC = () => {
     deleteExpense,
     approveTransaction,
     rejectTransaction,
-    resubmitTransaction,
     addCategory,
     toggleCategory,
   } = useApp();
@@ -566,7 +565,7 @@ export const ExpensesScreen: React.FC = () => {
           date: isoDate,
           expense_category_id: formCategoryId,
           expense_category_name: cat?.name || 'هزینه',
-          tracking_code: latinDigits(formTracking).replace(/\D/g, ''),
+          tracking_code: latinDigits(formTracking).trim(),
           payment_source: formSource,
           payment_method: formSource,
           petty_cash_card: formSource === 'petty_cash' ? pettyCardFor(formSchoolId) : '',
@@ -576,9 +575,6 @@ export const ExpensesScreen: React.FC = () => {
           tafsili_code: schoolTafsili,
           attachment_url: formAttachment,
         });
-        if (editingExpense.review_status === 'rejected') {
-          resubmitTransaction(editingExpense.id);
-        }
       } else {
         addExpense({
           category_id: formCategoryId,

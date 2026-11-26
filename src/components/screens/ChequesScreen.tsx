@@ -6,7 +6,7 @@ import { Header } from '../Header';
 import { Cheque } from '../../types';
 import { takeNavHint } from '../../utils/alerts';
 import { formatRial, jalaliFromGregorian, todayJalali, jalaliToIso, latinDigits, todayGregorian } from '../../utils/jalali';
-import { chequeStage, CHEQUE_STAGE_LABEL, isCollectibleCheque, daysToDue, ChequeStage } from '../../utils/cheques';
+import { chequeStage, CHEQUE_STAGE_LABEL, isCollectibleCheque, daysToDue, ChequeStage, canEditCheque, canReturnCheque } from '../../utils/cheques';
 import { JalaliDatePicker } from '../JalaliDatePicker';
 import { QuickAmountPad } from '../QuickAmountPad';
 import { ReceiptImageUploader } from '../ReceiptImageUploader';
@@ -29,7 +29,8 @@ import {
   Shield,
   CreditCard,
   FileText,
-  Edit2,
+  Pencil,
+  RotateCcw,
 } from 'lucide-react';
 import { AttachmentImg } from '../AttachmentImg';
 
@@ -66,6 +67,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
     addDirectCheque,
     updateCheque,
     deleteCheque,
+    returnCheque,
     currentUser,
     accentColor,
     schools,
@@ -73,13 +75,13 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
   } = useApp();
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
 
-  const initialChequeHint = isSenior ? takeNavHint('cheques') : null;
-  const initialChequeMatch = initialChequeHint?.match(/^(review|collect):cheque:(\d+)$/);
+  const [initialChequeHint] = useState<string | null>(() => takeNavHint('cheques'));
+  const initialChequeMatch = initialChequeHint?.match(/^(review|collect|list):cheque:(\d+)$/);
   const initialChequeId = initialChequeMatch ? Number(initialChequeMatch[2]) : null;
   const [focusChequeId, setFocusChequeId] = useState<number | null>(initialChequeId && Number.isFinite(initialChequeId) ? initialChequeId : null);
   const [activeTab, setActiveTab] = useState<'review' | 'list' | 'collect'>(() => {
-    if (initialChequeMatch) return initialChequeMatch[1] as 'review' | 'collect';
-    if (initialChequeHint === 'collect' || initialChequeHint === 'review') return initialChequeHint;
+    if (initialChequeMatch) return (isSenior ? initialChequeMatch[1] : 'list') as 'review' | 'collect' | 'list';
+    if (isSenior && (initialChequeHint === 'collect' || initialChequeHint === 'review')) return initialChequeHint;
     return isSenior && initialMode === 'review' ? 'review' : 'list';
   });
   const [filterType, setFilterType] = useState<string>('all');
@@ -112,6 +114,9 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
   const [note, setNote] = useState('');
   const [attachment, setAttachment] = useState('');
   const [formError, setFormError] = useState('');
+  const [returnDialog, setReturnDialog] = useState<{ cheque: Cheque; dateJalali: string; reason: string } | null>(null);
+  const [returnBusy, setReturnBusy] = useState(false);
+  useBackClose(returnDialog !== null, () => { if (!returnBusy) setReturnDialog(null); });
   const [previewAttachment, setPreviewAttachment] = useState<string | null>(null);
   useBackClose(!!previewAttachment, () => setPreviewAttachment(null));
 
@@ -133,7 +138,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
     todo: ['to_deposit', 'on_account'],
     on_account: ['on_account'],
     cleared: ['cleared'],
-    done: ['reconciled', 'not_cleared'],
+    done: ['reconciled', 'not_cleared', 'returned'],
   };
   const stageOf = (c: Cheque) => chequeStage(c);
   const stageCounts = userCheques.reduce<Record<string, number>>((acc, c) => {
@@ -194,6 +199,8 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
     alert(res.message);
   };
 
+  const canEditOwn = (c: Cheque) => isSenior || String(c.created_by || '') === String(currentUser?.id || '');
+
   const handleOpenAddModal = () => {
     setEditingCheque(null);
     setChequeType('sayad');
@@ -213,23 +220,37 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
     setIsModalOpen(true);
   };
 
-  const handleOpenEditCheque = (c: Cheque) => {
+  const handleOpenEditModal = (c: Cheque) => {
     setEditingCheque(c);
-    setChequeType(c.cheque_type || 'sayad');
+    setChequeType((c.cheque_type || 'sayad') as any);
     setBankName(c.bank_name || IRANIAN_BANKS[0]);
-    setChequePurpose(c.cheque_purpose || 'tuition');
+    setChequePurpose((c.cheque_purpose || 'tuition') as any);
     setSayadId(latinDigits(String(c.sayad_id || '')).replace(/\D/g, ''));
     setChequeNumber(latinDigits(String(c.cheque_number || '')));
     setIssuerName(c.issuer_name || c.student_name || '');
-    setAmountStr(Number(c.amount || 0).toLocaleString('en-US'));
-    setDueDateJalali(jalaliFromGregorian(c.due_date));
-    setIssueDateJalali(jalaliFromGregorian(c.issue_date));
+    setAmountStr(Number(c.amount || 0) ? Number(c.amount).toLocaleString('en-US') : '');
+    setDueDateJalali(c.due_date ? jalaliFromGregorian(c.due_date) : todayJalali());
+    setIssueDateJalali(c.issue_date ? jalaliFromGregorian(c.issue_date) : todayJalali());
     setSelectedSchoolId(c.school_id);
     setSelectedStudentId(c.student_id || undefined);
     setNote(c.note || '');
     setAttachment(c.attachment_url || '');
     setFormError('');
     setIsModalOpen(true);
+  };
+
+  const submitReturn = async () => {
+    if (!returnDialog || returnBusy) return;
+    const iso = jalaliToIso(returnDialog.dateJalali);
+    if (!iso) { setCollectNotice({ text: 'تاریخ عودت را درست وارد کنید.', ok: false }); return; }
+    setReturnBusy(true);
+    try {
+      const res = await returnCheque(returnDialog.cheque.id, { date: iso, reason: returnDialog.reason.trim() });
+      setCollectNotice({ text: res.message, ok: res.success });
+      if (res.success) setReturnDialog(null);
+    } finally {
+      setReturnBusy(false);
+    }
   };
 
   const handleSaveCheque = (e: React.FormEvent) => {
@@ -255,8 +276,41 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
       return;
     }
 
-    if (!attachment.trim()) {
+    if (!editingCheque && !attachment.trim()) {
       setFormError('ارسال عکس برگه چک الزامی است. لطفاً تصویر چک را الصاق فرمایید.');
+      return;
+    }
+
+    if (editingCheque) {
+      const c0 = editingCheque;
+      const next: Partial<Cheque> = {
+        amount: amt,
+        sayad_id: chequeType === 'sayad' ? latinDigits(sayadId).replace(/\D/g, '') : '',
+        cheque_number: latinDigits(chequeNumber).trim(),
+        bank_name: bankName,
+        cheque_type: chequeType,
+        cheque_purpose: chequePurpose,
+        issuer_name: issuerName.trim() || c0.student_name,
+        due_date: jalaliToIso(dueDateJalali),
+        issue_date: jalaliToIso(issueDateJalali),
+        note: note.trim(),
+      };
+      const changed: Partial<Cheque> = {};
+      (Object.keys(next) as Array<keyof Cheque>).forEach((k) => {
+        const a = (next as any)[k] ?? '';
+        const b = (c0 as any)[k] ?? '';
+        if (String(a) !== String(b)) (changed as any)[k] = (next as any)[k];
+      });
+      if (attachment && attachment !== c0.attachment_url) changed.attachment_url = attachment;
+      if (Object.keys(changed).length === 0) {
+        setIsModalOpen(false);
+        setEditingCheque(null);
+        return;
+      }
+      updateCheque(c0.id, changed);
+      setCollectNotice({ text: 'چک ویرایش شد و برای تأیید دوباره به صف تأیید رفت.', ok: true });
+      setIsModalOpen(false);
+      setEditingCheque(null);
       return;
     }
 
@@ -265,45 +319,26 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
 
     const displayName = studentObj ? studentObj.name : issuerName.trim();
 
-    if (editingCheque) {
-      updateCheque(editingCheque.id, {
-        amount: amt,
-        sayad_id: chequeType === 'sayad' ? latinDigits(sayadId).replace(/\D/g, '') : '',
-        cheque_number: latinDigits(chequeNumber).trim(),
-        bank_name: bankName,
-        cheque_type: chequeType,
-        cheque_purpose: chequePurpose,
-        issuer_name: issuerName.trim() || displayName,
-        due_date: jalaliToIso(dueDateJalali),
-        issue_date: jalaliToIso(issueDateJalali),
-        note: note.trim(),
-        attachment_url: attachment,
-        status: 'pending',
-        received_confirmed: false,
-        in_favor_confirmed: false,
-      });
-    } else {
-      addDirectCheque({
-        student_id: selectedStudentId || 0,
-        student_name: displayName,
-        school_id: selectedSchoolId,
-        school_name: schoolObj?.name || 'مدرسه',
-        amount: amt,
-        sayad_id: chequeType === 'sayad' ? latinDigits(sayadId).replace(/\D/g, '') : undefined,
-        cheque_number: latinDigits(chequeNumber).trim() || undefined,
-        bank_name: bankName,
-        cheque_type: chequeType,
-        cheque_purpose: chequePurpose,
-        issuer_name: issuerName.trim() || displayName,
-        due_date: jalaliToIso(dueDateJalali),
-        issue_date: jalaliToIso(issueDateJalali),
-        received_confirmed: true,
-        in_favor_confirmed: true,
-        status: 'approved',
-        note: note.trim(),
-        attachment_url: attachment,
-      });
-    }
+    addDirectCheque({
+      student_id: selectedStudentId || 0,
+      student_name: displayName,
+      school_id: selectedSchoolId,
+      school_name: schoolObj?.name || 'مدرسه',
+      amount: amt,
+      sayad_id: chequeType === 'sayad' ? latinDigits(sayadId).replace(/\D/g, '') : undefined,
+      cheque_number: latinDigits(chequeNumber).trim() || undefined,
+      bank_name: bankName,
+      cheque_type: chequeType,
+      cheque_purpose: chequePurpose,
+      issuer_name: issuerName.trim() || displayName,
+      due_date: jalaliToIso(dueDateJalali),
+      issue_date: jalaliToIso(issueDateJalali),
+      received_confirmed: true,
+      in_favor_confirmed: true,
+      status: 'approved',
+      note: note.trim(),
+      attachment_url: attachment,
+    });
 
     setIsModalOpen(false);
     setEditingCheque(null);
@@ -417,7 +452,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                 { id: 'todo', label: `نیازمند اقدام (${(stageCounts.to_deposit || 0) + (stageCounts.on_account || 0)})` },
                 { id: 'on_account', label: `سرحساب‌شده (${stageCounts.on_account || 0})` },
                 { id: 'cleared', label: `وصول‌شده، منتظر تطبیق (${stageCounts.cleared || 0})` },
-                { id: 'done', label: `تطبیق‌شده / برگشتی (${(stageCounts.reconciled || 0) + (stageCounts.not_cleared || 0)})` },
+                { id: 'done', label: `تطبیق‌شده / برگشتی / عودتی (${(stageCounts.reconciled || 0) + (stageCounts.not_cleared || 0) + (stageCounts.returned || 0)})` },
               ] as Array<{ id: CollectFilter; label: string }>).map((t) => (
                 <button key={t.id} type="button" onClick={() => setCollectFilter(t.id)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${collectFilter === t.id ? 'bg-[#341648] text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
@@ -503,11 +538,12 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                 not_cleared: 'bg-red-100 text-red-900 border-red-200',
                 rejected: 'bg-rose-100 text-rose-800 border-rose-200',
                 guarantee: 'bg-gray-100 text-gray-700 border-gray-200',
+                returned: 'bg-orange-100 text-orange-900 border-orange-200',
               };
               const dueDays = daysToDue(c.due_date, today);
               const depositAccount = bankAccounts.find((a) => a.id === c.deposit_bank_account_id);
               const statusBadge =
-                c.status === 'approved' || c.status === 'paid' || c.status === 'bounced'
+                c.status === 'approved' || c.status === 'paid' || c.status === 'bounced' || c.status === 'returned'
                   ? { label: CHEQUE_STAGE_LABEL[stage], bg: stageBg[stage] }
                   : c.status === 'pending'
                   ? { label: 'در انتظار تأیید', bg: 'bg-amber-100 text-amber-800 border-amber-200' }
@@ -660,16 +696,41 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                     </div>
                   )}
 
-                  {(isSenior || String((c as any).created_by || '') === String(currentUser?.id || '')) && (
-                    <div className="flex justify-end pt-1">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEditCheque(c)}
-                        className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold hover:bg-amber-100 flex items-center gap-1.5"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                        ویرایش و ارسال مجدد
-                      </button>
+                  {stage === 'returned' && (
+                    <div className="rounded-2xl border border-orange-200 bg-orange-50 p-3 text-[11px] font-bold text-orange-900 space-y-1">
+                      <div>این چک به صاحبش عودت داده شد{c.return_date ? ` (تاریخ عودت: ${jalaliFromGregorian(c.return_date)})` : ''}.</div>
+                      {c.return_reason && <div>دلیل: {c.return_reason}</div>}
+                      {c.return_reversed && <div>پرداخت شهریه‌ی این چک و سند حسابداری آن برگشت خورد.</div>}
+                    </div>
+                  )}
+
+                  {((canEditCheque(c) && canEditOwn(c)) || (isSenior && canReturnCheque(c))) && (
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      {canEditCheque(c) && canEditOwn(c) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const warn = c.status === 'approved'
+                              ? 'این چک قبلاً تأیید شده است. با ویرایش، پرداخت ثبت‌شده‌ی آن از دفتر برداشته می‌شود و چک باید دوباره تأیید شود. ادامه می‌دهید؟'
+                              : 'با ذخیره‌ی ویرایش، چک دوباره به صف تأیید می‌رود. ادامه می‌دهید؟';
+                            if (window.confirm(warn)) handleOpenEditModal(c);
+                          }}
+                          className="text-[11px] font-bold text-indigo-700 hover:text-indigo-900 flex items-center gap-1 py-1.5 px-3 rounded-lg bg-indigo-50 border border-indigo-200"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          <span>ویرایش چک</span>
+                        </button>
+                      )}
+                      {isSenior && canReturnCheque(c) && (
+                        <button
+                          type="button"
+                          onClick={() => setReturnDialog({ cheque: c, dateJalali: todayJalali(), reason: '' })}
+                          className="text-[11px] font-bold text-orange-800 hover:text-orange-900 flex items-center gap-1 py-1.5 px-3 rounded-lg bg-orange-50 border border-orange-200"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>عودت چک به صاحبش</span>
+                        </button>
+                      )}
                     </div>
                   )}
 
@@ -744,11 +805,11 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                   <CreditCard className="w-5 h-5" />
                 </div>
                 <h3 className="text-base font-bold text-[#341648]">
-                  {editingCheque ? 'ویرایش چک و ارسال برای بررسی مجدد' : 'ثبت چک جدید (صیادی / غیر صیادی / قرض‌الحسنه / ضمانتی)'}
+                  {editingCheque ? 'ویرایش چک (پس از ذخیره دوباره به صف تأیید می‌رود)' : 'ثبت چک جدید (صیادی / غیر صیادی / قرض‌الحسنه / ضمانتی)'}
                 </h3>
               </div>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={() => { setIsModalOpen(false); setEditingCheque(null); }}
                 className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100"
               >
                 <X className="w-5 h-5" />
@@ -801,7 +862,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                   onChange={(e) => setBankName(e.target.value)}
                   className="w-full px-3 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#341648]"
                 >
-                  {IRANIAN_BANKS.map((b) => (
+                  {(IRANIAN_BANKS.includes(bankName) ? IRANIAN_BANKS : [bankName, ...IRANIAN_BANKS]).map((b) => (
                     <option key={b} value={b}>
                       {b}
                     </option>
@@ -894,7 +955,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                   <label className="block text-xs font-bold text-[#341648] mb-1.5">
                     مدرسه مربوطه <span className="text-rose-500">*</span>
                   </label>
-                  <SchoolSelect schools={schools} value={selectedSchoolId} onChange={(value) => setSelectedSchoolId(Number(value))} className="w-full px-3 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#341648]" />
+                  <div className={editingCheque ? 'pointer-events-none opacity-60' : ''}><SchoolSelect schools={schools} value={selectedSchoolId} onChange={(value) => setSelectedSchoolId(Number(value))} className="w-full px-3 py-2.5 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs font-bold text-[#341648]" /></div>
                 </div>
 
                 <div>
@@ -942,7 +1003,7 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
               <ReceiptImageUploader
                 value={attachment}
                 onChange={setAttachment}
-                required={true}
+                required={!editingCheque}
                 label="تصویر برگه چک (صیادی / غیر صیادی / ضمانت)"
                 helperText="ارسال عکس برگه چک الزامی است؛ عکس به صورت خودکار بدون افت کیفیت برای بارگذاری سریع فشرده می‌شود."
               />
@@ -954,17 +1015,49 @@ export const ChequesScreen: React.FC<{ initialMode?: 'review' | 'list' }> = ({
                   style={{ backgroundColor: accentColor }}
                 >
                   <Check className="w-4 h-4" />
-                  <span>{editingCheque ? 'ویرایش و ارسال مجدد برای تأیید' : 'ثبت قطعی چک در سامانه'}</span>
+                  <span>{editingCheque ? 'ذخیره‌ی ویرایش و ارسال برای تأیید' : 'ثبت قطعی چک در سامانه'}</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => { setIsModalOpen(false); setEditingCheque(null); }}
                   className="py-3 px-4 rounded-xl text-gray-700 bg-gray-100 hover:bg-gray-200 active:scale-95 transition-all text-sm font-semibold"
                 >
                   انصراف
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Return cheque dialog */}
+      {returnDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-5 shadow-2xl border border-[#e5dde8] space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-[#341648]">عودت چک به صاحبش</h3>
+              <button type="button" aria-label="بستن" disabled={returnBusy} onClick={() => setReturnDialog(null)}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+            <div className="text-xs text-gray-700 leading-6 bg-gray-50 rounded-xl p-3">
+              چک «{returnDialog.cheque.student_name}» به مبلغ <b>{formatRial(returnDialog.cheque.amount)}</b> ریال
+              {returnDialog.cheque.status === 'approved'
+                ? ' تأیید شده است؛ با عودت، پرداخت شهریه‌ی آن از دفتر برداشته می‌شود و سند برگشت اسناد دریافتنی صادر می‌گردد.'
+                : ' بدون ثبت سند برگشت، به صاحبش عودت داده می‌شود.'}
+            </div>
+            <JalaliDatePicker label="تاریخ عودت" value={returnDialog.dateJalali} onChange={(v) => setReturnDialog({ ...returnDialog, dateJalali: v })} required />
+            <div>
+              <label className="block text-xs font-bold text-[#341648] mb-1.5">دلیل عودت (اختیاری)</label>
+              <input type="text" maxLength={300} value={returnDialog.reason} onChange={(e) => setReturnDialog({ ...returnDialog, reason: e.target.value })}
+                placeholder="مثال: تسویه‌ی نقدی شهریه" className="w-full px-3 py-2 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-xs" />
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <button type="button" disabled={returnBusy} onClick={() => void submitReturn()}
+                className="flex-1 py-2.5 rounded-xl text-white text-xs font-bold disabled:opacity-50" style={{ backgroundColor: accentColor }}>
+                {returnBusy ? 'در حال ثبت…' : 'تأیید عودت چک'}
+              </button>
+              <button type="button" disabled={returnBusy} onClick={() => setReturnDialog(null)}
+                className="py-2.5 px-4 rounded-xl text-gray-700 bg-gray-100 text-xs font-semibold">انصراف</button>
+            </div>
           </div>
         </div>
       )}

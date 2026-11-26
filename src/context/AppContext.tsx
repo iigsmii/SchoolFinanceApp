@@ -65,6 +65,8 @@ import {
   buildBankAccountPayload,
   buildWorkLogPayload,
   buildPayrollPayload,
+  attachmentUploadFields,
+  isDataUrl,
 } from '../services/googleSheets';
 import {
   enqueue,
@@ -194,7 +196,6 @@ interface AppContextType {
   updateTransaction: (id: number, data: Partial<Transaction>) => void;
   approveTransaction: (id: number) => Promise<boolean>;
   rejectTransaction: (id: number, reason?: string) => Promise<boolean>;
-  resubmitTransaction: (id: number) => void;
 
   // Expense ops
   addExpense: (data: {
@@ -219,6 +220,7 @@ interface AppContextType {
   // Cheque ops
   reviewCheque: (id: number, action: 'receive' | 'favor' | 'reject') => { success: boolean; status: string; message: string };
   /** سرحساب‌کردن چک، تأیید وصول یا عدم وصول در سررسید (فقط مدیر ارشد؛ مستقیم روی سرور انجام می‌شود). */
+  returnCheque: (id: number, opts?: { date?: string; reason?: string }) => Promise<{ success: boolean; message: string }>;
   chequeCollection: (id: number, step: 'on_account' | 'undo_on_account' | 'cleared' | 'not_cleared', opts?: { bank_account_id?: number; date?: string }) => Promise<{ success: boolean; message: string }>;
   addDirectCheque: (cheque: Omit<Cheque, 'id'>) => Cheque;
   deleteCheque: (id: number) => void;
@@ -441,7 +443,7 @@ const ACTION_LABELS: Record<string, string> = {
   student_add: 'ثبت دانش‌آموز', student_update: 'ویرایش دانش‌آموز', student_delete: 'حذف دانش‌آموز',
   tuition_add: 'ثبت شهریه/بدهی/تخفیف', tuition_bulk_debt: 'ثبت گروهی بدهی', tuition_update: 'ویرایش شهریه', tuition_delete: 'حذف شهریه',
   expense_add: 'ثبت هزینه', expense_update: 'ویرایش هزینه', expense_delete: 'حذف هزینه', transaction_update: 'ویرایش سند', transaction_delete: 'حذف سند',
-  transaction_review: 'تأیید/رد تراکنش', finance_transaction: 'ثبت واریزی', cheque_add: 'ثبت چک', cheque_update: 'ویرایش چک', cheque_delete: 'حذف چک', cheque_review: 'بررسی چک',
+  transaction_review: 'تأیید/رد تراکنش', transaction_delete_request: 'درخواست حذف سند', transaction_delete_review: 'بررسی درخواست حذف', cheque_return: 'عودت چک', finance_transaction: 'ثبت واریزی', cheque_add: 'ثبت چک', cheque_update: 'ویرایش چک', cheque_delete: 'حذف چک', cheque_review: 'بررسی چک',
   staff_add: 'ثبت پرسنل', staff_update: 'ویرایش پرسنل', staff_delete: 'حذف پرسنل', staff_worklog_add: 'ثبت کارکرد', staff_worklog_delete: 'حذف کارکرد',
   payroll_add: 'ثبت پرداخت حقوق', payroll_delete: 'حذف پرداخت حقوق', bank_account_add: 'تعریف حساب بانکی', bank_account_update: 'ویرایش حساب بانکی', bank_account_delete: 'حذف حساب بانکی',
   bank_upload: 'ورود صورتحساب بانک', bank_reconcile: 'تطبیق بانکی', bank_annotation: 'تخصیص تراکنش بانکی', bank_match: 'تطبیق دستی بانک',
@@ -1716,8 +1718,13 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
 
   const updateTransaction = (id: number, data: Partial<Transaction>) => {
     const tx = transactions.find((t) => t.id === id);
-    setTransactions((prev) => prev.map((t) => (t.id === id ? { ...t, ...data } : t)));
-    logActivity('ویرایش تراکنش', `ویرایش تراکنش شناسه ${id}`, 'transaction', id);
+    // A content edit (amount, date, description, tracking code, method, category...) sends the
+    // transaction back to the approval queue — also when it was approved or rejected before.
+    const contentKeys: Array<keyof Transaction> = ['amount', 'date', 'description', 'comment', 'tracking_code', 'payment_method', 'payment_source', 'petty_cash_card', 'expense_category_name', 'expense_category_id'];
+    const isContentEdit = contentKeys.some((k) => data[k] !== undefined);
+    const requeue: Partial<Transaction> = isContentEdit ? { review_status: 'pending', rejection_reason: undefined } : {};
+    setTransactions((prev) => prev.map((t) => (t.id === id ? { ...t, ...data, ...requeue } : t)));
+    logActivity('ویرایش تراکنش', `ویرایش تراکنش شناسه ${id}${isContentEdit ? ' (بازگشت به صف تأیید)' : ''}`, 'transaction', id);
     if (!tx) return;
     const route = txRoute(id, tx.kind);
     const changes: Record<string, any> = {};
@@ -1788,16 +1795,6 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
     logActivity('رد تراکنش مالی', `رد تراکنش شناسه ${id} توسط مدیر ارشد: ${reason || 'عدم تأیید'}`, 'transaction', id);
     reviewTx(id, 'rejected', reason || 'عدم تأیید توسط مدیریت ارشد');
     return true;
-  };
-
-  const resubmitTransaction = (id: number) => {
-    const tx = transactions.find((t) => t.id === id);
-    if (!tx || tx.review_status !== 'rejected') return;
-    setTransactions((prev) => prev.map((t) => t.id === id
-      ? { ...t, review_status: 'pending', rejection_reason: undefined }
-      : t));
-    queue('transaction_review', buildReviewPayload(id, 'pending'), { type: 'tx:review', id });
-    logActivity('ارسال مجدد تراکنش', `تراکنش ردشده شناسه ${id} پس از اصلاح مجدداً ارسال شد`, 'transaction', id);
   };
 
   const addExpense = (data: {
@@ -1999,6 +1996,34 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
     };
   };
 
+  const returnCheque: AppContextType['returnCheque'] = async (id, opts = {}) => {
+    const cheque = cheques.find((c) => c.id === id);
+    if (!cheque) return { success: false, message: 'چک پیدا نشد.' };
+    if (isTempId(id)) return { success: false, message: 'این چک هنوز به سرور ارسال نشده است؛ ابتدا همگام‌سازی کنید.' };
+    const res = await postToAppsScript({ action: 'cheque_return', id, date: opts.date, reason: opts.reason });
+    if (!res.success) {
+      return { success: false, message: res.network ? 'اتصال برقرار نشد؛ اینترنت را بررسی و دوباره تلاش کنید.' : (res.error || 'عودت چک انجام نشد.') };
+    }
+    const r: any = res;
+    setCheques((prev) => prev.map((c) => (c.id === id ? {
+      ...c,
+      status: 'returned',
+      collection_status: 'returned',
+      return_date: r.return_date || opts.date || c.return_date,
+      return_reason: opts.reason || c.return_reason,
+      return_reversed: !!r.return_reversed,
+    } : c)));
+    if (r.return_reversed && cheque.tuition_id) setTransactions((prev) => prev.filter((t) => t.id !== cheque.tuition_id));
+    logActivity('عودت چک', `چک ${cheque.sayad_id || cheque.cheque_number || id} به صاحبش عودت داده شد${opts.reason ? ` (${opts.reason})` : ''}`, 'cheque', id);
+    void syncWithGoogleSheets(spreadsheetId).catch(() => {});
+    return {
+      success: true,
+      message: r.return_reversed
+        ? 'چک به صاحبش عودت داده شد؛ پرداخت شهریه‌ی آن از دفتر دانش‌آموز برگشت خورد و در اسناد ثبت می‌شود.'
+        : 'چک به صاحبش عودت داده شد.',
+    };
+  };
+
   const addDirectCheque = (chequeData: Omit<Cheque, 'id'>): Cheque => {
     const newChequeId = nextTempId();
     const newCheque: Cheque = {
@@ -2029,19 +2054,29 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
   };
 
   const updateCheque = (id: number, data: Partial<Cheque>) => {
-    setCheques((prev) => prev.map((c) => (c.id === id ? { ...c, ...data } : c)));
-    logActivity('ویرایش مشخصات چک', `ویرایش چک شناسه ${id}`, 'cheque', id);
+    const before = cheques.find((c) => c.id === id);
     const changes: Record<string, any> = {};
     (['bank_name', 'cheque_number', 'issuer_name', 'cheque_purpose', 'cheque_type', 'due_date', 'issue_date', 'amount', 'sayad_id'] as const).forEach((k) => {
       if (data[k] !== undefined) changes[k] = data[k];
     });
     if (data.note !== undefined) changes.description = data.note;
-    if (data.attachment_url !== undefined) changes.attachment_url = data.attachment_url;
-    if (data.status === 'pending') { changes.status = 'pending'; changes.received_confirmed = false; changes.in_favor_confirmed = false; }
-    if (Object.keys(changes).length === 0) return;
+    // A new photo (data URL) is uploaded to Drive by the server; an unchanged http(s) link is not sent again.
+    const newImage = isDataUrl(data.attachment_url) ? data.attachment_url : undefined;
+    const isContentEdit = Object.keys(changes).length > 0 || !!newImage;
+    // Every content edit sends the cheque back to the approval queue; the payment it had created is taken back
+    // (the server does the same and creates it again when the cheque is approved).
+    const requeue: Partial<Cheque> = isContentEdit ? {
+      status: 'pending', received_confirmed: false, in_favor_confirmed: false,
+      collection_status: '', on_account_date: undefined, deposit_bank_account_id: undefined, tuition_id: undefined,
+    } : {};
+    setCheques((prev) => prev.map((c) => (c.id === id ? { ...c, ...data, ...requeue } : c)));
+    if (isContentEdit && before?.tuition_id) setTransactions((prev) => prev.filter((t) => t.id !== before.tuition_id));
+    logActivity('ویرایش مشخصات چک', `ویرایش چک شناسه ${id}${isContentEdit ? ' (بازگشت به صف تأیید)' : ''}`, 'cheque', id);
+    if (!isContentEdit) return;
+    const upload = newImage ? attachmentUploadFields(newImage, `cheque_${id}`) : {};
     void (async () => {
-      if (isTempId(id) && await patchQueuedAdd('cheque', id, { ...changes, ...(changes.issue_date ? { date: changes.issue_date } : {}) })) return;
-      queue('cheque_update', { id, ...changes }, { type: 'cheque:edit', id });
+      if (isTempId(id) && await patchQueuedAdd('cheque', id, { ...changes, ...upload, ...(changes.issue_date ? { date: changes.issue_date } : {}) })) return;
+      queue('cheque_update', { id, ...changes, ...upload }, { type: 'cheque:edit', id });
     })();
   };
 
@@ -2764,7 +2799,6 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
         updateTransaction,
         approveTransaction,
         rejectTransaction,
-        resubmitTransaction,
         addExpense,
         addPettyCashIncome,
         deleteExpense,
@@ -2773,6 +2807,7 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
         toggleCategory,
         reviewCheque,
         chequeCollection,
+        returnCheque,
         addDirectCheque,
         deleteCheque,
         updateCheque,

@@ -101,15 +101,19 @@ export interface Cheque {
   issue_date: string;
   received_confirmed: boolean;
   in_favor_confirmed: boolean;
-  status: 'pending' | 'approved' | 'rejected' | 'paid' | 'bounced';
+  status: 'pending' | 'approved' | 'rejected' | 'paid' | 'bounced' | 'returned';
   note?: string;
   attachment_url?: string;
   // چرخه‌ی وصول: تأییدشده ← سرحساب (on_account) ← وصول شد (cleared) / وصول نشد (not_cleared) ← واریز به بانک ← تطبیق بانک
-  collection_status?: '' | 'on_account' | 'cleared' | 'not_cleared';
+  collection_status?: '' | 'on_account' | 'cleared' | 'not_cleared' | 'returned';
   on_account_date?: string; // ISO
   deposit_bank_account_id?: number; // حساب بانکی که چک به آن سرحساب شده
   cleared_date?: string; // ISO
   bank_reconciled?: boolean; // با ردیف صورتحساب بانک تطبیق خورده است
+  return_date?: string; // ISO؛ تاریخ عودت چک به صاحبش
+  return_reason?: string;
+  created_by?: string; // شناسه‌ی ثبت‌کننده (برای مجوز ویرایش)
+  return_reversed?: boolean; // پرداخت شهریه‌ی چک هنگام عودت از دفتر برگشت خورده است (برای اسناد)
   tuition_id?: number; // شناسه‌ی پرداخت شهریه‌ی ساخته‌شده از این چک (= شناسه‌ی تراکنش دفتر)
 }
 

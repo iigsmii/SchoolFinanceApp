@@ -5,9 +5,10 @@ export const isCollectibleCheque = (c: Pick<Cheque, 'cheque_type' | 'cheque_purp
   c.cheque_type !== 'guarantee' && c.cheque_purpose !== 'guarantee' && c.cheque_purpose !== 'staff_guarantee';
 
 /** مرحله‌ی فعلی چک در چرخه‌ی وصول (برای نمایش و فیلتر). */
-export type ChequeStage = 'awaiting_review' | 'to_deposit' | 'on_account' | 'cleared' | 'reconciled' | 'not_cleared' | 'rejected' | 'guarantee';
+export type ChequeStage = 'returned' | 'awaiting_review' | 'to_deposit' | 'on_account' | 'cleared' | 'reconciled' | 'not_cleared' | 'rejected' | 'guarantee';
 
 export function chequeStage(c: Cheque): ChequeStage {
+  if (c.status === 'returned' || c.collection_status === 'returned') return 'returned';
   if (c.status === 'rejected') return 'rejected';
   if (c.status === 'pending') return 'awaiting_review';
   if (!isCollectibleCheque(c)) return 'guarantee';
@@ -18,6 +19,7 @@ export function chequeStage(c: Cheque): ChequeStage {
 }
 
 export const CHEQUE_STAGE_LABEL: Record<ChequeStage, string> = {
+  returned: 'عودت داده شد',
   awaiting_review: 'در انتظار تأیید',
   to_deposit: 'تأییدشده · سرحساب نشده',
   on_account: 'سرحساب شده · در انتظار وصول',
@@ -26,6 +28,18 @@ export const CHEQUE_STAGE_LABEL: Record<ChequeStage, string> = {
   not_cleared: 'وصول نشد (برگشتی)',
   rejected: 'ردشده',
   guarantee: 'ضمانتی',
+};
+
+/** ویرایش مجاز است (تأییدشده هم) تا قبل از وصول؛ هر ویرایش چک را به صف تأیید برمی‌گرداند. */
+export const canEditCheque = (c: Cheque): boolean => {
+  const st = chequeStage(c);
+  return !['cleared', 'reconciled', 'not_cleared', 'returned'].includes(st) && !c.bank_reconciled;
+};
+
+/** عودت به صاحب چک: هر چکی که هنوز وصول و به بانک واریز نشده (حتی ردشده/برگشتی/ضمانتی). */
+export const canReturnCheque = (c: Cheque): boolean => {
+  const st = chequeStage(c);
+  return !['cleared', 'reconciled', 'returned'].includes(st) && !c.bank_reconciled;
 };
 
 /** چکی که این تراکنش دفتری از آن ساخته شده است (شناسه‌ی تراکنش پرداخت = شناسه‌ی شهریه‌ی چک). */
