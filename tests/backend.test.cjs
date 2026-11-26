@@ -31,7 +31,7 @@ const context=vm.createContext({
     getUuid:()=>`00000000-0000-4000-8000-${String(++uuid).padStart(12,'0')}`,
     DigestAlgorithm:{SHA_256:'sha256'},Charset:{UTF_8:'utf8'},
     computeDigest:(_,s)=>Array.from(crypto.createHash('sha256').update(String(s)).digest()),
-    formatDate:(d,tz,format)=>format==='yyyy-MM-dd'?d.toISOString().slice(0,10):d.toISOString().replace('T',' ').slice(0,19),
+    formatDate:(d,tz,format)=>{const local=new Date(d.getTime()+210*60000);return format==='yyyy-MM-dd'?local.toISOString().slice(0,10):local.toISOString().replace('T',' ').slice(0,19);},
     base64Decode:s=>Array.from(Buffer.from(s,'base64')),base64Encode:s=>Buffer.from(s).toString('base64'),newBlob:()=>({})
   },
   Session:{getScriptTimeZone:()=> 'Asia/Tehran'},
@@ -56,6 +56,7 @@ const call=(fn,b)=>{context.input=b;return run(`${fn}(input)`);};
 const post=b=>JSON.parse(call('doPost',{postData:{contents:JSON.stringify(b)}}));
 const base={token:manager,student_id:1,school_id:1,type:'payment',payment_method:'پول نقد',amount:100,date:'2026-10-15'};
 test('strict date validation',()=>{assert.throws(()=>call('date_','2026-09-31'));assert.throws(()=>call('date_',''));assert.equal(call('date_','2026-10-15'),'2026-10-15');});
+test('sheet calendar dates are serialized in the script timezone, not UTC',()=>{const instant='2026-09-22T20:30:00.000Z';assert.equal(run(`normalizeSheetDate_('Tuition','date',new Date('${instant}'))`),'2026-09-23');assert.equal(run(`normalizeSheetDate_('ActivityLogs','date',new Date('${instant}'))`),'2026-09-23 00:00:00');});
 test('strict money rejects negative, decimal, junk and unsafe integers',()=>{for(const a of ['-100','1.5','abc100','9007199254740992'])assert.throws(()=>call('amount_',a));assert.equal(call('amount_','۱٬۰۰۰'),1000);});
 test('cross-school tuition rejected',()=>assert.throws(()=>call('tuitionAdd_',{...base,student_id:2})));
 test('source and ledger created once; real source id preserved',()=>{const a=call('tuitionAdd_',base);assert.equal(a.id,1);assert.equal(store.Tuition.getLastRow(),2);assert.equal(store.Transactions.getLastRow(),2);});
