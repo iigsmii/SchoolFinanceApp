@@ -990,7 +990,11 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
   /** Queue a write and start sending it right away (the sync pass drains the queue first). */
   const queue = (action: string, payload: Record<string, any>, entity?: OutboxEntity) => {
     touchEntry(action, entity);
-    void enqueue({ action, payload, entity }).then(() => { void syncWithGoogleSheets(spreadsheetId, { pull: false }).catch(() => {}); });
+    return enqueue({ action, payload, entity }).then(() => {
+      // Delete approvals must pull the server snapshot immediately so a stale local
+      // delete_pending row cannot reappear after the optimistic removal.
+      void syncWithGoogleSheets(spreadsheetId, { pull: action !== 'transaction_delete_review' }).catch(() => {});
+    });
   };
 
   /** If the record has not been sent yet, fold the change into the queued add instead of queueing an edit. */
