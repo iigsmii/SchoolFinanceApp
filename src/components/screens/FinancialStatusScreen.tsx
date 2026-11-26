@@ -55,6 +55,7 @@ export const FinancialStatusScreen: React.FC = () => {
 
   const scopedTxs = useMemo(() => {
     return transactions.filter((t) => {
+      if (t.review_status === 'rejected') return false;
       if (selectedSchoolId !== 0 && t.school_id !== selectedSchoolId) return false;
       if (!isSenior && t.school_id !== currentUser?.school_id) return false;
       return true;
@@ -125,7 +126,7 @@ export const FinancialStatusScreen: React.FC = () => {
       let expenses = 0;
 
       transactions
-        .filter((t) => t.school_id === sc.id)
+        .filter((t) => t.school_id === sc.id && t.review_status !== 'rejected')
         .forEach((t) => {
           const amt = t.amount || 0;
           if (t.kind === 'شهریه_بدهی') assigned += t.debit || amt;

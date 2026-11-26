@@ -211,7 +211,7 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
     window.alert('ارسال مستقیم از پنل پیامک هنوز در این صفحه پیاده‌سازی نشده است؛ برای جلوگیری از ثبت ارسالِ غیرواقعی، پیامک ارسال نشد. فعلاً «از گوشی» را انتخاب کنید یا از صفحه «سامانه پیامک» استفاده کنید.');
   };
   const studentTxs = transactions
-    .filter((t) => t.student_id === student.id)
+    .filter((t) => t.student_id === student.id && t.review_status !== 'rejected')
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   const tuitionLedger = calculateStudentTuitionBalance(student.id, transactions);
   const totalDebit = tuitionLedger.totalDebit;

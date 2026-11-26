@@ -46,6 +46,7 @@ export const ReportScreen: React.FC = () => {
 
   const scopedTxs = useMemo(() => {
     return transactions.filter((t) => {
+      if (t.review_status === 'rejected') return false;
       if (!isSenior) return t.school_id === currentUser?.school_id;
       if (selectedSchool > 0) return t.school_id === selectedSchool;
       return true;
