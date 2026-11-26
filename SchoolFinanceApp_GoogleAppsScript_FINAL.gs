@@ -201,7 +201,7 @@ function doGet(e) {
     if(action==='my_claim') return json_(myClaim_(b));
     if(action==='app_version') return json_(appVersion_(b));
     if(action==='activity_logs')return json_(activityLogs_(b));
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.25.0',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.25.1',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
@@ -2097,7 +2097,7 @@ function syncPayload_(b){
     const bankData=(bank_(b)||{}).data||[];
     return {
       success:true,
-      backend_version:'2.25.0',
+      backend_version:'2.25.1',
       students:(students_(b)||{}).data||[],
       schools:(schools_(b)||{}).data||[],
       staff:(staff_(b)||{}).data||[],
@@ -2727,7 +2727,7 @@ function appVersion_(b){
     notes:settings['android_update_notes']||'',
     force_update:String(settings['android_force_update']||'false').toLowerCase()==='true',
     release_enabled:String(settings['android_release_enabled']||'false').toLowerCase()==='true',
-    backend_version:'2.25.0'
+    backend_version:'2.25.1'
   };
 }
 
@@ -2961,6 +2961,27 @@ function sheet_(name) {
 // A single sync response calls several readers that need the same sheets.
 // Reuse each sheet snapshot within that read-only sync to avoid repeated Spreadsheet
 // service round-trips. This cache is enabled only while building syncPayload_.
+/**
+ * Google Sheets returns date cells as JavaScript Date objects at midnight in the
+ * spreadsheet/script timezone. JSON.stringify converts those instants to UTC,
+ * which can shift a calendar date to the previous day (Iran: UTC+03:30).
+ * Keep date-only columns as local calendar strings before any JSON serialization.
+ */
+function normalizeSheetDate_(table, header, value) {
+  if (!(value instanceof Date) || !Number.isFinite(value.getTime())) return value;
+  const key = String(header || '').trim().toLowerCase();
+  const tz = Session.getScriptTimeZone() || 'Asia/Tehran';
+  const timestamp = (key === 'date' && table === 'ActivityLogs') ||
+    /(?:_at|_time|timestamp)$/.test(key);
+  if (timestamp) return Utilities.formatDate(value, tz, 'yyyy-MM-dd HH:mm:ss');
+  const dateOnly = new Set([
+    'date','due_date','issue_date','payment_date','birth_date',
+    'settlement_date','cleared_date','return_date','on_account_date','bank_date'
+  ]);
+  if (dateOnly.has(key)) return Utilities.formatDate(value, tz, 'yyyy-MM-dd');
+  return value;
+}
+
 var syncRowsCacheEnabled_ = false;
 var syncRowsCache_ = Object.create(null);
 function rows_(name,includeVoided) {
@@ -2976,7 +2997,7 @@ function rows_(name,includeVoided) {
   const values=sh.getRange(2,1,lastRow-1,lastCol).getValues();
   const result=values.map((v,i)=>{
     const obj={};
-    headers.forEach((h,j)=>{ if(h) obj[h]=v[j]; });
+    headers.forEach((h,j)=>{ if(h) obj[h]=normalizeSheetDate_(name,h,v[j]); });
     return {row:i+2,obj:obj};
   }).filter(x=>Object.keys(x.obj).some(k=>x.obj[k]!==''&&x.obj[k]!==undefined)&&(includeVoided||String(x.obj.voided)!=='true'));
   if(syncRowsCacheEnabled_) syncRowsCache_[cacheKey]=result;
