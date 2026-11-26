@@ -5,7 +5,9 @@ import { useApp } from '../../context/AppContext';
 import { normalizeSearchText, matchTokens } from '../../utils/studentSearch';
 import { Header } from '../Header';
 import { PersianSearchInput } from '../PersianSearchInput';
-import { formatRial, jalaliFromGregorian, latinDigits } from '../../utils/jalali';
+import { formatRial, jalaliFromGregorian, jalaliToIso, latinDigits, todayJalali } from '../../utils/jalali';
+import { JalaliDatePicker } from '../JalaliDatePicker';
+import { QuickAmountPad } from '../QuickAmountPad';
 import {
   Trash2,
   Search,
@@ -19,6 +21,9 @@ import {
   AlertTriangle,
   Download,
   Filter,
+  Pencil,
+  Lock,
+  Info,
 } from 'lucide-react';
 import { Transaction } from '../../types';
 import { AttachmentImg } from '../AttachmentImg';
@@ -30,7 +35,7 @@ export const TransactionsScreen: React.FC = () => {
     currentUser,
     deleteTransaction,
     updateTransaction,
-    resubmitTransaction,
+    cheques,
     approveTransaction,
     rejectTransaction,
     accentColor,
@@ -38,21 +43,24 @@ export const TransactionsScreen: React.FC = () => {
   } = useApp();
 
   const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
-  const initialTransactionHint = takeNavHint('transactions');
+  // The hint is consumed once; reading it again (re-render / initializer) would return null.
+  const [initialTransactionHint] = useState<string | null>(() => takeNavHint('transactions'));
   const initialTransactionId = initialTransactionHint?.startsWith('transaction:') ? Number(initialTransactionHint.slice('transaction:'.length)) : null;
   const [focusTransactionId, setFocusTransactionId] = useState<number | null>(initialTransactionId && Number.isFinite(initialTransactionId) ? initialTransactionId : null);
 
   const [filterKind, setFilterKind] = useState<'all' | 'debt' | 'payment' | 'expense'>('all');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected'>(() => (takeNavHint('transactions') === 'rejected' ? 'rejected' : 'all'));
+  const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'delete_pending'>(() => (initialTransactionHint === 'rejected' ? 'rejected' : 'all'));
   const [searchQuery, setSearchQuery] = useState('');
   const deferredQuery = useDeferredValue(searchQuery);
   const [filterAccount, setFilterAccount] = useState('all');
   const [transactionPage, setTransactionPage] = useState(0);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  useBackClose(!!editingTx, () => setEditingTx(null));
   const [editAmount, setEditAmount] = useState('');
-  const [editDate, setEditDate] = useState('');
+  const [editDateJalali, setEditDateJalali] = useState(todayJalali());
   const [editTracking, setEditTracking] = useState('');
   const [editDescription, setEditDescription] = useState('');
+  const [editError, setEditError] = useState('');
   const TRANSACTION_PAGE_SIZE = 50;
 
   useEffect(() => {
@@ -77,13 +85,15 @@ export const TransactionsScreen: React.FC = () => {
     let pending = 0;
     let approved = 0;
     let rejected = 0;
+    let deletePending = 0;
     scopedTxs.forEach((t) => {
       const st = t.review_status || 'approved';
       if (st === 'pending') pending++;
       else if (st === 'approved') approved++;
       else if (st === 'rejected') rejected++;
+      else if (st === 'delete_pending') deletePending++;
     });
-    return { pending, approved, rejected, total: scopedTxs.length };
+    return { pending, approved, rejected, deletePending, total: scopedTxs.length };
   }, [scopedTxs]);
 
   const linkedAccounts = useMemo(() => {
@@ -154,20 +164,42 @@ export const TransactionsScreen: React.FC = () => {
     }
   };
 
+  /** آیا این سند از این صفحه قابل ویرایش است؟ در غیر این صورت دلیلش را برمی‌گرداند. */
+  const editability = (t: Transaction): { ok: boolean; reason?: string } => {
+    if (!['شهریه', 'هزینه', 'دریافت متفرقه'].includes(String(t.kind))) return { ok: false };
+    const mine = isSenior || String(t.registered_by ?? '') === String(currentUser?.id ?? '');
+    if (!mine) return { ok: false };
+    if ((t.review_status || 'approved') === 'delete_pending') return { ok: false, reason: 'درخواست حذف این سند در انتظار تصمیم مدیر ارشد است.' };
+    if (t.reconciled) return { ok: false, reason: 'با صورتحساب بانک تطبیق شده؛ برای ویرایش ابتدا تطبیق بانکی را لغو کنید.' };
+    if (t.kind === 'شهریه' && cheques.some((c) => Number(c.tuition_id) === Number(t.id) && c.status !== 'returned' && c.status !== 'bounced'))
+      return { ok: false, reason: 'این پرداخت از روی چک ثبت شده؛ آن را از صفحه‌ی چک‌ها ویرایش کنید.' };
+    return { ok: true };
+  };
+
   const handleEditTx = (tx: Transaction) => {
     setEditingTx(tx);
-    setEditAmount(String(Number(tx.amount || 0)));
-    setEditDate(String(tx.date || '').slice(0, 10));
+    const amt = Number(tx.amount || 0);
+    setEditAmount(amt ? amt.toLocaleString('en-US') : '');
+    setEditDateJalali(tx.date ? jalaliFromGregorian(String(tx.date).slice(0, 10)) : todayJalali());
     setEditTracking(latinDigits(String(tx.tracking_code || '')));
     setEditDescription(String(tx.description || tx.comment || ''));
+    setEditError('');
   };
 
   const handleSaveTx = () => {
     if (!editingTx) return;
-    const amount = Number(editAmount.replace(/[^0-9]/g, ''));
-    if (!Number.isFinite(amount) || amount <= 0 || !editDate) { alert('مبلغ و تاریخ را صحیح وارد کنید.'); return; }
-    updateTransaction(editingTx.id, { amount, date: editDate, tracking_code: latinDigits(editTracking).replace(/\D/g, ''), description: editDescription, comment: editDescription });
-    if ((editingTx.review_status || 'approved') === 'rejected') resubmitTransaction(editingTx.id);
+    const amount = Number(latinDigits(editAmount).replace(/\D/g, '')) || 0;
+    const iso = jalaliToIso(editDateJalali);
+    if (amount <= 0) { setEditError('مبلغ را به ریال و درست وارد کنید.'); return; }
+    if (!iso) { setEditError('تاریخ را انتخاب کنید.'); return; }
+    // updateTransaction already sends the record back to the senior's approval queue (locally and on the server).
+    updateTransaction(editingTx.id, {
+      amount,
+      date: iso,
+      tracking_code: latinDigits(editTracking).trim(),
+      description: editDescription.trim(),
+      comment: editDescription.trim(),
+    });
     setEditingTx(null);
   };
 
@@ -200,9 +232,9 @@ export const TransactionsScreen: React.FC = () => {
               <Filter className="w-4 h-4 text-purple-700" />
               وضعیت تأیید مدیریت ارشد:
             </span>
-            {isSenior && counts.pending > 0 && (
+            {isSenior && counts.pending + counts.deletePending > 0 && (
               <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
-                {counts.pending} مورد در انتظار بررسی شما
+                {counts.pending + counts.deletePending} مورد در انتظار بررسی شما
               </span>
             )}
           </div>
@@ -213,6 +245,7 @@ export const TransactionsScreen: React.FC = () => {
               { id: 'pending', label: 'در انتظار تأیید', count: counts.pending, color: 'amber' },
               { id: 'approved', label: 'تأیید شده (سبز)', count: counts.approved, color: 'emerald' },
               { id: 'rejected', label: 'رد شده (قرمز)', count: counts.rejected, color: 'rose' },
+              ...(counts.deletePending > 0 ? [{ id: 'delete_pending', label: 'درخواست حذف', count: counts.deletePending, color: 'orange' }] : []),
             ].map((st) => {
               const active = filterStatus === st.id;
               return (
@@ -228,6 +261,8 @@ export const TransactionsScreen: React.FC = () => {
                         ? 'bg-rose-600 text-white shadow-xs'
                         : st.id === 'pending'
                         ? 'bg-amber-500 text-white shadow-xs'
+                        : st.id === 'delete_pending'
+                        ? 'bg-orange-600 text-white shadow-xs'
                         : 'bg-[#341648] text-white shadow-xs'
                       : 'bg-[#fcfaff] text-gray-700 border border-[#e5dde8] hover:bg-gray-50'
                   }`}
@@ -478,7 +513,24 @@ export const TransactionsScreen: React.FC = () => {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <button type="button" onClick={() => handleEditTx(t)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg" title="ویرایش تراکنش"><span className="text-xs font-bold">ویرایش</span></button>
+                      {(() => {
+                        const ed = editability(t);
+                        if (ed.ok) {
+                          return (
+                            <button type="button" onClick={() => handleEditTx(t)}
+                              className="px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-800 text-xs font-bold flex items-center gap-1 hover:bg-indigo-100 active:scale-95 transition-all"
+                              title="ویرایش و ارسال دوباره برای تأیید">
+                              <Pencil className="w-3.5 h-3.5" />
+                              <span>ویرایش</span>
+                            </button>
+                          );
+                        }
+                        return ed.reason ? (
+                          <button type="button" onClick={() => window.alert(ed.reason)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-50" title={ed.reason}>
+                            <Lock className="w-4 h-4" />
+                          </button>
+                        ) : null;
+                      })()}
                       {/* Senior Manager Quick Approval Buttons */}
                       {isSenior && (
                         <div className="flex items-center gap-1.5">
@@ -510,17 +562,21 @@ export const TransactionsScreen: React.FC = () => {
                         </div>
                       )}
 
-                      <button
-                        onClick={() => {
-                          if (window.confirm('آیا از حذف این تراکنش مطمئن هستید؟')) {
-                            deleteTransaction(t.id);
-                          }
-                        }}
-                        className="p-1.5 text-gray-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors"
-                        title="حذف تراکنش"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {status !== 'delete_pending' && (
+                        <button
+                          onClick={() => {
+                            const needsRequest = isApproved && !isSenior;
+                            const msg = needsRequest
+                              ? 'این سند تأیید شده است. درخواست حذف برای بررسی مدیر ارشد ارسال شود؟'
+                              : 'آیا از حذف این تراکنش مطمئن هستید؟';
+                            if (window.confirm(msg)) deleteTransaction(t.id);
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors"
+                          title={isApproved && !isSenior ? 'درخواست حذف' : 'حذف تراکنش'}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -537,19 +593,77 @@ export const TransactionsScreen: React.FC = () => {
         </div>
       </main>
 
-      {editingTx && (
-        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-5 space-y-3 shadow-xl">
-            <div className="flex items-center justify-between"><h3 className="font-bold text-[#341648]">ویرایش تراکنش #{editingTx.id}</h3><button type="button" onClick={() => setEditingTx(null)}><X className="w-5 h-5"/></button></div>
-            <label className="block text-xs font-bold">مبلغ (ریال)<input type="tel" inputMode="numeric" autoComplete="off" value={editAmount} onChange={e=>setEditAmount(e.target.value.replace(/\D/g,''))} className="mt-1 w-full border rounded-xl p-3 text-sm font-mono" dir="ltr"/></label>
-            <label className="block text-xs font-bold">تاریخ<input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)} className="mt-1 w-full border rounded-xl p-3 text-sm" dir="ltr"/></label>
-            <label className="block text-xs font-bold">شماره پیگیری<input type="tel" inputMode="numeric" pattern="[0-9]*" autoComplete="off" value={editTracking} onChange={e=>setEditTracking(latinDigits(e.target.value).replace(/\D/g,''))} className="mt-1 w-full border rounded-xl p-3 text-sm font-mono" dir="ltr"/></label>
-            <label className="block text-xs font-bold">شرح<textarea value={editDescription} onChange={e=>setEditDescription(e.target.value)} rows={3} className="mt-1 w-full border rounded-xl p-3 text-sm"/></label>
-            {editingTx.review_status === 'rejected' && <p className="text-xs text-amber-700">پس از ذخیره، تراکنش برای تأیید مجدد مدیر ارشد ارسال می‌شود.</p>}
-            <div className="flex gap-2"><button type="button" onClick={handleSaveTx} className="flex-1 rounded-xl bg-[#62205f] text-white font-bold p-3">ذخیره و ارسال</button><button type="button" onClick={()=>setEditingTx(null)} className="rounded-xl bg-gray-100 p-3">انصراف</button></div>
+      {editingTx && (() => {
+        const st = editingTx.review_status || 'approved';
+        const title = editingTx.kind === 'هزینه' ? 'ویرایش هزینه' : editingTx.kind === 'شهریه' ? 'ویرایش پرداخت شهریه' : 'ویرایش سند';
+        return (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setEditingTx(null)}>
+            <div className="bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl border border-[#e5dde8] max-h-[92vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-[#efe8f1]" style={{ background: `linear-gradient(135deg, ${accentColor}14, transparent)` }}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shrink-0" style={{ backgroundColor: accentColor }}>
+                    <Pencil className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-black text-[#341648] text-sm">{title}</h3>
+                    <p className="text-[11px] text-gray-500 truncate">
+                      سند #{editingTx.id}{editingTx.student_name ? ` · ${editingTx.student_name}` : editingTx.expense_category_name ? ` · ${editingTx.expense_category_name}` : ''}
+                    </p>
+                  </div>
+                </div>
+                <button type="button" aria-label="بستن" onClick={() => setEditingTx(null)} className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100"><X className="w-5 h-5" /></button>
+              </div>
+
+              <div className="overflow-y-auto px-5 py-4 space-y-4">
+                <div className={`rounded-2xl border p-3 text-[11px] leading-6 flex items-start gap-2 ${st === 'rejected' ? 'bg-rose-50 border-rose-200 text-rose-900' : st === 'approved' ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-sky-50 border-sky-200 text-sky-900'}`}>
+                  <Info className="w-4 h-4 shrink-0 mt-1" />
+                  <div>
+                    {st === 'rejected' && editingTx.rejection_reason && <div className="font-bold">دلیل رد: {editingTx.rejection_reason}</div>}
+                    {st === 'approved'
+                      ? 'این سند تأیید شده است. با ذخیره‌ی ویرایش، دوباره به صف تأیید مدیر ارشد می‌رود و تا تأیید مجدد، نهایی حساب نمی‌شود.'
+                      : st === 'rejected'
+                      ? 'پس از اصلاح و ذخیره، سند دوباره برای تأیید مدیر ارشد ارسال می‌شود.'
+                      : 'سند هنوز در انتظار تأیید است؛ تغییرات ذخیره می‌شود و بررسی ادامه دارد.'}
+                  </div>
+                </div>
+
+                {editError && <div className="rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold p-3">{editError}</div>}
+
+                <div>
+                  <label className="block text-xs font-bold text-[#341648] mb-1.5">مبلغ (ریال)</label>
+                  <input type="tel" inputMode="numeric" autoComplete="off" value={editAmount}
+                    onChange={(e) => { const raw = latinDigits(e.target.value).replace(/\D/g, ''); setEditAmount(raw ? Number(raw).toLocaleString('en-US') : ''); }}
+                    className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-base font-black font-mono text-left" dir="ltr" />
+                  <QuickAmountPad value={editAmount} onChange={setEditAmount} accentColor={accentColor} />
+                </div>
+
+                <JalaliDatePicker label="تاریخ" value={editDateJalali} onChange={setEditDateJalali} required />
+
+                <div>
+                  <label className="block text-xs font-bold text-[#341648] mb-1.5">شماره پیگیری</label>
+                  <input type="tel" inputMode="numeric" pattern="[0-9]*" autoComplete="off" value={editTracking}
+                    onChange={(e) => setEditTracking(latinDigits(e.target.value))}
+                    className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm font-mono text-left" dir="ltr" />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#341648] mb-1.5">شرح</label>
+                  <textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} rows={3}
+                    className="w-full px-4 py-3 bg-[#fdfcfd] rounded-xl border border-[#e5dde8] text-sm" />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 px-5 py-4 border-t border-[#efe8f1] bg-white">
+                <button type="button" onClick={handleSaveTx} className="flex-1 py-3 rounded-xl text-white font-bold text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2" style={{ backgroundColor: accentColor }}>
+                  <Check className="w-4 h-4" />
+                  <span>ذخیره و ارسال برای تأیید</span>
+                </button>
+                <button type="button" onClick={() => setEditingTx(null)} className="py-3 px-5 rounded-xl text-gray-700 bg-gray-100 hover:bg-gray-200 text-sm font-semibold">انصراف</button>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Reject Reason Modal for Senior */}
       {rejectModalTx && (

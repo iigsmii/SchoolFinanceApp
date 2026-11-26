@@ -455,6 +455,66 @@ export function generateParsianJournalEntries(
       });
     });
 
+  // عودت چک به صاحبش: چکی که قبلاً تأیید و در دفتر شهریه ثبت شده بود با عودت از دفتر برگشت می‌خورد.
+  // چک در فایل «چک‌های دریافتنی» (بدهکار اسناد دریافتنی / بستانکار حساب شهریه‌ی دانش‌آموز) آمده است،
+  // پس سند عودت دقیقاً عکس آن است و به تاریخ عودت صادر می‌شود تا اثر چک خنثی شود.
+  [...cheques]
+    .filter((c) => c.status === 'returned' && c.return_reversed && Number(c.amount) > 0)
+    .sort((a, b) => String(a.return_date || '').localeCompare(String(b.return_date || '')))
+    .forEach((c) => {
+      const school = schoolMap.get(c.school_id);
+      const schoolName = school?.name || c.school_name || 'مرکز آموزشی';
+      const student = c.student_id ? studentMap.get(c.student_id) : undefined;
+      const studentName = student?.name || c.student_name || c.issuer_name || 'دانش‌آموز';
+      const studentNid = student?.national_id || '';
+      const returnIso = c.return_date || c.due_date;
+      const jalaliDate = jalaliFromGregorian(returnIso);
+      const chequeRef = c.sayad_id || c.cheque_number || String(c.id);
+      const amount = Number(c.amount);
+      const common = {
+        doc_number: docNumberCounter,
+        date_jalali: jalaliDate,
+        tracking_code: c.sayad_id || c.cheque_number,
+        school_id: c.school_id,
+        school_name: schoolName,
+        source_type: 'cheque' as const,
+        source_id: Number(c.id) || 0,
+      };
+      const reason = c.return_reason ? ` (${c.return_reason})` : '';
+      const rows: JournalEntryRow[] = [
+        {
+          ...common, row_number: 1,
+          kol_code: codingConfig.kol_receivable, kol_name: 'گردش حساب شهریه دانش آموزان',
+          moeen_code: String(getSchoolMoeen(c.school_id)), moeen_name: `شهریه دانش‌آموزان ${schoolName}`,
+          tafsili_code: studentNid || String(student?.id || c.student_id || '0'), tafsili_name: studentName,
+          description: `برگشت چک ${chequeRef} به صاحبش - ${studentName}${reason}`,
+          debit: amount, credit: 0,
+        },
+        {
+          ...common, row_number: 2,
+          kol_code: codingConfig.kol_cheques, kol_name: 'اسناد دریافتنی',
+          moeen_code: '1', moeen_name: `اسناد دریافتنی چک‌های شهریه ${schoolName}`,
+          tafsili_code: c.sayad_id || c.cheque_number || String(c.id), tafsili_name: `چک ${c.bank_name || ''} ${chequeRef}`.trim(),
+          description: `عودت چک ${chequeRef} به صاحبش${reason}`,
+          debit: 0, credit: amount,
+        },
+      ];
+      entries.push({
+        doc_number: docNumberCounter++,
+        date_jalali: jalaliDate,
+        date_iso: returnIso,
+        school_id: c.school_id,
+        school_name: schoolName,
+        source_type: 'cheque',
+        source_id: Number(c.id) || 0,
+        description: `عودت چک ${studentName} (${amount.toLocaleString('fa-IR')} ریال) به صاحبش`,
+        rows,
+        total_debit: amount,
+        total_credit: amount,
+        is_balanced: true,
+      });
+    });
+
   return entries;
 }
 

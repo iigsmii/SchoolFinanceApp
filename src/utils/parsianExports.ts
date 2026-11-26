@@ -164,10 +164,18 @@ export function buildReceivableChequesFile(
   const studentMap = new Map(students.map((s) => [s.id, s]));
   let skippedGuarantee = 0;
   let noStudent = 0;
+  let returnedNeverBooked = 0;
+  let returnedBooked = 0;
   let rowNo = 1;
 
   cheques.forEach((c) => {
     if (c.status === 'rejected') return;
+    if (c.status === 'returned') {
+      // چک عودتی که هرگز در دفتر نشسته بود (در انتظار/ضمانتی/…) اصلاً ثبت حسابداری ندارد.
+      // اگر ثبت شده بود، در فایل می‌ماند و سند عودت (در «اسناد حسابداری») آن را خنثی می‌کند.
+      if (!c.return_reversed) { returnedNeverBooked += 1; return; }
+      returnedBooked += 1;
+    }
     if (filters.schoolId > 0 && c.school_id !== filters.schoolId) return;
     if (c.cheque_type === 'guarantee' || c.cheque_purpose === 'guarantee' || c.cheque_purpose === 'staff_guarantee') {
       skippedGuarantee += 1;
@@ -204,6 +212,8 @@ export function buildReceivableChequesFile(
 
   if (skippedGuarantee) notes.push(`${skippedGuarantee} چک ضمانتی در این فایل نیامد (اسناد دریافتنی عادی نیستند).`);
   if (noStudent) notes.push(`${noStudent} چک دانش‌آموز/کد ملی معتبر نداشت؛ تفصیلی ۰ گذاشته شد.`);
+  if (returnedNeverBooked) notes.push(`${returnedNeverBooked} چک عودت‌شده که هرگز در دفتر ثبت نشده بود در این فایل نیامد.`);
+  if (returnedBooked) notes.push(`${returnedBooked} چک عودت‌شده در این فایل هست؛ سند برگشت آن به تاریخ عودت در «اسناد حسابداری» (نوع رویداد: چک) صادر می‌شود.`);
   notes.push('صاحب چک = حساب شهریه دانش‌آموز (کل ۶۷، معین مدرسه، تفصیلی کد ملی)؛ طرف بدهکار = اسناد دریافتنی.');
 
   return { key: 'receivable_cheques', baseName: 'Parsian_Receivable_Cheques', headers: RECEIVABLE_CHEQUE_HEADERS, rows, notes };

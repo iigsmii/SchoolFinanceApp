@@ -984,9 +984,10 @@ export const loadDataFromAppsScript = async (
     if (group) ledgerReconciled.set(`${group}:${l.source_id}`, truthy(l.reconciled));
     if (group) ledgerToAppId.set(String(l.id), group === 'e' ? 100000 + Number(l.source_id) : Number(l.source_id));
   });
-  const reviewOf = (row: any, forceApproved: boolean): 'approved' | 'rejected' | 'pending' => {
+  const reviewOf = (row: any, forceApproved: boolean): 'approved' | 'rejected' | 'pending' | 'delete_pending' => {
     if (forceApproved) return 'approved';
     const rs = String(row.review_status || row.status || '').toLowerCase();
+    if (rs === 'delete_pending') return 'delete_pending';
     if (rs === 'rejected') return 'rejected';
     if (rs === 'approved' || truthy(row.approved)) return 'approved';
     return 'pending';
@@ -1132,7 +1133,11 @@ export const loadDataFromAppsScript = async (
       in_favor_confirmed: truthy(c.in_favor_confirmed),
       received_confirmed: truthy(c.received_confirmed),
       attachment_url: c.image_url || c.attachment_url || undefined,
-      collection_status: (['on_account', 'cleared', 'not_cleared'].includes(String(c.collection_status)) ? String(c.collection_status) : '') as Cheque['collection_status'],
+      collection_status: (['on_account', 'cleared', 'not_cleared', 'returned'].includes(String(c.collection_status)) ? String(c.collection_status) : '') as Cheque['collection_status'],
+      return_date: dateFromExcelSerial(c.return_date) || undefined,
+      return_reason: c.return_reason ? String(c.return_reason) : undefined,
+      return_reversed: truthy(c.return_reversed),
+      created_by: c.created_by === undefined || c.created_by === '' ? undefined : String(c.created_by),
       on_account_date: dateFromExcelSerial(c.on_account_date) || undefined,
       deposit_bank_account_id: Number(c.deposit_bank_account_id) || undefined,
       cleared_date: dateFromExcelSerial(c.cleared_date) || undefined,

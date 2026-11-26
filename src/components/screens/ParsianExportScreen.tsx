@@ -94,7 +94,7 @@ export const ParsianExportScreen: React.FC = () => {
   const [selectedSchoolId, setSelectedSchoolId] = useState<number>(
     isSenior ? 0 : currentUser?.school_id || 1
   );
-  const [filterSource, setFilterSource] = useState<'all' | 'tuition_debt' | 'tuition_payment' | 'expense' | 'discount' | 'claim_settlement'>('all');
+  const [filterSource, setFilterSource] = useState<'all' | 'tuition_debt' | 'tuition_payment' | 'expense' | 'discount' | 'claim_settlement' | 'cheque'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const deferredQuery = useDeferredValue(searchQuery);
   const [startDate, setStartDate] = useState('');
@@ -559,6 +559,7 @@ export const ParsianExportScreen: React.FC = () => {
                     <option value="expense">فقط هزینه‌های جاری و تنخواه</option>
                     <option value="discount">فقط تخفیفات و بورسیه</option>
                     <option value="claim_settlement">فقط تسویه طلب مدیران</option>
+                    <option value="cheque">فقط عودت چک‌ها به صاحبشان</option>
                   </select>
                 </div>
 
