@@ -421,6 +421,12 @@ export const buildReviewPayload = (
     rejection_reason: rejectionReason || '',
   };
 };
+/** Which sheet row a transaction id points to, in the form the server's delete-request/review actions expect. */
+export const txRowRef = (id: number): Record<string, any> => {
+  if (id >= 200000000 && id < 900000000) return { id: id - 200000000 }; // ledger-only document
+  const isExpense = id >= 100000 && id < 200000000;
+  return { source_type: isExpense ? 'expense' : 'tuition', source_id: isExpense ? id - 100000 : id };
+};
 export const apiReviewTransaction = async (id: number, status: 'approved' | 'rejected' | 'pending', rejectionReason?: string) =>
   postToAppsScript(buildReviewPayload(id, status, rejectionReason));
 

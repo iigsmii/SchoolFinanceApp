@@ -59,6 +59,7 @@ import {
   buildChequePayload,
   buildPettyIncomePayload,
   buildReviewPayload,
+  txRowRef,
   buildManagerPayload,
   buildSchoolPayload,
   buildStaffPayload,
@@ -1703,7 +1704,7 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
     if ((tx.review_status || 'approved') === 'approved' && !isSeniorUser) {
       setTransactions((prev) => prev.map((t) => t.id === id ? { ...t, review_status: 'delete_pending' } : t));
       logActivity('درخواست حذف تراکنش', `درخواست حذف تراکنش تأییدشده شناسه ${id} برای بررسی مدیر ارشد`, 'transaction', id);
-      queue('transaction_delete_request', { id: txServerId(id) }, { type: 'tx:review', id });
+      queue('transaction_delete_request', txRowRef(id), { type: 'tx:review', id });
       return;
     }
     setTransactions((prev) => prev.filter((t) => t.id !== id));
@@ -1767,7 +1768,7 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
     const tx = transactions.find((t) => t.id === id);
     if (tx?.review_status === 'delete_pending') {
       setTransactions((prev) => prev.filter((t) => t.id !== id));
-      queue('transaction_delete_review', { id: txServerId(id), status: 'approved' }, { type: 'tx:edit', id });
+      queue('transaction_delete_review', { ...txRowRef(id), status: 'approved' }, { type: 'tx:edit', id });
       playSuccessSound();
       logActivity('تأیید حذف تراکنش', `درخواست حذف تراکنش شناسه ${id} توسط مدیر ارشد تأیید شد`, 'transaction', id);
       return true;
@@ -1785,7 +1786,7 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
     const tx = transactions.find((t) => t.id === id);
     if (tx?.review_status === 'delete_pending') {
       setTransactions((prev) => prev.map((t) => t.id === id ? { ...t, review_status: 'approved' } : t));
-      queue('transaction_delete_review', { id: txServerId(id), status: 'rejected', rejection_reason: reason || 'درخواست حذف رد شد' }, { type: 'tx:review', id });
+      queue('transaction_delete_review', { ...txRowRef(id), status: 'rejected', rejection_reason: reason || 'درخواست حذف رد شد' }, { type: 'tx:review', id });
       logActivity('رد درخواست حذف تراکنش', `درخواست حذف تراکنش شناسه ${id} رد شد`, 'transaction', id);
       playAlertSound();
       return true;

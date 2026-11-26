@@ -1344,9 +1344,21 @@ function transactionUpdate_(b) {
   return {success:true,review_status:'pending'};
 }
 
+/** ردیف دفتر (Transactions) یک سند: با source_type+source_id (شناسه‌ی ردیف شهریه/هزینه) یا با شناسه‌ی خود ردیف دفتر. */
+function txLedgerHit_(b,includeVoided){
+  const all=rows_('Transactions',!!includeVoided);
+  const st=String(b.source_type||'').toLowerCase();
+  if(st && b.source_id!==undefined && String(b.source_id)!==''){
+    const kinds=(st==='expense'||st==='expenses')?['expense']:['payment','debt'];
+    const m=all.filter(x=>kinds.indexOf(String(x.obj.kind))>=0&&String(x.obj.source_id)===String(b.source_id));
+    return m.find(x=>String(x.obj.voided)!=='true')||m[0]||null;
+  }
+  return all.find(x=>String(x.obj.id)===String(b.id))||null;
+}
+
 function transactionDeleteRequest_(b){
   const u=auth_(b);
-  const hit=findRow_('Transactions',b.id); if(!hit) throw new Error('تراکنش یافت نشد.');
+  const hit=txLedgerHit_(b,false); if(!hit) throw new Error('تراکنش یافت نشد.');
   const t=hit.obj;
   if(isSenior_(u)) throw new Error('مدیر ارشد می‌تواند حذف را مستقیماً انجام دهد.');
   if(String(t.created_by)!==String(u.id)||!userCanAccessSchool_(u,t.school_id)) throw new Error('فقط ثبت‌کننده مجاز به درخواست حذف است.');
@@ -1365,8 +1377,7 @@ function transactionDeleteReview_(b){
   if(status!=='approved'&&status!=='rejected') throw new Error('وضعیت بررسی حذف نامعتبر است.');
   // Include voided rows so a retry after a successful server write is idempotent.
   // Otherwise a lost response can make the client retry and keep showing a stale request.
-  const allTransactions=rows_('Transactions',true);
-  const hit=allTransactions.find(x=>String(x.obj.id)===String(b.id));
+  const hit=txLedgerHit_(b,true);
   if(!hit) throw new Error('تراکنش یافت نشد.');
   const t=hit.obj;
   if(String(t.voided)==='true') return {success:true,deleted:true,already_deleted:true};
@@ -1381,7 +1392,8 @@ function transactionDeleteReview_(b){
   assertEditableForEdit_('Transactions',t);
   if(String(t.kind)==='payment'&&sourceId) assertNotChequePayment_(sourceId);
   if(table&&sourceId) softDeleteBySource_(table,sourceId,true);
-  rows_('Transactions').forEach(x=>{if(String(x.obj.id)===String(t.id)||String(x.obj.source_id)===sourceId&&sourceId)voidRecord_('Transactions',x.row);});
+  const sameKinds=kind==='expense'?['expense']:['payment','debt'];
+  rows_('Transactions').forEach(x=>{if(String(x.obj.id)===String(t.id)||(sourceId&&String(x.obj.source_id)===sourceId&&sameKinds.indexOf(String(x.obj.kind))>=0))voidRecord_('Transactions',x.row);});
   return {success:true,deleted:true};
 }
 
