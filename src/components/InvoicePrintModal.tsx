@@ -5,6 +5,7 @@ import { Share } from '@capacitor/share';
 import appLogo from '../assets/images/quran_school_finance_logo_1792312844966.jpg';
 import { Student, Transaction } from '../types';
 import { jalaliFromGregorian, todayJalali, formatRial } from '../utils/jalali';
+import { calculateStudentTuitionBalance } from '../utils/debt';
 import { Printer, Download, X, Sparkles, PenTool, MessageSquare, LoaderCircle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { SignatureUploader } from './SignatureUploader';
@@ -212,8 +213,9 @@ export const InvoicePrintModal: React.FC<InvoicePrintModalProps> = ({
   const studentTxs = transactions
     .filter((t) => t.student_id === student.id)
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  const totalDebit = studentTxs.reduce((sum, t) => sum + (t.debit || 0), 0);
-  const totalCredit = studentTxs.reduce((sum, t) => sum + (t.credit || 0), 0);
+  const tuitionLedger = calculateStudentTuitionBalance(student.id, transactions);
+  const totalDebit = tuitionLedger.totalDebit;
+  const totalCredit = tuitionLedger.totalCredit;
 
   return (
     <div className="invoice-print-root fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
