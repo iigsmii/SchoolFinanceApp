@@ -38,7 +38,7 @@ import {
 import { buildParsianCode, setSchoolRegistry } from '../utils/parsian';
 import { isUncollectedChequeTx } from '../utils/cheques';
 import { jalaliFromGregorian, todayGregorian, todayJalali, latinDigits } from '../utils/jalali';
-import { calculateStudentOverdue, DEFAULT_SMS_TEMPLATE, formatSmsTemplate } from '../utils/debt';
+import { calculateStudentOverdue, calculateStudentTuitionBalance, DEFAULT_SMS_TEMPLATE, formatSmsTemplate } from '../utils/debt';
 import {
   DEFAULT_SPREADSHEET_ID,
   DEFAULT_WEBAPP_URL,
@@ -2400,21 +2400,8 @@ const AppProviderInner: React.FC<{ children: React.ReactNode }> = ({ children })
     logActivity('حذف بازخورد', `حذف بازخورد ${id}`, 'feedback', id);
   };
 
-  const getStudentBalance = (studentId: number) => {
-    const studentTxs = transactions.filter((t) => t.student_id === studentId);
-    let totalDebit = 0;
-    let totalCredit = 0;
-    studentTxs.forEach((t) => {
-      totalDebit += t.debit || 0;
-      totalCredit += t.credit || 0;
-    });
-    const balance = totalDebit - totalCredit;
-    return {
-      balance,
-      debt: Math.max(0, balance),
-      credit: Math.max(0, -balance),
-    };
-  };
+  const getStudentBalance = (studentId: number) =>
+    calculateStudentTuitionBalance(studentId, transactions);
 
   const sendSmsReminder = (studentId: number, customMessage?: string) => {
     const student = students.find((s) => s.id === studentId);
