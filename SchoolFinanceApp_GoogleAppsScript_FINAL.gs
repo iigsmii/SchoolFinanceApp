@@ -201,7 +201,7 @@ function doGet(e) {
     if(action==='my_claim') return json_(myClaim_(b));
     if(action==='app_version') return json_(appVersion_(b));
     if(action==='activity_logs')return json_(activityLogs_(b));
-    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.25.1',time:now_()});
+    return json_({success:true,service:'SchoolFinanceApp Google Backend',version:'2.25.2',time:now_()});
   } catch(err) { return json_({success:false,error:String(err.message||err)}); }
 }
 
@@ -2097,7 +2097,7 @@ function syncPayload_(b){
     const bankData=(bank_(b)||{}).data||[];
     return {
       success:true,
-      backend_version:'2.25.1',
+      backend_version:'2.25.2',
       students:(students_(b)||{}).data||[],
       schools:(schools_(b)||{}).data||[],
       staff:(staff_(b)||{}).data||[],
@@ -2727,7 +2727,7 @@ function appVersion_(b){
     notes:settings['android_update_notes']||'',
     force_update:String(settings['android_force_update']||'false').toLowerCase()==='true',
     release_enabled:String(settings['android_release_enabled']||'false').toLowerCase()==='true',
-    backend_version:'2.25.1'
+    backend_version:'2.25.2'
   };
 }
 
@@ -2970,7 +2970,10 @@ function sheet_(name) {
 function normalizeSheetDate_(table, header, value) {
   if (!(value instanceof Date) || !Number.isFinite(value.getTime())) return value;
   const key = String(header || '').trim().toLowerCase();
-  const tz = Session.getScriptTimeZone() || 'Asia/Tehran';
+  const ss = getActiveSs_();
+  const tz = ss && typeof ss.getSpreadsheetTimeZone === 'function'
+    ? ss.getSpreadsheetTimeZone()
+    : (Session.getScriptTimeZone() || 'Asia/Tehran');
   const timestamp = (key === 'date' && table === 'ActivityLogs') ||
     /(?:_at|_time|timestamp)$/.test(key);
   if (timestamp) return Utilities.formatDate(value, tz, 'yyyy-MM-dd HH:mm:ss');
