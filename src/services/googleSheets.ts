@@ -131,7 +131,7 @@ const READ_ONLY_ACTIONS = ['app_version', 'bank_rules_get', 'my_petty_cash_cards
 export const postToAppsScript = async (
   payload: Record<string, any>,
   webAppUrl: string = DEFAULT_WEBAPP_URL
-): Promise<{ success: boolean; network?: boolean; kind?: NetErrorKind; needs_review?: boolean; review_status?: string; error?: string; data?: any; id?: number; ids?: any[]; attachment_url?: string; url?: string; count?: number; skipped?: number; message?: string; matched?: number; unmatched?: number; rules?: any; cards?: any[]; configured?: boolean; messages?: number; rows?: number; no_manager?: number; unassigned?: number; cleared?: number; by_terminal?: Record<string, number>; total?: number }> => {
+): Promise<{ success: boolean; network?: boolean; kind?: NetErrorKind; needs_review?: boolean; review_status?: string; error?: string; data?: any; id?: number; ids?: any[]; attachment_url?: string; url?: string; count?: number; skipped?: number; message?: string; matched?: number; unmatched?: number; rules?: any; cards?: any[]; configured?: boolean; messages?: number; rows?: number; no_manager?: number; unassigned?: number; cleared?: number; deleted?: number; dry_run?: boolean; by_terminal?: Record<string, number>; total?: number }> => {
   try {
     const url = webAppUrl.trim();
     if (!url) return { success: false, error: 'آدرس وب‌اپ تعریف نشده است.' };
