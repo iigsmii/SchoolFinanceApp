@@ -53,7 +53,19 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { postToAppsScript } from '../../services/googleSheets';
-import { BankTransaction, Transaction, Student } from '../../types';
+import { BankAccount, BankTransaction, Transaction, Student } from '../../types';
+import {
+  autoMatchBankRows,
+  buildAccountReport,
+  buildTerminalRegistry,
+  classifyStream,
+  normalizeCard,
+  normalizeTerminal,
+  ownerOfRow,
+  rowBelongsToAccount,
+} from '../../utils/bankReconcile';
+import { parseBankExcel, type BankExcelKind } from '../../utils/bankExcel';
+import { BankTodoPanel } from '../bank/BankTodoPanel';
 import { openAttachment } from '../../services/attachments';
 import { isUncollectedChequeTx } from '../../utils/cheques';
 import { setNavHint } from '../../utils/alerts';
@@ -81,21 +93,11 @@ const normalizeDigits = (value: string) =>
   value.replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
        .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
 
-// Standard 10 Bank Saderat Petty Cash Cards
-export const DEFAULT_SADERAT_CARDS = [
-  { card: '6037691263260770', managerName: 'محمدرضا آقاسی', schoolId: 1, accountSuffix: '002', bankAccountId: 0, active: true },
-  { card: '6037691263260788', managerName: 'محمد عربی', schoolId: 2, accountSuffix: '002', bankAccountId: 0, active: true },
-  { card: '6037691263260796', managerName: 'آرزو میرزایی', schoolId: 3, accountSuffix: '002', bankAccountId: 0, active: true },
-  { card: '6037691263260804', managerName: 'فریبا سبزواری', schoolId: 4, accountSuffix: '002', bankAccountId: 0, active: true },
-  { card: '6037691263357071', managerName: 'علی هاشمیان (تنخواه و حسابداری مرکزی)', schoolId: 1, accountSuffix: '002', bankAccountId: 0, active: true },
-  { card: '6037691990633877', managerName: 'کارت متصل به حساب ۰۰۲', schoolId: 0, accountSuffix: '002', bankAccountId: 0, active: true },
-  { card: '6037691261822589', managerName: 'مجید آقابزرگی (تنخواه مرکزی)', schoolId: 1, accountSuffix: '001', bankAccountId: 0, active: true },
-  { card: '6037691263357089', managerName: 'سید محمدرضا گلزاری', schoolId: 1, accountSuffix: '001', bankAccountId: 0, active: true },
-  { card: '6037691263357097', managerName: 'مجید آقابزرگی', schoolId: 1, accountSuffix: '001', bankAccountId: 0, active: true },
-  { card: '6037697090013308', managerName: 'کارت متصل به حساب ۰۰۱', schoolId: 0, accountSuffix: '001', bankAccountId: 0, active: true },
-];
+// Petty-cash cards must also be registered explicitly (shared list in Google Sheets). The old built-in sample list
+// assigned cards to school 1 and wrongly tagged bank rows, so nothing is pre-filled any more.
+export const DEFAULT_SADERAT_CARDS: Array<{ card: string; managerName: string; managerId?: string | number; schoolId: number; accountSuffix: string; bankAccountId: number; active: boolean }> = [];
 
-export const BankScreen: React.FC = () => {
+export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => void }> = ({ account, onBack }) => {
   const {
     transactions,
     cheques,
@@ -129,17 +131,15 @@ export const BankScreen: React.FC = () => {
   }, [isSenior]);
 
   // Navigation Tabs: Unmatched (Inbox) | Daily Feed (روز به روز) | Bank Fees | Matched | Statement | Settings
-  const [activeTab, setActiveTab] = useState<'unmatched' | 'daily' | 'fees' | 'matched' | 'statement' | 'terminals_cards'>('unmatched');
+  const [activeTab, setActiveTab] = useState<'todo' | 'unmatched' | 'daily' | 'fees' | 'matched' | 'statement' | 'terminals_cards'>('todo');
 
   // Filter States
   const [selectedSchoolId, setSelectedSchoolId] = useState<number>(
     isSenior ? 0 : currentUser?.school_id || 0
   );
-  const [selectedBankAccountId, setSelectedBankAccountId] = useState<number>(() => bankAccounts[0]?.id || -1);
-  const selectedBankAccount = selectedBankAccountId > 0 ? bankAccounts.find((account) => Number(account.id) === Number(selectedBankAccountId)) || null : null;
-  useEffect(() => {
-    if (selectedBankAccountId === -1 && bankAccounts.length) setSelectedBankAccountId(bankAccounts[0].id);
-  }, [bankAccounts, selectedBankAccountId]);
+  // The page always works on exactly one bank account (chosen on the account list).
+  const selectedBankAccount: BankAccount | null = account;
+  const selectedBankAccountId = account.id;
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const [streamFilter, setStreamFilter] = useState<'all' | 'pos' | 'petty' | 'fees' | 'other'>('all');
@@ -159,7 +159,7 @@ export const BankScreen: React.FC = () => {
   const [resolveRow, setResolveRow] = useState<BankTransaction | null>(null);
   useBackClose(!!resolveRow, () => setResolveRow(null));
   const [resolveMode, setResolveMode] = useState<'tuition' | 'expense' | 'link'>('tuition');
-  const [resolveSchoolId, setResolveSchoolId] = useState<number>(1);
+  const [resolveSchoolId, setResolveSchoolId] = useState<number>(0);
   const [resolveStudentSearch, setResolveStudentSearch] = useState('');
   const [resolveSelectedStudent, setResolveSelectedStudent] = useState<Student | null>(null);
   const [resolveCategoryId, setResolveCategoryId] = useState<string>(categories[0]?.id || '1');
@@ -261,20 +261,6 @@ export const BankScreen: React.FC = () => {
     }).catch(() => setBannerNotice({ text: 'تغییرات فقط روی این دستگاه ذخیره شد؛ اتصال به Google Sheets برقرار نشد.', type: 'error' }));
   };
 
-  // Helper normalizers
-  const normalizeCard = (val: unknown) =>
-    String(val || '')
-      .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
-      .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧۸۹'.indexOf(d)))
-      .replace(/\D/g, '');
-
-  const normalizeTerminal = (val: unknown) =>
-    String(val || '')
-      .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
-      .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧۸۹'.indexOf(d)))
-      .replace(/\D/g, '')
-      .replace(/^0+/, '');
-
   // Group multiple bank cards under the same manager while retaining each card as an individual match key.
   const groupedPettyCashCards = useMemo(() => {
     const groups = new Map<string, { managerName: string; cards: typeof pettyCashCards }>();
@@ -286,101 +272,54 @@ export const BankScreen: React.FC = () => {
     return Array.from(groups.values());
   }, [pettyCashCards]);
 
-  // Merge POS terminals entered on each school's record into the reconciliation lookup.
-  // School configuration is authoritative for the school assignment of a terminal.
+  // Terminal list for the settings tab: rules + the POS number typed on each school's record.
+  // One terminal may be shared by several schools (morning/evening shifts), so schools are merged per terminal.
   const effectivePosTerminals = useMemo(() => {
-    const merged = posTerminals.map((p) => ({ ...p }));
+    const byTerminal = new Map<string, { terminal: string; schoolIds: number[] }>();
+    const add = (terminal: unknown, schoolId: number) => {
+      const t = normalizeTerminal(terminal);
+      if (!t) return;
+      const cur = byTerminal.get(t) || { terminal: t, schoolIds: [] };
+      if (schoolId && !cur.schoolIds.includes(schoolId)) cur.schoolIds.push(schoolId);
+      byTerminal.set(t, cur);
+    };
+    posTerminals.forEach((p) => add(p.terminal, Number(p.schoolId || 0)));
     schools.forEach((school) => {
-      const terminals = String(school.pos_terminal_number || '')
+      String(school.pos_terminal_number || '')
         .split(/[,،;؛\n\s]+/)
-        .map((value) => normalizeTerminal(value))
-        .filter(Boolean);
-      terminals.forEach((terminal) => {
-        const existingIndex = merged.findIndex((p) => normalizeTerminal(p.terminal) === terminal);
-        const mapped = {
-          terminal,
-          schoolId: Number(school.id),
-          schoolName: school.name || '',
-        };
-        if (existingIndex >= 0) merged[existingIndex] = { ...merged[existingIndex], ...mapped };
-        else merged.push(mapped);
-      });
+        .forEach((value) => add(value, Number(school.id)));
     });
-    return merged;
+    return Array.from(byTerminal.values()).map((x) => ({
+      terminal: x.terminal,
+      schoolId: x.schoolIds[0] || 0,
+      schoolIds: x.schoolIds,
+      schoolName: x.schoolIds.map((id) => schools.find((sc) => sc.id === id)?.name).filter(Boolean).join(' / '),
+    }));
   }, [posTerminals, schools]);
 
-  // Detect which Stream a bank transaction belongs to:
-  // 1. pos: POS Terminal swipe / Shaparak settlement
-  // 2. petty: Manager's Petty Cash Card swipe / transfer
-  // 3. fee: Bank service fee (کارمزد، پایا، ساتنا، آبونمان، پیامک)
-  // 4. other: Direct transfer, cash, etc.
-  const getTransactionStream = (row: BankTransaction): 'pos' | 'petty' | 'fees' | 'other' => {
-    const desc = String(row.description || '').toLowerCase();
-    const assignedPurpose = String(row.assigned_purpose || '');
-    const explicitFeeAmount = Number(row.fee_amount || 0) > 0;
-    // Transfer descriptions can mention that a fee was charged without the
-    // whole transfer amount being a fee (e.g. "انتقال از کارت + کارمزد").
-    // Never classify such a row as a fee unless the spreadsheet provides a
-    // separate, positive fee_amount column.
-    const isTransferDescription = /(انتقال|کارت\s*به\s*کارت|واریز\s*به|برداشت\s*از|پایا|ساتنا|انتقال\s*از\s*کارت)/i.test(desc);
-    const isStandaloneFeeDescription = /(کارمزد|fee|commission|آبونمان|پیامک|service charge)/i.test(desc) &&
-      !isTransferDescription;
-    const isFee = explicitFeeAmount || isStandaloneFeeDescription ||
-      (assignedPurpose.includes('کارمزد') && !isTransferDescription);
-    if (isFee && row.direction !== 'pos_sale') return 'fees';
+  // Terminals the user explicitly registered (school record, rules). Nothing is guessed; a terminal may belong to several schools.
+  const terminalRegistry = useMemo(
+    () => buildTerminalRegistry(posTerminals, schools),
+    [posTerminals, schools],
+  );
 
-    const term = normalizeTerminal(row.terminal_number);
-    if (row.direction === 'pos_sale' || (term && effectivePosTerminals.some((p) => normalizeTerminal(p.terminal) === term))) {
-      return 'pos';
-    }
+  // Stream of a bank row: pos / petty / fees / other
+  const getTransactionStream = (row: BankTransaction) => classifyStream(row, terminalRegistry, pettyCashCards, selectedBankAccount);
 
-    const cardNum = row.direction === 'withdrawal' ? normalizeCard(row.source_card_number || row.card_number) : '';
-    const matchedPettyCard = cardNum ? pettyCashCards.find((c) => normalizeCard(c.card) === cardNum && (!Number(c.bankAccountId) || !selectedBankAccount || Number(c.bankAccountId) === Number(selectedBankAccount.id))) : undefined;
-    if (matchedPettyCard) return 'petty';
-
-    return 'other';
-  };
-
-  // Pre-calculated stream & school metadata for every transaction
+  // Stream and responsible school/manager for every bank row. A row without a registered terminal or card
+  // stays unassigned (school 0) — there is no default school.
   const enrichedBankRows = useMemo(() => {
     return bankTransactions.map((row) => {
-      const stream = getTransactionStream(row);
-      let matchedSchoolId = row.school_id || 0;
-      let matchedSchoolName = row.school_name || '';
-      let matchedManagerName = '';
-
-      // Infer school from POS terminal
-      const term = normalizeTerminal(row.terminal_number);
-      if (term) {
-        const foundPos = effectivePosTerminals.find((p) => normalizeTerminal(p.terminal) === term);
-        if (foundPos && foundPos.schoolId) {
-          matchedSchoolId = foundPos.schoolId;
-          matchedSchoolName = foundPos.schoolName || schools.find((s) => s.id === foundPos.schoolId)?.name || '';
-        }
-      }
-
-      // Infer manager & school from petty card
-      const cardNum = row.direction === 'withdrawal' ? normalizeCard(row.source_card_number || row.card_number) : '';
-      if (cardNum) {
-        const foundCard = pettyCashCards.find((c) => normalizeCard(c.card) === cardNum && (!Number(c.bankAccountId) || !selectedBankAccount || Number(c.bankAccountId) === Number(selectedBankAccount.id)));
-        if (foundCard) {
-          matchedManagerName = foundCard.managerName;
-          if (foundCard.schoolId && !matchedSchoolId) {
-            matchedSchoolId = foundCard.schoolId;
-            matchedSchoolName = schools.find((s) => s.id === foundCard.schoolId)?.name || '';
-          }
-        }
-      }
-
+      const owner = ownerOfRow(row, terminalRegistry, pettyCashCards, selectedBankAccount);
       return {
         ...row,
-        stream,
-        matchedSchoolId: matchedSchoolId || row.school_id || 1,
-        matchedSchoolName: matchedSchoolName || schools.find((s) => s.id === (matchedSchoolId || row.school_id || 1))?.name || 'مدرسه مرکزی',
-        matchedManagerName,
+        stream: classifyStream(row, terminalRegistry, pettyCashCards, selectedBankAccount),
+        matchedSchoolId: owner.schoolId,
+        matchedSchoolName: owner.schoolId ? (schools.find((s) => s.id === owner.schoolId)?.name || '') : '',
+        matchedManagerName: owner.managerName,
       };
     });
-  }, [bankTransactions, effectivePosTerminals, pettyCashCards, schools, selectedBankAccountId, bankAccounts]);
+  }, [bankTransactions, terminalRegistry, pettyCashCards, schools, selectedBankAccount]);
 
   // Role-based visibility filter
   const visibleBankRows = useMemo(() => {
@@ -395,14 +334,7 @@ export const BankScreen: React.FC = () => {
       }
 
       // Bank-account scope: each account has an independent reconciliation view.
-      if (selectedBankAccount) {
-        const rowAccount = String(b.bank_account || '').trim();
-        const accountNumber = String(selectedBankAccount.account_number || '').trim();
-        const accountSuffix = accountNumber.replace(/\D/g, '').slice(-3);
-        const rowSuffix = String(b.account_suffix || '').replace(/\D/g, '');
-        const belongsToAccount = rowAccount === accountNumber || rowAccount === String(selectedBankAccount.id) || rowAccount === String(selectedBankAccount.name || '') || (!!accountSuffix && rowSuffix === accountSuffix);
-        if (!belongsToAccount) return false;
-      }
+      if (!rowBelongsToAccount(b, selectedBankAccount)) return false;
 
       // School filter dropdown
       if (selectedSchoolId !== 0 && b.matchedSchoolId !== selectedSchoolId) return false;
@@ -455,7 +387,7 @@ export const BankScreen: React.FC = () => {
 
       return true;
     });
-  }, [enrichedBankRows, isSenior, currentUser, selectedSchoolId, selectedBankAccountId, selectedBankAccount, streamFilter, statusFilter, dateFilter, deferredSearchQuery]);
+  }, [enrichedBankRows, isSenior, currentUser, selectedSchoolId, selectedBankAccount, streamFilter, statusFilter, dateFilter, deferredSearchQuery]);
 
   // Subsets
   const unmatchedRows = useMemo(() => visibleBankRows.filter((r) => !r.reconciled), [visibleBankRows]);
@@ -558,6 +490,7 @@ export const BankScreen: React.FC = () => {
   const autoRegisterAllBankFees = () => {
     const feeCategory = categories.find((c) => c.id === '10' || c.name.includes('کارمزد'))?.id || '10';
     const unregisteredFees = bankTransactions.filter((b) => {
+      if (!rowBelongsToAccount(b, selectedBankAccount)) return false;
       const stream = getTransactionStream(b);
       if (stream !== 'fees') return false;
       // Not already matched with an expense
@@ -575,11 +508,14 @@ export const BankScreen: React.FC = () => {
 
     let registeredCount = 0;
     let registeredTotal = 0;
+    let skippedNoSchool = 0;
 
     unregisteredFees.forEach((b) => {
       try {
         const amt = Number(b.fee_amount || b.amount || 0);
-        const schoolId = b.school_id || 1;
+        // The school of a fee comes from the account's own school; never from a default.
+        const schoolId = ownerOfRow(b, terminalRegistry, pettyCashCards, selectedBankAccount).schoolId || Number(selectedBankAccount?.school_id || 0);
+        if (!schoolId) { skippedNoSchool++; return; }
         const newExpense = addExpense({
           category_id: feeCategory,
           amount: amt,
@@ -606,83 +542,44 @@ export const BankScreen: React.FC = () => {
     });
 
     setBannerNotice({
-      text: `تعداد ${registeredCount} ردیف کارمزد بانکی به مجموع ${formatRial(registeredTotal)} ریال به صورت خودکار در بخش هزینه‌ها ثبت شد و تطبیق یافت.`,
+      text: `تعداد ${registeredCount} ردیف کارمزد بانکی به مجموع ${formatRial(registeredTotal)} ریال به صورت خودکار در بخش هزینه‌ها ثبت شد و تطبیق یافت.${skippedNoSchool ? ` (${skippedNoSchool} ردیف چون مدرسه‌اش معلوم نبود ثبت نشد)` : ''}`,
       type: 'success',
     });
   };
 
-  // MULTI-TIER SMART AUTO-RECONCILIATION
+  // AUTOMATIC MATCHING of this account's bank rows with the registered transactions.
+  // Rules live in utils/bankReconcile.ts: same code + amount, registered petty card, or registered POS terminal;
+  // an ambiguous row is never matched.
+  const runAutoMatch = (): number => {
+    const accountRows = bankTransactions.filter((b) => rowBelongsToAccount(b, selectedBankAccount));
+    const matches = autoMatchBankRows(accountRows, transactions, cheques, {
+      registry: terminalRegistry,
+      cards: pettyCashCards,
+      account: selectedBankAccount,
+    });
+    matches.forEach((m) => {
+      const hit = transactions.find((t) => t.id === m.txId);
+      const row = accountRows.find((b) => b.id === m.bankId);
+      updateBankTransaction(m.bankId, {
+        reconciled: true,
+        matched_transaction_id: m.txId,
+        assigned_student_id: hit?.student_id,
+        assigned_student_name: hit?.student_name,
+        assigned_purpose: hit?.description || hit?.expense_category_name || 'تطبیق خودکار',
+        school_id: m.schoolId || row?.school_id || 0,
+      });
+      updateTransaction(m.txId, { reconciled: true, bank_transaction_id: m.bankId });
+    });
+    return matches.length;
+  };
+
   const handleSmartReconcile = () => {
-    let matchedCount = 0;
-    const usedTxIds = new Set<number>();
-    transactions.forEach((t) => { if (t.reconciled) usedTxIds.add(t.id); });
-
-    // Tier 1: Exact Tracking code or RRN match + amount
-    bankTransactions.forEach((b) => {
-      if (b.reconciled) return;
-      const bCode = String(b.tracking_code || b.reference_number || b.pos_reference_code || '').trim();
-      if (!bCode) return;
-
-      const hit = transactions.find((t) => {
-        if (usedTxIds.has(t.id) || t.reconciled || isUncollectedChequeTx(t, cheques)) return false;
-        if (Number(t.amount) !== Number(b.amount)) return false;
-        const tCode = String(t.tracking_code || '').trim();
-        return tCode && (tCode === bCode || tCode.endsWith(bCode) || bCode.endsWith(tCode));
-      });
-
-      if (hit) {
-        updateBankTransaction(b.id, {
-          reconciled: true,
-          matched_transaction_id: hit.id,
-          assigned_student_id: hit.student_id,
-          assigned_student_name: hit.student_name,
-          assigned_purpose: hit.description || hit.expense_category_name || 'تطبیق خودکار کد پیگیری',
-        });
-        updateTransaction(hit.id, {
-          reconciled: true,
-          bank_transaction_id: b.id,
-        });
-        usedTxIds.add(hit.id);
-        matchedCount++;
-      }
-    });
-
-    // Tier 2: Card match + amount + date within 3 days
-    bankTransactions.forEach((b) => {
-      if (b.reconciled) return;
-      const bCard = normalizeCard(b.source_card_number || b.card_number || b.destination_card_number);
-      if (!bCard || bCard.length < 4) return;
-
-      const hit = transactions.find((t) => {
-        if (usedTxIds.has(t.id) || t.reconciled || isUncollectedChequeTx(t, cheques)) return false;
-        if (Number(t.amount) !== Number(b.amount)) return false;
-        const tCard = normalizeCard(t.petty_cash_card || '');
-        if (!tCard || (!bCard.endsWith(tCard.slice(-4)) && !tCard.endsWith(bCard.slice(-4)))) return false;
-        // Date proximity
-        const diffDays = Math.abs((new Date(b.date).getTime() - new Date(t.date).getTime()) / (1000 * 3600 * 24));
-        return diffDays <= 4;
-      });
-
-      if (hit) {
-        updateBankTransaction(b.id, {
-          reconciled: true,
-          matched_transaction_id: hit.id,
-          assigned_purpose: hit.description || hit.expense_category_name || 'تطبیق کارت تن‌خواه',
-        });
-        updateTransaction(hit.id, {
-          reconciled: true,
-          bank_transaction_id: b.id,
-        });
-        usedTxIds.add(hit.id);
-        matchedCount++;
-      }
-    });
-
+    const count = runAutoMatch();
     setBannerNotice({
-      text: matchedCount > 0
-        ? `تطبیق هوشمند انجام شد: ${matchedCount} تراکنش با دفاتر متناظر و علامت‌گذاری گردیدند.`
-        : 'تراکنش جدیدی با شماره پیگیری یا کارت متناظر یافت نشد. می‌توانید از ثبت مستقیم استفاده کنید.',
-      type: matchedCount > 0 ? 'success' : 'info',
+      text: count > 0
+        ? `تطبیق خودکار انجام شد: ${count} تراکنش بانکی با اسناد ثبت‌شده تطبیق یافت.`
+        : 'مورد جدیدی برای تطبیق خودکار پیدا نشد. ردیف‌های باقی‌مانده در «اقدام لازم» هستند.',
+      type: count > 0 ? 'success' : 'info',
     });
   };
 
@@ -695,18 +592,8 @@ export const BankScreen: React.FC = () => {
     setResolveStudentSearch('');
 
     const stream = getTransactionStream(row);
-    // Find school
-    let scId = row.school_id || 1;
-    const term = normalizeTerminal(row.terminal_number);
-    if (term) {
-      const foundPos = posTerminals.find((p) => normalizeTerminal(p.terminal) === term);
-      if (foundPos && foundPos.schoolId) scId = foundPos.schoolId;
-    }
-    const cardNum = normalizeCard(row.source_card_number || row.card_number);
-    if (cardNum) {
-      const foundCard = pettyCashCards.find((c) => normalizeCard(c.card) === cardNum);
-      if (foundCard && foundCard.schoolId) scId = foundCard.schoolId;
-    }
+    // Only a registered terminal / petty card decides the school. Otherwise the user must choose it.
+    const scId = ownerOfRow(row, terminalRegistry, pettyCashCards, selectedBankAccount).schoolId || Number(row.assigned_student_id ? row.school_id : 0) || 0;
     setResolveSchoolId(scId);
 
     // Pick initial mode: deposit or POS -> tuition, withdrawal -> expense
@@ -738,6 +625,10 @@ export const BankScreen: React.FC = () => {
       const date = resolveRow.date;
       const tracking = resolveRow.tracking_code || resolveRow.reference_number || 'بانکی';
       const comment = resolveComment.trim() || resolveRow.description || 'تراکنش بانکی ثبت‌شده';
+      if (resolveMode === 'expense' && !resolveSchoolId) {
+        setResolveModalError('مدرسه‌ی این هزینه را انتخاب کنید.');
+        return;
+      }
 
       if (resolveMode === 'tuition') {
         if (!resolveSelectedStudent) {
@@ -807,7 +698,7 @@ export const BankScreen: React.FC = () => {
   // MANUAL LINK RESOLUTION (Link existing book tx to this bank row)
   const handleLinkExistingTx = (tx: Transaction) => {
     if (!resolveRow) return;
-    if (Number(tx.school_id) !== Number(resolveSchoolId)) {
+    if (resolveSchoolId && Number(tx.school_id) !== Number(resolveSchoolId)) {
       setResolveErrorTargetTxId(tx.id);
       setResolveModalError('تراکنش بانکی و تراکنش نرم‌افزار باید متعلق به یک مدرسه باشند. برای بررسی سند مرتبط، روی این خطا بزنید.');
       return;
@@ -852,172 +743,55 @@ export const BankScreen: React.FC = () => {
     setBannerNotice({ text: 'تطبیق ردیف لغو شد و به صف در انتظار اقدام بازگشت.', type: 'info' });
   };
 
-  // EXCEL DAILY FILE UPLOAD HANDLER
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!selectedBankAccount) { alert('ابتدا حساب بانکی موردنظر را از فهرست حساب‌ها انتخاب کنید.'); e.target.value = ''; return; }
-    const file = e.target.files?.[0];
+  // EXCEL IMPORT — the POS file and the account statement are two different files, imported separately.
+  const [importBusy, setImportBusy] = useState<BankExcelKind | null>(null);
+  const [pendingAutoMatch, setPendingAutoMatch] = useState(false);
+
+  const importFile = (kind: BankExcelKind) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const file = input.files?.[0];
+    input.value = '';
     if (!file) return;
-
-    const normalize = (val: unknown) =>
-      String(val ?? '')
-        .replace(/[\u200c\u200f\u202a-\u202e\s_\-]/g, '')
-        .replace(/[يى]/g, 'ی')
-        .replace(/ك/g, 'ک')
-        .toLowerCase();
-
-    const toDigits = (val: unknown) =>
-      String(val ?? '')
-        .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
-        .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧۸۹'.indexOf(d)));
-
-    const toAmount = (val: unknown) => {
-      if (typeof val === 'number') return Math.abs(val);
-      const cleaned = toDigits(val).replace(/[٬,،\s]/g, '').replace(/[^0-9.-]/g, '');
-      const n = Number(cleaned);
-      return Number.isFinite(n) ? Math.abs(n) : 0;
-    };
-
-    const toDate = (val: unknown): string => {
-      if (!val) return todayGregorian();
-      if (val instanceof Date && !isNaN(val.getTime())) {
-        return `${val.getFullYear()}-${String(val.getMonth() + 1).padStart(2, '0')}-${String(val.getDate()).padStart(2, '0')}`;
-      }
-      if (typeof val === 'number' && val > 20000 && val < 90000) {
-        const d = XLSX.SSF.parse_date_code(val);
-        if (d) return `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
-      }
-      const text = toDigits(val).trim().replace(/\s+\d{1,2}:\d{1,2}(:\d{1,2})?.*$/, '').trim();
-      const jalaliMatch = text.match(/^(13\d{2}|14\d{2})[\/\-. ](\d{1,2})[\/\-. ](\d{1,2})$/);
-      if (jalaliMatch) {
-        try {
-          return jalaliToIso(`${jalaliMatch[1]}/${jalaliMatch[2]}/${jalaliMatch[3]}`);
-        } catch {
-          // fallback
-        }
-      }
-      const gregMatch = text.match(/^(\d{4})[\/\-. ](\d{1,2})[\/\-. ](\d{1,2})$/);
-      if (gregMatch) {
-        return `${gregMatch[1]}-${String(gregMatch[2]).padStart(2, '0')}-${String(gregMatch[3]).padStart(2, '0')}`;
-      }
-      return todayGregorian();
-    };
-
+    setImportBusy(kind);
     const reader = new FileReader();
-    reader.onload = async (evt) => {
+    reader.onerror = () => { setImportBusy(null); setBannerNotice({ text: 'خواندن فایل ناموفق بود.', type: 'error' }); };
+    reader.onload = (evt) => {
       try {
-        const wb = XLSX.read(evt.target?.result, { type: 'array', cellDates: true });
-        let rawRows: Record<string, unknown>[] = [];
-        let isPos = false;
-
-        for (const sheetName of wb.SheetNames) {
-          const matrix = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sheetName], { header: 1, defval: '' });
-          const headerIdx = matrix.slice(0, 20).findIndex((row) => {
-            const h = row.map(normalize);
-            return h.some((x) => x.includes('تاریخ') || x.includes('date')) &&
-                   h.some((x) => x.includes('مبلغ') || x.includes('amount') || x.includes('بدهکار') || x.includes('بستانکار'));
-          });
-
-          if (headerIdx >= 0) {
-            const headerRow = matrix[headerIdx].map(normalize);
-            isPos = headerRow.some((x) => x.includes('ترمینال') || x.includes('پایانه') || x.includes('terminal')) ||
-                    normalize(file.name).includes('pos') || normalize(file.name).includes('پوز');
-            const dataRows = matrix.slice(headerIdx + 1);
-            const headers = matrix[headerIdx].map((h) => String(h || '').trim());
-            rawRows = dataRows.map((r) => Object.fromEntries(headers.map((h, i) => [h, (r as unknown[])[i] ?? ''])));
-            break;
-          }
-        }
-
-        if (!rawRows.length) throw new Error('ستون‌های تاریخ و مبلغ در اکسل شناسایی نشد.');
-
-        const importedItems: BankTransaction[] = [];
-        let autoFeesCount = 0;
-
-        rawRows.forEach((row) => {
-          const rowNorm = Object.fromEntries(Object.entries(row).map(([k, v]) => [normalize(k), v]));
-          const findVal = (keywords: string[]) => {
-            for (const kw of keywords) {
-              const hit = Object.keys(rowNorm).find((k) => k.includes(kw));
-              if (hit && rowNorm[hit] !== undefined && rowNorm[hit] !== '') return rowNorm[hit];
-            }
-            return '';
-          };
-
-          const debit = toAmount(findVal(['برداشت', 'بدهکار', 'debit', 'withdrawal']));
-          const credit = toAmount(findVal(['واریز', 'بستانکار', 'credit', 'deposit']));
-          const rawAmt = toAmount(findVal(['مبلغ', 'amount']));
-          const amount = isPos ? rawAmt || credit : (debit || credit || rawAmt);
-          if (!amount) return;
-
-          const date = toDate(findVal(['تاریختراکنش', 'تاریخعملیات', 'تاریخ', 'date']));
-          const tracking = String(findVal(['شمارهپیگیری', 'کدپیگیری', 'پیگیری', 'سند', 'tracking', 'trace']) || '').trim();
-          const ref = String(findVal(['شمارهارجاع', 'کدارجاع', 'شمارهمرجع', 'rrn', 'ref']) || '').trim();
-          const terminal = normalizeTerminal(findVal(['پایانه', 'ترمینال', 'terminal']));
-          const sourceCard = normalizeCard(findVal(['شمارهکارتبرداشت', 'کارتبرداشت', 'کارت مبدا', 'کارت مبدأ', 'sourcecard', 'شمارهکارت', 'کارت']));
-          const card = sourceCard || normalizeCard(findVal(['کارت', 'کارتخرید', 'card']));
-          const desc = String(findVal(['شرح', 'توضیحات', 'بابت', 'desc']) || '').trim();
-          const feeAmt = toAmount(findVal(['کارمزد', 'fee']));
-
-          const direction: 'deposit' | 'withdrawal' | 'pos_sale' = isPos
-            ? 'pos_sale'
-            : debit > 0
-            ? 'withdrawal'
-            : 'deposit';
-
-          // School infer
-          let schoolId = 1;
-          if (terminal) {
-            const hitPos = effectivePosTerminals.find((p) => normalizeTerminal(p.terminal) === terminal);
-            if (hitPos && hitPos.schoolId) schoolId = hitPos.schoolId;
-          }
-
-          const isFee = /(کارمزد|پایا|ساتنا|fee|آبونمان|پیامک)/i.test(desc) || feeAmt > 0;
-          if (isFee) autoFeesCount++;
-
-          importedItems.push({
-            id: Date.now() + Math.floor(Math.random() * 100000),
-            date,
-            amount,
-            school_id: schoolId,
-            school_name: schools.find((s) => s.id === schoolId)?.name,
-            tracking_code: tracking || ref || 'بانکی',
-            reference_number: ref,
-            terminal_number: terminal,
-            card_number: card,
-            source_card_number: direction === 'withdrawal' ? (sourceCard || card) : undefined,
-            account_suffix: String(selectedBankAccount.account_number || '').replace(/\D/g, '').slice(-3),
-            bank_account: String(selectedBankAccount.account_number || selectedBankAccount.name),
-            description: desc || (isPos ? `واریز پایانه پوز ${terminal}` : direction === 'withdrawal' ? 'برداشت بانکی' : 'واریزی بانکی'),
-            direction,
-            fee_amount: feeAmt || undefined,
-            reconciled: false,
-          });
-        });
-
-        // Deduplication
-        const existingTrackings = new Set(bankTransactions.map((b) => `${b.date}_${b.amount}_${b.tracking_code || b.reference_number}`));
-        const newUniques = importedItems.filter((b) => !existingTrackings.has(`${b.date}_${b.amount}_${b.tracking_code || b.reference_number}`));
-
-        if (!newUniques.length) {
-          alert('تمام تراکنش‌های موجود در این فایل از قبل وارد شده بودند و تکراری هستند.');
+        const parsed = parseBankExcel(evt.target?.result as ArrayBuffer, kind, account);
+        const keyOf = (b: { date: string; amount: number; tracking_code?: string; reference_number?: string; terminal_number?: string; direction?: string; source_card_number?: string }) =>
+          [b.date, b.amount, b.tracking_code || b.reference_number || '', normalizeTerminal(b.terminal_number), b.direction || '', normalizeCard(b.source_card_number)].join('|');
+        const existing = new Set(bankTransactions.filter((b) => rowBelongsToAccount(b, account)).map(keyOf));
+        const fresh = parsed.rows.filter((r) => !existing.has(keyOf(r)));
+        const duplicates = parsed.rows.length - fresh.length;
+        const label = kind === 'pos' ? 'پوز' : 'صورتحساب';
+        if (!fresh.length) {
+          setBannerNotice({ text: `از فایل ${label} ردیف جدیدی نبود${duplicates ? ` (${duplicates} ردیف قبلاً وارد شده بود)` : ''}.`, type: 'info' });
           return;
         }
-
-        const count = importBankTransactions(newUniques);
-
-        let msg = `تعداد ${count} تراکنش جدید از فایل بانکی با موفقیت وارد سیستم شد.`;
-        if (autoFeesCount > 0) {
-          msg += `\n(تعداد ${autoFeesCount} ردیف کارمزد بانکی نیز تشخیص داده شد که می‌توانید با یک کلیک در بخش هزینه‌ها ثبت کنید)`;
-        }
-        setBannerNotice({ text: msg, type: 'success' });
-        setActiveTab('unmatched');
+        const count = importBankTransactions(fresh);
+        setBannerNotice({
+          text: `${count} ردیف جدید از اکسل ${label} وارد شد${duplicates ? ` و ${duplicates} ردیف تکراری نادیده گرفته شد` : ''}${parsed.skippedNoAmount ? `؛ ${parsed.skippedNoAmount} ردیف بدون مبلغ/تاریخ رد شد` : ''}. تطبیق خودکار در حال اجراست و مدیران مربوط به‌زودی خبردار می‌شوند.`,
+          type: 'success',
+        });
+        setActiveTab('todo');
+        setPendingAutoMatch(true);
       } catch (err) {
-        alert('خطا در خواندن فایل اکسل: ' + String(err));
+        setBannerNotice({ text: 'خطا در خواندن فایل اکسل: ' + (err instanceof Error ? err.message : String(err)), type: 'error' });
+      } finally {
+        setImportBusy(null);
       }
     };
     reader.readAsArrayBuffer(file);
-    e.target.value = '';
   };
+
+  // Run the automatic matching once the freshly imported rows are in state.
+  useEffect(() => {
+    if (!pendingAutoMatch) return;
+    setPendingAutoMatch(false);
+    const count = runAutoMatch();
+    if (count > 0) setBannerNotice((prev) => ({ text: `${prev?.text || ''} ${count} ردیف خودکار تطبیق خورد.`.trim(), type: 'success' }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingAutoMatch, bankTransactions]);
 
   // EXPORT 4-PART RECONCILIATION STATEMENT TO EXCEL
   const exportStatementToExcel = () => {
@@ -1106,9 +880,76 @@ export const BankScreen: React.FC = () => {
     setResolveRow(null);
   };
 
+  // "Action needed" report: bank rows nobody registered yet, grouped by the responsible manager / school.
+  const accountReport = useMemo(
+    () => buildAccountReport(
+      enrichedBankRows.filter((r) => rowBelongsToAccount(r, selectedBankAccount)),
+      { registry: terminalRegistry, cards: pettyCashCards, account: selectedBankAccount, schools },
+    ),
+    [enrichedBankRows, terminalRegistry, pettyCashCards, selectedBankAccount, schools],
+  );
+
+  const [todoBusy, setTodoBusy] = useState(false);
+
+  const notifyManagers = async () => {
+    setTodoBusy(true);
+    try {
+      const res = await postToAppsScript({ action: 'bank_notify' });
+      if (!res?.success) throw new Error(res?.error || 'خطای سرور');
+      const extra = [
+        res.no_manager ? `${res.no_manager} ردیف مدیر مشخصی نداشت (کارت یا مدرسه‌اش مدیر ندارد)` : '',
+        res.unassigned ? `${res.unassigned} ردیف هنوز مدرسه ندارد؛ ابتدا پایانه‌اش را ثبت کنید` : '',
+      ].filter(Boolean).join('؛ ');
+      setBannerNotice({
+        text: res.messages
+          ? `برای ${res.rows} ردیف ثبت‌نشده، ${res.messages} پیام به مدیران مربوط ارسال شد.${extra ? ' ' + extra + '.' : ''}`
+          : `پیام تازه‌ای لازم نبود؛ مدیران قبلاً خبردار شده‌اند.${extra ? ' ' + extra + '.' : ''}`,
+        type: res.messages ? 'success' : 'info',
+      });
+    } catch (err) {
+      setBannerNotice({ text: 'ارسال اطلاع‌رسانی ناموفق بود: ' + (err instanceof Error ? err.message : String(err)), type: 'error' });
+    } finally {
+      setTodoBusy(false);
+    }
+  };
+
+  // Registers a terminal for one or more schools (a terminal can be shared by several shifts/schools).
+  const registerTerminalForSchool = (terminal: string, schoolIds: number[]) => {
+    const t = normalizeTerminal(terminal);
+    const ids = Array.from(new Set(schoolIds.filter(Boolean)));
+    if (!t || !ids.length) return;
+    saveTerminalsAndCards(
+      [
+        ...posTerminals.filter((p) => normalizeTerminal(p.terminal) !== t),
+        ...ids.map((id) => ({ terminal: t, schoolId: id, schoolName: schools.find((sc) => sc.id === id)?.name || '' })),
+      ],
+      pettyCashCards,
+    );
+  };
+
+  // Removes school tags that no registered terminal/card justifies (e.g. the old "everything is school 1").
+  const cleanWrongTags = async () => {
+    setTodoBusy(true);
+    try {
+      const dry = await postToAppsScript({ action: 'bank_untag', dry_run: true });
+      if (!dry?.success) throw new Error(dry?.error || 'خطای سرور');
+      if (!dry.cleared) { setBannerNotice({ text: 'برچسب اشتباهی پیدا نشد؛ همه‌ی برچسب‌ها با پایانه/کارت ثبت‌شده می‌خوانند.', type: 'success' }); return; }
+      const detail = Object.entries(dry.by_terminal || {}).map(([t, n]) => `پایانه ${t}: ${n}`).join('، ');
+      if (!window.confirm(`${dry.cleared} ردیف بانکی برچسب مدرسه‌ای دارند که هیچ پایانه یا کارت ثبت‌شده‌ای آن را تأیید نمی‌کند (${detail}).\nبرچسب این ردیف‌ها برداشته شود؟ خود ردیف‌های بانک حذف نمی‌شوند.`)) return;
+      const res = await postToAppsScript({ action: 'bank_untag' });
+      if (!res?.success) throw new Error(res?.error || 'خطای سرور');
+      await refreshBankData({ force: true });
+      setBannerNotice({ text: `برچسب اشتباه ${res.cleared} ردیف برداشته شد.`, type: 'success' });
+    } catch (err) {
+      setBannerNotice({ text: 'پاک‌سازی ناموفق بود: ' + (err instanceof Error ? err.message : String(err)), type: 'error' });
+    } finally {
+      setTodoBusy(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#fcfafd] pb-24 text-gray-800">
-      <Header title="مرکز تطبیق و مغایرت‌گیری بانکی روز به روز" />
+      <Header title={`تطبیق حساب: ${account.name}`} />
 
       <main className="max-w-6xl mx-auto px-3 sm:px-5 py-6 space-y-6">
 
@@ -1118,25 +959,33 @@ export const BankScreen: React.FC = () => {
 
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
             <div className="space-y-2 max-w-2xl">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-amber-300 text-xs font-bold">
-                <Landmark className="w-3.5 h-3.5" />
-                <span>تطبیق مستقل حساب: {selectedBankAccount?.name || 'حساب انتخاب‌نشده'} · کارت‌های تن‌خواه و پایانه‌های پوز</span>
-              </div>
-              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-                سامانه هوشمند پایش و تطبیق صورتحساب‌های بانکی
+              <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 hover:bg-white/20 text-amber-300 text-xs font-bold transition-all">
+                <ChevronDown className="w-3.5 h-3.5 rotate-90" />
+                <span>همه‌ی حساب‌های بانکی</span>
+              </button>
+              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
+                <Landmark className="w-6 h-6 text-amber-300" />
+                {account.name}
               </h1>
               <p className="text-xs sm:text-sm text-purple-100 leading-relaxed">
-                ورود روزانه صورتحساب اکسل، تفکیک خودکار پایانه‌های پوز مدارس و کارت‌های تن‌خواه مدیران، و ثبت خودکار کارمزدهای بانکی در دفاتر.
+                {account.bank_name} · حساب {account.account_number}. اکسل پوز و اکسل صورتحساب را جداگانه وارد کنید؛ تطبیق خودکار انجام می‌شود و باقی‌مانده به مدیر مربوط اطلاع داده می‌شود.
               </p>
             </div>
 
             {/* Quick Action Buttons Group */}
             <div className="flex flex-wrap items-center gap-2.5">
               {isSenior && (
-                <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white text-[#62205f] font-black text-xs shadow-md hover:bg-purple-50 active:scale-95 transition-all">
+                <label className={`cursor-pointer inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white text-[#62205f] font-black text-xs shadow-md hover:bg-purple-50 active:scale-95 transition-all ${importBusy ? 'opacity-60 pointer-events-none' : ''}`}>
                   <Upload className="w-4 h-4 text-purple-700" />
-                  <span>بارگذاری اکسل روزانه بانک</span>
-                  <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" />
+                  <span>{importBusy === 'pos' ? 'در حال خواندن…' : 'ورود اکسل پوز'}</span>
+                  <input type="file" accept=".xlsx,.xls" onChange={importFile('pos')} className="hidden" />
+                </label>
+              )}
+              {isSenior && (
+                <label className={`cursor-pointer inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white text-[#62205f] font-black text-xs shadow-md hover:bg-purple-50 active:scale-95 transition-all ${importBusy ? 'opacity-60 pointer-events-none' : ''}`}>
+                  <FileSpreadsheet className="w-4 h-4 text-purple-700" />
+                  <span>{importBusy === 'statement' ? 'در حال خواندن…' : 'ورود اکسل صورتحساب'}</span>
+                  <input type="file" accept=".xlsx,.xls" onChange={importFile('statement')} className="hidden" />
                 </label>
               )}
 
@@ -1163,7 +1012,7 @@ export const BankScreen: React.FC = () => {
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-purple-900/60 hover:bg-purple-900 border border-purple-300/30 text-white font-bold text-xs shadow-sm active:scale-95 transition-all backdrop-blur-md"
                 >
                   <Sparkles className="w-4 h-4 text-amber-300" />
-                  <span>تطبیق خودکار دفاتر</span>
+                  <span>اجرای دوباره‌ی تطبیق خودکار</span>
                 </button>
               )}
 
@@ -1274,6 +1123,24 @@ export const BankScreen: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-3">
           <button
             type="button"
+            onClick={() => setActiveTab('todo')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm transition-all shadow-xs ${
+              activeTab === 'todo'
+                ? 'bg-[#62205f] text-white shadow-md'
+                : 'bg-white text-gray-600 hover:bg-purple-50 border border-gray-200'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-amber-400" />
+            <span>اقدام لازم (ثبت‌نشده‌ها)</span>
+            {accountReport.unregisteredCount > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-mono font-black bg-amber-400 text-amber-950">
+                {accountReport.unregisteredCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab('unmatched')}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm transition-all shadow-xs ${
               activeTab === 'unmatched'
@@ -1379,15 +1246,6 @@ export const BankScreen: React.FC = () => {
               buttonLabel="جستجو"
             />
 
-            {/* Independent bank account selector */}
-            {isSenior && (
-              <select value={selectedBankAccountId} onChange={(e) => setSelectedBankAccountId(Number(e.target.value))} className="text-xs py-2 px-3 rounded-xl bg-purple-50 border border-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-400 font-bold">
-                {selectedBankAccountId === -1 && <option value={-1}>ابتدا حساب بانکی تعریف کنید</option>}
-                <option value={0}>همه حساب‌ها (نمایش یکجا)</option>
-                {bankAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} — {account.bank_name}</option>)}
-              </select>
-            )}
-
             {/* School Selector (for Senior) */}
             {isSenior && (
               <SchoolSelect schools={schools} value={selectedSchoolId} onChange={(value) => setSelectedSchoolId(Number(value))} className="text-xs py-2 px-3 rounded-xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-400 font-bold" includeAll allValue={0} allLabel={`🏢 تمام مدارس و مراکز (همه)`} />
@@ -1436,6 +1294,19 @@ export const BankScreen: React.FC = () => {
         {/* ========================================================================= */}
         {/* TAB 1: UNMATCHED INBOX (صندوق در انتظار اقدام مدیر)                       */}
         {/* ========================================================================= */}
+        {activeTab === 'todo' && (
+          <BankTodoPanel
+            report={accountReport}
+            schools={schools}
+            busy={todoBusy}
+            isSenior={isSenior}
+            onResolve={openResolveModal}
+            onNotify={notifyManagers}
+            onRegisterTerminal={registerTerminalForSchool}
+            onCleanTags={cleanWrongTags}
+          />
+        )}
+
         {activeTab === 'unmatched' && (
           <section className="space-y-4">
             <div className="bg-amber-50/70 border border-amber-200 rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -2041,10 +1912,10 @@ export const BankScreen: React.FC = () => {
                 {effectivePosTerminals.map((pos) => (
                   <div key={pos.terminal} className="p-3.5 rounded-2xl border border-gray-200 bg-gray-50/50 space-y-2">
                     <div className="flex items-center justify-between"><span className="font-mono font-black text-purple-900 text-sm">{pos.terminal}</span><span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 text-[10px] font-bold">پوز شاپرک</span></div>
-                    <div className="font-bold text-xs text-gray-800">{pos.schoolName || 'بدون انتساب به مدرسه'}</div>
+                    <div className="font-bold text-xs text-gray-800">{pos.schoolName ? (pos.schoolIds.length > 1 ? `مشترک: ${pos.schoolName}` : pos.schoolName) : 'بدون انتساب به مدرسه'}</div>
                     <div className="flex gap-2">
-                      <button type="button" onClick={() => { const v = window.prompt('شماره پایانه:', pos.terminal); if (v === null) return; const terminal = normalizeTerminal(v); if (!terminal) { setBannerNotice({text:'شماره پایانه معتبر نیست.',type:'error'}); return; } if (effectivePosTerminals.some((x) => normalizeTerminal(x.terminal) === terminal && normalizeTerminal(x.terminal) !== normalizeTerminal(pos.terminal))) { setBannerNotice({text:'شماره پایانه تکراری است.',type:'error'}); return; } saveTerminalsAndCards(posTerminals.map((x) => x.terminal === pos.terminal ? {...x, terminal} : x), pettyCashCards); }} className="flex-1 px-3 py-2 rounded-lg bg-purple-100 text-purple-800 text-xs font-bold">ویرایش شماره</button>
-                      <button type="button" onClick={() => { if (window.confirm('پایانه ' + pos.terminal + ' حذف شود؟')) saveTerminalsAndCards(posTerminals.filter((x) => x.terminal !== pos.terminal), pettyCashCards); }} className="px-3 py-2 rounded-lg bg-rose-100 text-rose-700 text-xs font-bold">حذف</button>
+                      <button type="button" onClick={() => { const v = window.prompt('شماره پایانه:', pos.terminal); if (v === null) return; const terminal = normalizeTerminal(v); if (!terminal) { setBannerNotice({text:'شماره پایانه معتبر نیست.',type:'error'}); return; } if (effectivePosTerminals.some((x) => normalizeTerminal(x.terminal) === terminal && normalizeTerminal(x.terminal) !== normalizeTerminal(pos.terminal))) { setBannerNotice({text:'شماره پایانه تکراری است.',type:'error'}); return; } saveTerminalsAndCards(posTerminals.map((x) => normalizeTerminal(x.terminal) === normalizeTerminal(pos.terminal) ? {...x, terminal} : x), pettyCashCards); }} className="flex-1 px-3 py-2 rounded-lg bg-purple-100 text-purple-800 text-xs font-bold">ویرایش شماره</button>
+                      <button type="button" onClick={() => { if (window.confirm('پایانه ' + pos.terminal + ' حذف شود؟')) saveTerminalsAndCards(posTerminals.filter((x) => normalizeTerminal(x.terminal) !== normalizeTerminal(pos.terminal)), pettyCashCards); }} className="px-3 py-2 rounded-lg bg-rose-100 text-rose-700 text-xs font-bold">حذف</button>
                     </div>
                   </div>
                 ))}
@@ -2387,6 +2258,74 @@ export const BankScreen: React.FC = () => {
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+/**
+ * Entry of the reconciliation section: every defined bank account first. Choosing one opens its own page
+ * (separate POS / statement imports, automatic matching, unregistered rows, notifications).
+ */
+export const BankScreen: React.FC = () => {
+  const { bankAccounts, bankTransactions, currentUser, setCurrentScreen, refreshBankData } = useApp();
+  const isSenior = currentUser?.role === 'senior' || currentUser?.role === 'admin';
+  const [accountId, setAccountId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (isSenior) void refreshBankData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSenior]);
+
+  const account = accountId === null ? null : bankAccounts.find((a) => Number(a.id) === accountId) || null;
+  useBackClose(!!account, () => setAccountId(null));
+  if (account) return <BankAccountPage key={account.id} account={account} onBack={() => setAccountId(null)} />;
+
+  const active = bankAccounts.filter((a) => a.is_active !== false);
+  return (
+    <div className="min-h-screen bg-[#fcfafd] pb-24 text-gray-800">
+      <Header title="تطبیق بانکی — انتخاب حساب" />
+      <main className="max-w-3xl mx-auto px-3 sm:px-5 py-6 space-y-4">
+        <p className="text-sm text-gray-600 leading-relaxed">
+          هر حساب بانکی تطبیق مستقل خودش را دارد. حساب را انتخاب کنید تا اکسل پوز و اکسل صورتحساب‌اش را وارد کنید و ثبت‌نشده‌ها را ببینید.
+        </p>
+        {active.length === 0 && (
+          <div className="bg-white rounded-3xl border border-dashed border-gray-300 p-8 text-center space-y-3">
+            <Landmark className="w-10 h-10 text-gray-300 mx-auto" />
+            <p className="text-sm text-gray-600">هنوز حساب بانکی تعریف نشده است.</p>
+            <button type="button" onClick={() => setCurrentScreen('bank_accounts')} className="px-4 py-2 rounded-xl bg-purple-700 text-white text-xs font-bold">تعریف حساب بانکی</button>
+          </div>
+        )}
+        {active.map((a) => {
+          const rows = bankTransactions.filter((b) => rowBelongsToAccount(b, a));
+          const open = rows.filter((b) => !b.reconciled).length;
+          const last = rows.reduce((m, b) => (b.date > m ? b.date : m), '');
+          return (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => setAccountId(Number(a.id))}
+              className="w-full text-right bg-white rounded-3xl border border-gray-100 shadow-sm hover:shadow-md hover:border-purple-200 active:scale-[0.99] transition-all p-5 flex items-center justify-between gap-4"
+            >
+              <div className="flex items-center gap-4 min-w-0">
+                <div className="w-12 h-12 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                  <Landmark className="w-6 h-6" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-black text-gray-900 truncate">{a.name}</div>
+                  <div className="text-xs text-gray-500 truncate">{a.bank_name}{a.branch_name ? ` · ${a.branch_name}` : ''}</div>
+                  <div className="text-[11px] text-gray-400 font-mono mt-0.5" dir="ltr">{a.account_number}</div>
+                </div>
+              </div>
+              <div className="text-left shrink-0 space-y-1">
+                <div className={`text-xs font-black px-2.5 py-1 rounded-full ${open ? 'bg-amber-100 text-amber-900' : 'bg-emerald-100 text-emerald-800'}`}>
+                  {open ? `${open.toLocaleString('fa-IR')} ردیف باز` : rows.length ? 'همه تطبیق‌یافته' : 'بدون ردیف'}
+                </div>
+                <div className="text-[11px] text-gray-400">{last ? `آخرین ردیف: ${jalaliFromGregorian(last)}` : 'اکسلی وارد نشده'}</div>
+              </div>
+            </button>
+          );
+        })}
+      </main>
     </div>
   );
 };
