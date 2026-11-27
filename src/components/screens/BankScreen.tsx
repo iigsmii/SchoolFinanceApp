@@ -62,9 +62,10 @@ import {
   normalizeCard,
   normalizeTerminal,
   ownerOfRow,
+  type PosAccountRule,
   rowBelongsToAccount,
 } from '../../utils/bankReconcile';
-import { parseBankExcel, type BankExcelKind } from '../../utils/bankExcel';
+import { parseBankExcel, sameAccountNumber, type BankExcelKind } from '../../utils/bankExcel';
 import { BankTodoPanel } from '../bank/BankTodoPanel';
 import { openAttachment } from '../../services/attachments';
 import { isUncollectedChequeTx } from '../../utils/cheques';
@@ -171,6 +172,8 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
   // Rules state
   const [posTerminals, setPosTerminals] = useState(DEFAULT_POS_TERMINALS);
   const [pettyCashCards, setPettyCashCards] = useState(DEFAULT_SADERAT_CARDS);
+  // Which bank account receives each school's POS money (0 / missing = not specified).
+  const [posAccounts, setPosAccounts] = useState<PosAccountRule[]>([]);
   const [showConfigModal, setShowConfigModal] = useState(false);
 
   // Google Sheets is the shared source of truth; local storage is an offline fallback.
@@ -181,6 +184,8 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
       if (savedTerminals) setPosTerminals(removeLegacyDefaultTerminals(JSON.parse(savedTerminals)));
       const savedCards = localStorage.getItem('school_finance_petty_cards');
       if (savedCards) setPettyCashCards(JSON.parse(savedCards));
+      const savedPosAccounts = localStorage.getItem('school_finance_pos_accounts');
+      if (savedPosAccounts) setPosAccounts(JSON.parse(savedPosAccounts));
     } catch { /* use defaults if local cache is invalid */ }
     if (isSenior) {
       void postToAppsScript({ action: 'bank_rules_get' }).then((res) => {
@@ -194,6 +199,9 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
           schoolId: Number(p.schoolId || 0),
           schoolName: p.schoolName || schools.find((sc) => sc.id === Number(p.schoolId || 0))?.name || ''
         })) : null;
+        const serverPosAccounts: PosAccountRule[] = Array.isArray(rules.posAccounts)
+          ? rules.posAccounts.map((x: any) => ({ schoolId: Number(x.schoolId || 0), bankAccountId: Number(x.bankAccountId || 0) })).filter((x: PosAccountRule) => x.schoolId && x.bankAccountId)
+          : [];
         const cleanedServerTerminals = serverTerminals ? removeLegacyDefaultTerminals(serverTerminals) : null;
         const serverCards = Array.isArray(rules.pettyCashCards) ? rules.pettyCashCards.map((c: any) => ({
           ...c,
@@ -221,11 +229,13 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
         } else if (cleanedServerTerminals && serverCards) {
           setPosTerminals(cleanedServerTerminals);
           setPettyCashCards(serverCards);
+          setPosAccounts(serverPosAccounts);
+          localStorage.setItem('school_finance_pos_accounts', JSON.stringify(serverPosAccounts));
           localStorage.setItem('school_finance_pos_terminals', JSON.stringify(cleanedServerTerminals));
           localStorage.setItem('school_finance_petty_cards', JSON.stringify(serverCards));
           // Persist removal of the obsolete built-in sample assignments to the shared source.
           if (cleanedServerTerminals.length !== serverTerminals.length) {
-            void postToAppsScript({ action: 'bank_rules_save', rules: { version: 1, posTerminals: cleanedServerTerminals, pettyCashCards: serverCards } }).catch(() => {});
+            void postToAppsScript({ action: 'bank_rules_save', rules: { version: 1, posTerminals: cleanedServerTerminals, pettyCashCards: serverCards, posAccounts: serverPosAccounts } }).catch(() => {});
           }
         }
       }).catch(() => { /* retain local offline cache */ });
@@ -233,9 +243,11 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
     return () => { cancelled = true; };
   }, [isSenior, schools]);
 
-  const saveTerminalsAndCards = (newTerminals: typeof posTerminals, newCards: typeof pettyCashCards) => {
+  const saveTerminalsAndCards = (newTerminals: typeof posTerminals, newCards: typeof pettyCashCards, newPosAccounts: PosAccountRule[] = posAccounts) => {
     setPosTerminals(newTerminals);
     setPettyCashCards(newCards);
+    setPosAccounts(newPosAccounts);
+    localStorage.setItem('school_finance_pos_accounts', JSON.stringify(newPosAccounts));
     localStorage.setItem('school_finance_pos_terminals', JSON.stringify(newTerminals));
     localStorage.setItem('school_finance_petty_cards', JSON.stringify(newCards));
     setBannerNotice({ text: 'در حال ذخیره و همگام‌سازی با Google Sheets…', type: 'info' });
@@ -245,6 +257,7 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
         version: 1,
         posTerminals: newTerminals.map((p) => ({ terminal: normalizeTerminal(p.terminal), schoolId: Number(p.schoolId || 0), schoolName: p.schoolName || schools.find((sc) => sc.id === Number(p.schoolId || 0))?.name || '' })),
         pettyCashCards: newCards.map((c) => ({ card: normalizeCard(c.card), managerName: c.managerName, accountSuffix: String(c.accountSuffix || ''), bankAccountId: Number(c.bankAccountId || 0), schoolId: Number(c.schoolId || 0), active: c.active !== false })),
+        posAccounts: newPosAccounts.filter((x) => x.schoolId && x.bankAccountId),
       }
     }).then((res) => {
       if (res?.success) {
@@ -299,8 +312,8 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
 
   // Terminals the user explicitly registered (school record, rules). Nothing is guessed; a terminal may belong to several schools.
   const terminalRegistry = useMemo(
-    () => buildTerminalRegistry(posTerminals, schools),
-    [posTerminals, schools],
+    () => buildTerminalRegistry(posTerminals, schools, posAccounts),
+    [posTerminals, schools, posAccounts],
   );
 
   // Stream of a bank row: pos / petty / fees / other
@@ -747,6 +760,20 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
   const [importBusy, setImportBusy] = useState<BankExcelKind | null>(null);
   const [pendingAutoMatch, setPendingAutoMatch] = useState(false);
 
+  // Rows older than this Jalali date are skipped on import, so a whole year of statement does not flood the managers.
+  const fromKey = `school_finance_import_from_${account.id}`;
+  const defaultFromJalali = () => {
+    const d = new Date(); d.setDate(d.getDate() - 30);
+    return jalaliFromGregorian(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+  };
+  const [importFromJalali, setImportFromJalali] = useState<string>(() => {
+    try { return localStorage.getItem(fromKey) || defaultFromJalali(); } catch { return defaultFromJalali(); }
+  });
+  const changeImportFrom = (v: string) => {
+    setImportFromJalali(v);
+    try { localStorage.setItem(fromKey, v); } catch { /* ignore */ }
+  };
+
   const importFile = (kind: BankExcelKind) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const input = e.target;
     const file = input.files?.[0];
@@ -757,7 +784,14 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
     reader.onerror = () => { setImportBusy(null); setBannerNotice({ text: 'خواندن فایل ناموفق بود.', type: 'error' }); };
     reader.onload = (evt) => {
       try {
-        const parsed = parseBankExcel(evt.target?.result as ArrayBuffer, kind, account);
+        let fromDate = '';
+        if (importFromJalali.trim()) {
+          try { fromDate = jalaliToIso(importFromJalali); } catch { throw new Error('«از تاریخ» معتبر نیست؛ مثل 1405/08/01 بنویسید یا خالی بگذارید.'); }
+        }
+        const parsed = parseBankExcel(evt.target?.result as ArrayBuffer, kind, account, { fromDate });
+        if (parsed.fileAccount && account.account_number && !sameAccountNumber(parsed.fileAccount, account.account_number)) {
+          throw new Error(`این فایل مربوط به حساب ${parsed.fileAccount} است، ولی شما در صفحه‌ی «${account.name}» (${account.account_number}) هستید. فایل را در صفحه‌ی حساب درست وارد کنید.`);
+        }
         const keyOf = (b: { date: string; amount: number; tracking_code?: string; reference_number?: string; terminal_number?: string; direction?: string; source_card_number?: string }) =>
           [b.date, b.amount, b.tracking_code || b.reference_number || '', normalizeTerminal(b.terminal_number), b.direction || '', normalizeCard(b.source_card_number)].join('|');
         const existing = new Set(bankTransactions.filter((b) => rowBelongsToAccount(b, account)).map(keyOf));
@@ -770,7 +804,7 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
         }
         const count = importBankTransactions(fresh);
         setBannerNotice({
-          text: `${count} ردیف جدید از اکسل ${label} وارد شد${duplicates ? ` و ${duplicates} ردیف تکراری نادیده گرفته شد` : ''}${parsed.skippedNoAmount ? `؛ ${parsed.skippedNoAmount} ردیف بدون مبلغ/تاریخ رد شد` : ''}. تطبیق خودکار در حال اجراست و مدیران مربوط به‌زودی خبردار می‌شوند.`,
+          text: `${count} ردیف جدید از اکسل ${label} وارد شد${parsed.skippedOld ? ` (${parsed.skippedOld} ردیف قدیمی‌تر از ${importFromJalali} رد شد)` : ''}${duplicates ? ` و ${duplicates} ردیف تکراری نادیده گرفته شد` : ''}${parsed.skippedNoAmount ? `؛ ${parsed.skippedNoAmount} ردیف بدون مبلغ/تاریخ رد شد` : ''}. تطبیق خودکار در حال اجراست و مدیران مربوط به‌زودی خبردار می‌شوند.`,
           type: 'success',
         });
         setActiveTab('todo');
@@ -947,6 +981,25 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
     }
   };
 
+  // Deletes the not-yet-reconciled rows of THIS account on the server (wrong import / wrong dates), then re-import.
+  const purgeAccountRows = async () => {
+    setTodoBusy(true);
+    try {
+      const dry = await postToAppsScript({ action: 'bank_purge', bank_account_id: account.id, dry_run: true });
+      if (!dry?.success) throw new Error(dry?.error || 'خطای سرور');
+      if (!dry.deleted) { setBannerNotice({ text: 'ردیف تطبیق‌نشده‌ای در این حساب نیست که پاک شود.', type: 'info' }); return; }
+      if (!window.confirm(`${dry.deleted} ردیف تطبیق‌نشده‌ی حساب «${account.name}» از Google Sheets پاک می‌شود تا فایل‌ها را دوباره وارد کنید.\nردیف‌های تطبیق‌خورده یا ثبت‌شده برای دانش‌آموز پاک نمی‌شوند. ادامه می‌دهید؟`)) return;
+      const res = await postToAppsScript({ action: 'bank_purge', bank_account_id: account.id });
+      if (!res?.success) throw new Error(res?.error || 'خطای سرور');
+      await refreshBankData({ force: true });
+      setBannerNotice({ text: `${res.deleted} ردیف تطبیق‌نشده پاک شد. حالا اکسل‌ها را دوباره وارد کنید.`, type: 'success' });
+    } catch (err) {
+      setBannerNotice({ text: 'پاک‌سازی ناموفق بود: ' + (err instanceof Error ? err.message : String(err)), type: 'error' });
+    } finally {
+      setTodoBusy(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#fcfafd] pb-24 text-gray-800">
       <Header title={`تطبیق حساب: ${account.name}`} />
@@ -975,6 +1028,20 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
             {/* Quick Action Buttons Group */}
             <div className="flex flex-wrap items-center gap-2.5">
               {isSenior && (
+                <label className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/10 border border-white/20 text-white text-xs font-bold" title="ردیف‌های قدیمی‌تر از این تاریخ هنگام ورود رد می‌شوند">
+                  <span>ورود از تاریخ</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    dir="ltr"
+                    value={importFromJalali}
+                    onChange={(e) => changeImportFrom(e.target.value)}
+                    placeholder="1405/08/01"
+                    className="w-24 rounded-lg bg-white text-gray-800 px-2 py-1 text-xs text-center font-bold outline-none"
+                  />
+                </label>
+              )}
+              {isSenior && (
                 <label className={`cursor-pointer inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white text-[#62205f] font-black text-xs shadow-md hover:bg-purple-50 active:scale-95 transition-all ${importBusy ? 'opacity-60 pointer-events-none' : ''}`}>
                   <Upload className="w-4 h-4 text-purple-700" />
                   <span>{importBusy === 'pos' ? 'در حال خواندن…' : 'ورود اکسل پوز'}</span>
@@ -1002,6 +1069,19 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
                 >
                   <Trash2 className="w-4 h-4" />
                   <span>صفر کردن اطلاعات اکسل</span>
+                </button>
+              )}
+
+              {isSenior && (
+                <button
+                  type="button"
+                  onClick={purgeAccountRows}
+                  disabled={todoBusy}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-rose-100 hover:bg-rose-200 border border-rose-200 text-rose-800 font-black text-xs shadow-sm active:scale-95 transition-all disabled:opacity-60"
+                  title="پاک‌کردن ردیف‌های تطبیق‌نشده‌ی این حساب از Google Sheets برای ورود دوباره"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>پاک‌سازی ردیف‌های تطبیق‌نشده</span>
                 </button>
               )}
 
@@ -1898,6 +1978,57 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
         {/* ========================================================================= */}
         {activeTab === 'terminals_cards' && isSenior && (
           <section className="space-y-6">
+            {/* Which bank account receives each school's POS money */}
+            <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <Landmark className="w-5 h-5 text-purple-700" />
+                  <h3 className="font-black text-gray-900 text-base">حساب بانکی پوز هر مدرسه</h3>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-gray-500">همه‌ی مدارس →</span>
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      const id = Number(e.target.value);
+                      if (!id) return;
+                      saveTerminalsAndCards(posTerminals, pettyCashCards, schools.filter((sc) => sc.active !== false).map((sc) => ({ schoolId: sc.id, bankAccountId: id })));
+                    }}
+                    className="py-2 px-2 rounded-lg border border-gray-200 bg-gray-50"
+                  >
+                    <option value="">انتخاب حساب…</option>
+                    {bankAccounts.filter((a) => a.is_active !== false).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                اگر پوز مدرسه‌ای به حساب دیگری وصل است، اکسل پوزش را فقط در همان حساب وارد کنید. ردیف پوزی که در حساب غلط وارد شود به مدیر اطلاع داده نمی‌شود و در «اقدام لازم» هشدار می‌گیرد. مدرسه‌ای که حسابش انتخاب نشده باشد در همه‌ی حساب‌ها پذیرفته می‌شود.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {schools.filter((sc) => sc.active !== false).map((sc) => {
+                  const current = posAccounts.find((x) => x.schoolId === sc.id)?.bankAccountId || 0;
+                  return (
+                    <label key={sc.id} className="flex items-center justify-between gap-2 p-2.5 rounded-xl border border-gray-100 bg-gray-50/60">
+                      <span className="text-xs font-bold text-gray-800 truncate">{sc.name}</span>
+                      <select
+                        value={current}
+                        onChange={(e) => {
+                          const id = Number(e.target.value);
+                          const next = posAccounts.filter((x) => x.schoolId !== sc.id);
+                          if (id) next.push({ schoolId: sc.id, bankAccountId: id });
+                          saveTerminalsAndCards(posTerminals, pettyCashCards, next);
+                        }}
+                        className="text-xs py-1.5 px-2 rounded-lg border border-gray-200 bg-white max-w-[170px]"
+                      >
+                        <option value={0}>مشخص نشده</option>
+                        {bankAccounts.filter((a) => a.is_active !== false).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                      </select>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* POS Terminals Grid */}
             <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm space-y-4">
               <div className="flex items-center justify-between border-b border-gray-100 pb-3">

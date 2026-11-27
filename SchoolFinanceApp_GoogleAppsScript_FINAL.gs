@@ -304,6 +304,7 @@ function doPost(e) {
       case 'bank_reconcile': result=bankReconcile_(body); break;
       case 'bank_upload': result=bankUpload_(body); break;
       case 'bank_untag': result=bankUntag_(body); break;
+      case 'bank_purge': result=bankPurge_(body); break;
       case 'bank_notify': result=bankNotify_(body); break;
       case 'bank_rules_save': result=bankRulesSave_(body); break;
       case 'bank_annotation': result=bankAnnotationSave_(body); break;
@@ -1565,9 +1566,14 @@ function transactionReview_(b){
   }
   return {success:true,approved:approved,review_status:status,updated_rows:touched};
 }
+function bankCodeNorm_(v){return digits_(v==null?'':v).replace(/[^0-9A-Za-z]/g,'').replace(/^0+(?=.)/,'');}
+function bankSameCode_(a,b){if(!a||!b)return false;if(a===b)return true;return a.length>=8&&b.length>=8&&(a.endsWith(b)||b.endsWith(a));}
+function bankDayDiff_(a,b){const x=new Date(String(a||'').slice(0,10)),y=new Date(String(b||'').slice(0,10));if(isNaN(x.getTime())||isNaN(y.getTime()))return 0;return Math.abs((x.getTime()-y.getTime())/86400000);}
 function bankReconcile_(b){
   auth_(b,['senior','admin']);
   const bankRows=rows_('Bank');
+  const bankDetailById={};rows_('BankDetails').forEach(x=>{bankDetailById[String(x.obj.bank_id)]=x.obj;});
+  const reconcileTermMap=bankTerminalMap_(bankRulesLoad_());
   const banks=bankRows.map(x=>x.obj);
   const txRows=rows_('Transactions'); let matched=0,unmatched=0;
   const usedBankIds={};
@@ -1598,8 +1604,19 @@ function bankReconcile_(b){
       if(String(t.reconciled)!=='true') updateRow_('Transactions',x.row,[t.id,t.date,t.school_id,t.kind,t.amount,t.description,t.tracking_code,t.image_url,t.created_by,t.created_at,true,t.approved,t.source_id,t.payment_source||'']);
       return;
     }
-    const available=z=>!usedBankIds[String(z.id)] && (String(z.school_id||'').trim()===''||String(z.school_id)===String(t.school_id)) && Number(z.amount)===Number(t.amount);
-    const exact=bankRows.filter(z=>available(z.obj)&&String(t.tracking_code||'')!==''&&String(z.obj.tracking_code||'')===String(t.tracking_code));
+    // A bank row without a school (unregistered / shared POS terminal) may only match a payment of one of its terminal's schools.
+    const schoolOk=z=>{
+      const sid=String(z.school_id||'').trim();
+      if(sid!=='')return sid===String(t.school_id);
+      const d=bankDetailById[String(z.id)]||{};
+      const list=bankTermNorm_(d.terminal_number)?(reconcileTermMap[bankTermNorm_(d.terminal_number)]||[]):[];
+      return !list.length||list.indexOf(String(t.school_id))>=0;
+    };
+    const available=z=>!usedBankIds[String(z.id)] && schoolOk(z) && Number(z.amount)===Number(t.amount);
+    // The code the manager typed may be the receipt's tracking number OR its reference number; the date must be close.
+    const txCode=bankCodeNorm_(t.tracking_code);
+    const codeOk=z=>{const d=bankDetailById[String(z.id)]||{};return [z.tracking_code,d.reference_number].map(bankCodeNorm_).some(c=>bankSameCode_(c,txCode));};
+    const exact=bankRows.filter(z=>txCode!==''&&available(z.obj)&&bankDayDiff_(z.obj.date,t.date)<=5&&codeOk(z.obj));
     // Amount alone cannot identify a deposit. Ambiguous/no-reference entries stay manual.
     const hitRow=exact.length===1?exact[0]:null;
     if(hitRow){
@@ -1667,6 +1684,7 @@ function defaultBankRules_(){
       {card:'6037697090013308',managerName:'نامشخص - کارت متصل به حساب ۰۰۱',accountSuffix:'001',active:true}
     ],
     posTerminals:[],
+    posAccounts:[],
     matching:{dateWindowDays:3,requireExactAmount:true,requireSourceCardWhenKnown:true}
   };
 }
@@ -1766,7 +1784,13 @@ function bankRulesSave_(b){
   const defaultMatching=defaultBankRules_().matching;
   const days=Number(rules.matching && rules.matching.dateWindowDays !== undefined ? rules.matching.dateWindowDays : defaultMatching.dateWindowDays);
   if(!Number.isFinite(days)||days<0||days>30)throw new Error('بازه تطبیق تاریخ باید بین صفر تا ۳۰ روز باشد.');
-  const normalized=Object.assign(defaultBankRules_(),rules,{version:1,pettyCashCards:cards,posTerminals:terminals,matching:Object.assign(defaultBankRules_().matching,rules.matching||{})});
+  // school -> bank account that receives that school's POS money. Keep the stored value when an older client omits it.
+  let posAccounts=Array.isArray(rules.posAccounts)?rules.posAccounts:null;
+  if(posAccounts===null){try{posAccounts=JSON.parse(String(prevHit&&prevHit.obj.value||'{}')).posAccounts||[];}catch(e){posAccounts=[];}}
+  if(posAccounts.length>300)throw new Error('تعداد اتصال پوز به حساب بیش از حد مجاز است.');
+  posAccounts=posAccounts.map(x=>({schoolId:Number(x&&x.schoolId||0),bankAccountId:Number(x&&x.bankAccountId||0)})).filter(x=>x.schoolId>0&&x.bankAccountId>0);
+  posAccounts.forEach(x=>{if(!findRow_('BankAccounts',x.bankAccountId))throw new Error('حساب بانکی انتخاب‌شده برای پوز مدرسه '+x.schoolId+' تعریف نشده است.');});
+  const normalized=Object.assign(defaultBankRules_(),rules,{version:1,pettyCashCards:cards,posTerminals:terminals,posAccounts:posAccounts,matching:Object.assign(defaultBankRules_().matching,rules.matching||{})});
   const serialized=JSON.stringify(normalized);
   if(serialized.length>45000)throw new Error('حجم قواعد بیش از حد مجاز است.');
   const hit=rows_('Settings').find(x=>String(x.obj.key||'')==='bank_reconciliation_rules');
@@ -1840,6 +1864,7 @@ function bankActionableRows_(onlyIds){
   const cards=(Array.isArray(rules.pettyCashCards)?rules.pettyCashCards:[]).filter(c=>c&&c.active!==false);
   const accounts={};rows_('BankAccounts').forEach(x=>{accounts[String(x.obj.id)]=x.obj;});
   const termMap=bankTerminalMap_(rules);
+  const posAcc={};(Array.isArray(rules.posAccounts)?rules.posAccounts:[]).forEach(x=>{if(x&&Number(x.schoolId)>0&&Number(x.bankAccountId)>0)posAcc[String(x.schoolId)]=String(x.bankAccountId);});
   const detail={};rows_('BankDetails').forEach(x=>detail[String(x.obj.bank_id)]=x.obj);
   const feeRe=/(کارمزد|آبونمان|پیامک|service\s*charge)/i;
   const out=[];
@@ -1859,7 +1884,11 @@ function bankActionableRows_(onlyIds){
     // A row with a POS terminal belongs only to the school that registered that terminal (stale tags are ignored).
     rec.school_ids=[];
     if(bankTermNorm_(rec.terminal)){
-      const list=termMap[bankTermNorm_(rec.terminal)]||[];
+      const registered=termMap[bankTermNorm_(rec.terminal)]||[];
+      // Schools whose POS money goes into ANOTHER bank account cannot own a row of this account.
+      const rowAcc=Object.keys(accounts).find(k=>rec.bank_account&&(rec.bank_account===String(accounts[k].account_number||'')||rec.bank_account===String(accounts[k].name||'')))||'';
+      const list=registered.filter(id=>{const a=posAcc[String(id)];return !a||!rowAcc||String(a)===String(rowAcc);});
+      if(registered.length&&!list.length)return; // imported into the wrong account: not an unregistered transaction
       rec.school_id=list.length===1?list[0]:'';
       if(list.length>1)rec.school_ids=list;
     }
@@ -1927,6 +1956,30 @@ function bankNotifyManagers_(onlyIds){
   });
   if(messages)SpreadsheetApp.flush();
   return {messages:messages,rows:rowsNotified};
+}
+/** Deletes the NOT-yet-reconciled rows of one bank account (e.g. a wrong import) so the file can be imported again.
+ *  Rows linked to an app transaction or manually assigned to a student are kept. b.dry_run only counts. */
+function bankPurge_(b){
+  auth_(b,['senior','admin']);
+  const acc=findRow_('BankAccounts',b.bank_account_id);
+  if(!acc)throw new Error('حساب بانکی پیدا نشد.');
+  const accNo=String(acc.obj.account_number||''),accName=String(acc.obj.name||'');
+  const annotated={};rows_('BankAnnotations').forEach(x=>{annotated[bankAnnotationKey_(x.obj)]=true;});
+  const doomed=[];
+  rows_('Bank').forEach(x=>{
+    const o=x.obj,ba=String(o.bank_account||'');
+    if(ba!==accNo&&ba!==accName)return;
+    if(String(o.matched)==='true'||String(o.matched_transaction_id||'')!=='')return;
+    if(annotated[bankAnnotationKey_(o)])return;
+    doomed.push({row:x.row,id:String(o.id)});
+  });
+  if(b.dry_run)return {success:true,deleted:doomed.length,dry_run:true};
+  const ids={};doomed.forEach(d=>{ids[d.id]=true;});
+  const shB=sheet_('Bank');doomed.map(d=>d.row).sort((a,c)=>c-a).forEach(r=>shB.deleteRow(r));
+  const shD=sheet_('BankDetails');
+  rows_('BankDetails').filter(x=>ids[String(x.obj.bank_id)]).map(x=>x.row).sort((a,c)=>c-a).forEach(r=>shD.deleteRow(r));
+  SpreadsheetApp.flush();
+  return {success:true,deleted:doomed.length};
 }
 function bankNotify_(b){
   auth_(b,['senior','admin']);

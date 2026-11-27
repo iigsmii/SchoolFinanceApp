@@ -22,6 +22,9 @@ export interface PettyCardRule {
   active?: boolean;
 }
 
+/** Which bank account a school's POS settlements are paid into (0 / missing = not specified). */
+export interface PosAccountRule { schoolId: number; bankAccountId: number }
+
 export type BankStream = 'pos' | 'petty' | 'fees' | 'other';
 
 export const toLatinDigits = (val: unknown): string =>
@@ -46,6 +49,8 @@ export interface TerminalRegistry {
   /** The school of a terminal, or 0 when unregistered or shared by several schools. */
   schoolOf: (terminal: unknown) => number;
   isRegistered: (terminal: unknown) => boolean;
+  /** Bank account that receives this school's POS money, 0 when not specified. */
+  posAccountOf: (schoolId: number) => number;
   /** Terminals registered for more than one school. */
   shared: Array<{ terminal: string; schoolIds: number[] }>;
 }
@@ -53,7 +58,10 @@ export interface TerminalRegistry {
 export function buildTerminalRegistry(
   rules: PosTerminalRule[],
   schools: Pick<School, 'id' | 'pos_terminal_number'>[],
+  posAccounts: PosAccountRule[] = [],
 ): TerminalRegistry {
+  const accountOf = new Map<number, number>();
+  posAccounts.forEach((p) => { if (Number(p.schoolId) && Number(p.bankAccountId)) accountOf.set(Number(p.schoolId), Number(p.bankAccountId)); });
   const map = new Map<string, Set<number>>();
   const add = (terminal: unknown, schoolId: unknown) => {
     const t = normalizeTerminal(terminal);
@@ -72,6 +80,7 @@ export function buildTerminalRegistry(
       return list.length === 1 ? list[0] : 0;
     },
     isRegistered: (terminal) => schoolsOf(terminal).length > 0,
+    posAccountOf: (schoolId) => accountOf.get(Number(schoolId)) || 0,
     shared: Array.from(map.entries())
       .filter(([, set]) => set.size > 1)
       .map(([terminal, set]) => ({ terminal, schoolIds: Array.from(set) })),
@@ -117,8 +126,10 @@ export function classifyStream(row: BankTransaction, registry: TerminalRegistry,
 
 export interface RowOwner {
   schoolId: number; // 0 = unassigned (or shared, see candidateSchoolIds)
-  /** Schools that may own the row: the terminal's schools. Empty = unknown. */
+  /** Schools that may own the row: the terminal's schools whose POS money goes into this account. Empty = unknown. */
   candidateSchoolIds: number[];
+  /** The terminal is registered, but only for schools whose POS account is a DIFFERENT bank account. */
+  foreignAccount: boolean;
   managerName: string;
   managerId: string;
   cardNumber: string;
@@ -126,12 +137,18 @@ export interface RowOwner {
 
 /** Who is responsible for a bank row. Never falls back to a default school. */
 export function ownerOfRow(row: BankTransaction, registry: TerminalRegistry, cards: PettyCardRule[], account: BankAccount | null): RowOwner {
-  const owner: RowOwner = { schoolId: 0, candidateSchoolIds: [], managerName: '', managerId: '', cardNumber: '' };
+  const owner: RowOwner = { schoolId: 0, candidateSchoolIds: [], foreignAccount: false, managerName: '', managerId: '', cardNumber: '' };
   const terminal = normalizeTerminal(row.terminal_number);
   if (terminal) {
     // A row with a terminal gets its school from the registered terminal only. A school stored on the row
     // by older app versions (default "school 1") is ignored.
-    owner.candidateSchoolIds = registry.schoolsOf(terminal);
+    const registered = registry.schoolsOf(terminal);
+    // A school whose POS is paid into another account cannot own a row of this account.
+    owner.candidateSchoolIds = registered.filter((id) => {
+      const acc = registry.posAccountOf(id);
+      return !acc || !account || acc === Number(account.id);
+    });
+    owner.foreignAccount = registered.length > 0 && owner.candidateSchoolIds.length === 0;
     owner.schoolId = owner.candidateSchoolIds.length === 1 ? owner.candidateSchoolIds[0] : 0;
     return owner;
   }
@@ -158,14 +175,17 @@ export interface AutoMatch {
   schoolId: number;
 }
 
+/** Date window for a code match: the manager may record the payment a few days off the bank date. */
+export const CODE_MATCH_DAYS = 5;
 const MATCHABLE_KINDS = new Set(['شهریه', 'هزینه', 'دریافت متفرقه']);
 const dayDiff = (a: string, b: string) => Math.abs((new Date(a).getTime() - new Date(b).getTime()) / 86400000);
-const codeOf = (v: unknown) => toLatinDigits(v).trim();
+/** Digits/letters only and no leading zeros: managers type "83363" for the receipt's "083363". */
+const codeOf = (v: unknown) => toLatinDigits(v).replace(/[^0-9A-Za-z]/g, '').replace(/^0+(?=.)/, '');
 
 const sameCode = (a: string, b: string) => {
   if (!a || !b) return false;
   if (a === b) return true;
-  // Bank statements sometimes prefix/suffix the reference; only trust long codes for partial matches.
+  // Only long codes (reference numbers) may match partially; short tracking codes must be equal.
   return a.length >= 8 && b.length >= 8 && (a.endsWith(b) || b.endsWith(a));
 };
 
@@ -198,9 +218,10 @@ export function autoMatchBankRows(
   };
   const done = new Set<number>();
 
-  // Tier 1 — the same reference/tracking code and the same amount.
+  // Tier 1 — the same code + amount + date. The code the manager typed may be the receipt's tracking number OR its
+  // reference number (many card-reader slips only show the reference), so both bank codes are tried.
   open.forEach((b) => {
-    const codes = [b.tracking_code, b.reference_number, b.pos_reference_code].map(codeOf).filter((c) => c && c !== 'بانکی');
+    const codes = [b.tracking_code, b.reference_number].map(codeOf).filter((c) => c && c !== 'بانکی');
     if (!codes.length) return;
     const owner = ownerOfRow(b, ctx.registry, ctx.cards, ctx.account);
     const bankSchool = owner.schoolId;
@@ -209,6 +230,7 @@ export function autoMatchBankRows(
       Number(t.amount) === Number(b.amount) &&
       compatible(b, t) &&
       (!owner.candidateSchoolIds.length || owner.candidateSchoolIds.includes(Number(t.school_id))) &&
+      dayDiff(b.date, t.date) <= CODE_MATCH_DAYS &&
       codes.some((c) => sameCode(c, codeOf(t.tracking_code))));
     if (hits.length === 1) { take(b, hits[0], 'reference', bankSchool); done.add(b.id); }
   });
@@ -234,7 +256,7 @@ export function autoMatchBankRows(
   open.forEach((b) => {
     if (done.has(b.id)) return;
     const terminal = normalizeTerminal(b.terminal_number);
-    const schoolIds = terminal ? ctx.registry.schoolsOf(terminal) : [];
+    const schoolIds = terminal ? ownerOfRow(b, ctx.registry, ctx.cards, ctx.account).candidateSchoolIds : [];
     if (!schoolIds.length) return;
     const hits = eligible.filter((t) => {
       if (used.has(t.id) || t.kind === 'هزینه' || !schoolIds.includes(Number(t.school_id))) return false;
@@ -268,6 +290,8 @@ export interface AccountReport {
   unregisteredCount: number;
   unregisteredTotal: number;
   unknownTerminals: TerminalSummary[];
+  /** POS rows imported into this account although their schools' POS money goes to another account. */
+  foreignRows: BankTransaction[];
   sharedTerminals: TerminalSummary[];
   feeRows: BankTransaction[];
 }
@@ -280,6 +304,7 @@ export function buildAccountReport(
   const unknown = new Map<string, TerminalSummary>();
   const shared = new Map<string, TerminalSummary>();
   const feeRows: BankTransaction[] = [];
+  const foreignRows: BankTransaction[] = [];
   let unregisteredCount = 0;
   let unregisteredTotal = 0;
   const schoolName = (id: number) => ctx.schools.find((s) => s.id === id)?.name || `مدرسه ${id}`;
@@ -289,6 +314,7 @@ export function buildAccountReport(
     if (stream === 'fees') { if (!row.reconciled) feeRows.push(row); return; }
     if (row.reconciled) return;
     const owner = ownerOfRow(row, ctx.registry, ctx.cards, ctx.account);
+    if (owner.foreignAccount) { foreignRows.push(row); return; }
     const amount = Number(row.amount || 0);
     unregisteredCount++;
     unregisteredTotal += amount;
@@ -335,6 +361,7 @@ export function buildAccountReport(
     unregisteredCount,
     unregisteredTotal,
     unknownTerminals: Array.from(unknown.values()).sort((a, b) => b.count - a.count),
+    foreignRows,
     sharedTerminals: Array.from(shared.values()),
     feeRows,
   };
