@@ -162,6 +162,18 @@ export const BankTodoPanel: React.FC<Props> = ({ report, schools, busy, isSenior
         </div>
       )}
 
+      {report.foreignRows.length > 0 && (
+        <div className="bg-slate-50 border border-slate-300 rounded-3xl p-4 space-y-1.5">
+          <h3 className="font-black text-slate-900 text-sm flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-slate-500" />
+            {report.foreignRows.length.toLocaleString('fa-IR')} ردیف پوز مربوط به حساب دیگری است
+          </h3>
+          <p className="text-xs text-slate-700 leading-relaxed">
+            پایانه‌ی این ردیف‌ها برای مدرسه‌هایی ثبت شده که پوزشان به حساب بانکی دیگری وصل است ({Array.from(new Set(report.foreignRows.map((r) => r.terminal_number))).join('، ')}). احتمالاً اکسل را در حساب اشتباه وارد کرده‌اید؛ این ردیف‌ها به مدیران اطلاع داده نمی‌شوند.
+          </p>
+        </div>
+      )}
+
       {report.sharedTerminals.length > 0 && (
         <div className="bg-indigo-50 border border-indigo-200 rounded-3xl p-4 space-y-1.5">
           <h3 className="font-black text-indigo-950 text-sm">پایانه‌های مشترک بین چند مدرسه</h3>

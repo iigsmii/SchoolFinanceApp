@@ -62,6 +62,7 @@ import {
   normalizeCard,
   normalizeTerminal,
   ownerOfRow,
+  type PosAccountRule,
   rowBelongsToAccount,
 } from '../../utils/bankReconcile';
 import { parseBankExcel, type BankExcelKind } from '../../utils/bankExcel';
@@ -171,6 +172,8 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
   // Rules state
   const [posTerminals, setPosTerminals] = useState(DEFAULT_POS_TERMINALS);
   const [pettyCashCards, setPettyCashCards] = useState(DEFAULT_SADERAT_CARDS);
+  // Which bank account receives each school's POS money (0 / missing = not specified).
+  const [posAccounts, setPosAccounts] = useState<PosAccountRule[]>([]);
   const [showConfigModal, setShowConfigModal] = useState(false);
 
   // Google Sheets is the shared source of truth; local storage is an offline fallback.
@@ -181,6 +184,8 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
       if (savedTerminals) setPosTerminals(removeLegacyDefaultTerminals(JSON.parse(savedTerminals)));
       const savedCards = localStorage.getItem('school_finance_petty_cards');
       if (savedCards) setPettyCashCards(JSON.parse(savedCards));
+      const savedPosAccounts = localStorage.getItem('school_finance_pos_accounts');
+      if (savedPosAccounts) setPosAccounts(JSON.parse(savedPosAccounts));
     } catch { /* use defaults if local cache is invalid */ }
     if (isSenior) {
       void postToAppsScript({ action: 'bank_rules_get' }).then((res) => {
@@ -194,6 +199,9 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
           schoolId: Number(p.schoolId || 0),
           schoolName: p.schoolName || schools.find((sc) => sc.id === Number(p.schoolId || 0))?.name || ''
         })) : null;
+        const serverPosAccounts: PosAccountRule[] = Array.isArray(rules.posAccounts)
+          ? rules.posAccounts.map((x: any) => ({ schoolId: Number(x.schoolId || 0), bankAccountId: Number(x.bankAccountId || 0) })).filter((x: PosAccountRule) => x.schoolId && x.bankAccountId)
+          : [];
         const cleanedServerTerminals = serverTerminals ? removeLegacyDefaultTerminals(serverTerminals) : null;
         const serverCards = Array.isArray(rules.pettyCashCards) ? rules.pettyCashCards.map((c: any) => ({
           ...c,
@@ -221,11 +229,13 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
         } else if (cleanedServerTerminals && serverCards) {
           setPosTerminals(cleanedServerTerminals);
           setPettyCashCards(serverCards);
+          setPosAccounts(serverPosAccounts);
+          localStorage.setItem('school_finance_pos_accounts', JSON.stringify(serverPosAccounts));
           localStorage.setItem('school_finance_pos_terminals', JSON.stringify(cleanedServerTerminals));
           localStorage.setItem('school_finance_petty_cards', JSON.stringify(serverCards));
           // Persist removal of the obsolete built-in sample assignments to the shared source.
           if (cleanedServerTerminals.length !== serverTerminals.length) {
-            void postToAppsScript({ action: 'bank_rules_save', rules: { version: 1, posTerminals: cleanedServerTerminals, pettyCashCards: serverCards } }).catch(() => {});
+            void postToAppsScript({ action: 'bank_rules_save', rules: { version: 1, posTerminals: cleanedServerTerminals, pettyCashCards: serverCards, posAccounts: serverPosAccounts } }).catch(() => {});
           }
         }
       }).catch(() => { /* retain local offline cache */ });
@@ -233,9 +243,11 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
     return () => { cancelled = true; };
   }, [isSenior, schools]);
 
-  const saveTerminalsAndCards = (newTerminals: typeof posTerminals, newCards: typeof pettyCashCards) => {
+  const saveTerminalsAndCards = (newTerminals: typeof posTerminals, newCards: typeof pettyCashCards, newPosAccounts: PosAccountRule[] = posAccounts) => {
     setPosTerminals(newTerminals);
     setPettyCashCards(newCards);
+    setPosAccounts(newPosAccounts);
+    localStorage.setItem('school_finance_pos_accounts', JSON.stringify(newPosAccounts));
     localStorage.setItem('school_finance_pos_terminals', JSON.stringify(newTerminals));
     localStorage.setItem('school_finance_petty_cards', JSON.stringify(newCards));
     setBannerNotice({ text: 'در حال ذخیره و همگام‌سازی با Google Sheets…', type: 'info' });
@@ -245,6 +257,7 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
         version: 1,
         posTerminals: newTerminals.map((p) => ({ terminal: normalizeTerminal(p.terminal), schoolId: Number(p.schoolId || 0), schoolName: p.schoolName || schools.find((sc) => sc.id === Number(p.schoolId || 0))?.name || '' })),
         pettyCashCards: newCards.map((c) => ({ card: normalizeCard(c.card), managerName: c.managerName, accountSuffix: String(c.accountSuffix || ''), bankAccountId: Number(c.bankAccountId || 0), schoolId: Number(c.schoolId || 0), active: c.active !== false })),
+        posAccounts: newPosAccounts.filter((x) => x.schoolId && x.bankAccountId),
       }
     }).then((res) => {
       if (res?.success) {
@@ -299,8 +312,8 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
 
   // Terminals the user explicitly registered (school record, rules). Nothing is guessed; a terminal may belong to several schools.
   const terminalRegistry = useMemo(
-    () => buildTerminalRegistry(posTerminals, schools),
-    [posTerminals, schools],
+    () => buildTerminalRegistry(posTerminals, schools, posAccounts),
+    [posTerminals, schools, posAccounts],
   );
 
   // Stream of a bank row: pos / petty / fees / other
@@ -1898,6 +1911,57 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
         {/* ========================================================================= */}
         {activeTab === 'terminals_cards' && isSenior && (
           <section className="space-y-6">
+            {/* Which bank account receives each school's POS money */}
+            <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <Landmark className="w-5 h-5 text-purple-700" />
+                  <h3 className="font-black text-gray-900 text-base">حساب بانکی پوز هر مدرسه</h3>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-gray-500">همه‌ی مدارس →</span>
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      const id = Number(e.target.value);
+                      if (!id) return;
+                      saveTerminalsAndCards(posTerminals, pettyCashCards, schools.filter((sc) => sc.active !== false).map((sc) => ({ schoolId: sc.id, bankAccountId: id })));
+                    }}
+                    className="py-2 px-2 rounded-lg border border-gray-200 bg-gray-50"
+                  >
+                    <option value="">انتخاب حساب…</option>
+                    {bankAccounts.filter((a) => a.is_active !== false).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                اگر پوز مدرسه‌ای به حساب دیگری وصل است، اکسل پوزش را فقط در همان حساب وارد کنید. ردیف پوزی که در حساب غلط وارد شود به مدیر اطلاع داده نمی‌شود و در «اقدام لازم» هشدار می‌گیرد. مدرسه‌ای که حسابش انتخاب نشده باشد در همه‌ی حساب‌ها پذیرفته می‌شود.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {schools.filter((sc) => sc.active !== false).map((sc) => {
+                  const current = posAccounts.find((x) => x.schoolId === sc.id)?.bankAccountId || 0;
+                  return (
+                    <label key={sc.id} className="flex items-center justify-between gap-2 p-2.5 rounded-xl border border-gray-100 bg-gray-50/60">
+                      <span className="text-xs font-bold text-gray-800 truncate">{sc.name}</span>
+                      <select
+                        value={current}
+                        onChange={(e) => {
+                          const id = Number(e.target.value);
+                          const next = posAccounts.filter((x) => x.schoolId !== sc.id);
+                          if (id) next.push({ schoolId: sc.id, bankAccountId: id });
+                          saveTerminalsAndCards(posTerminals, pettyCashCards, next);
+                        }}
+                        className="text-xs py-1.5 px-2 rounded-lg border border-gray-200 bg-white max-w-[170px]"
+                      >
+                        <option value={0}>مشخص نشده</option>
+                        {bankAccounts.filter((a) => a.is_active !== false).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                      </select>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* POS Terminals Grid */}
             <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm space-y-4">
               <div className="flex items-center justify-between border-b border-gray-100 pb-3">

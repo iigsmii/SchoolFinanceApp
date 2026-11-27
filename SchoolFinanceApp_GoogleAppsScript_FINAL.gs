@@ -1667,6 +1667,7 @@ function defaultBankRules_(){
       {card:'6037697090013308',managerName:'نامشخص - کارت متصل به حساب ۰۰۱',accountSuffix:'001',active:true}
     ],
     posTerminals:[],
+    posAccounts:[],
     matching:{dateWindowDays:3,requireExactAmount:true,requireSourceCardWhenKnown:true}
   };
 }
@@ -1766,7 +1767,13 @@ function bankRulesSave_(b){
   const defaultMatching=defaultBankRules_().matching;
   const days=Number(rules.matching && rules.matching.dateWindowDays !== undefined ? rules.matching.dateWindowDays : defaultMatching.dateWindowDays);
   if(!Number.isFinite(days)||days<0||days>30)throw new Error('بازه تطبیق تاریخ باید بین صفر تا ۳۰ روز باشد.');
-  const normalized=Object.assign(defaultBankRules_(),rules,{version:1,pettyCashCards:cards,posTerminals:terminals,matching:Object.assign(defaultBankRules_().matching,rules.matching||{})});
+  // school -> bank account that receives that school's POS money. Keep the stored value when an older client omits it.
+  let posAccounts=Array.isArray(rules.posAccounts)?rules.posAccounts:null;
+  if(posAccounts===null){try{posAccounts=JSON.parse(String(prevHit&&prevHit.obj.value||'{}')).posAccounts||[];}catch(e){posAccounts=[];}}
+  if(posAccounts.length>300)throw new Error('تعداد اتصال پوز به حساب بیش از حد مجاز است.');
+  posAccounts=posAccounts.map(x=>({schoolId:Number(x&&x.schoolId||0),bankAccountId:Number(x&&x.bankAccountId||0)})).filter(x=>x.schoolId>0&&x.bankAccountId>0);
+  posAccounts.forEach(x=>{if(!findRow_('BankAccounts',x.bankAccountId))throw new Error('حساب بانکی انتخاب‌شده برای پوز مدرسه '+x.schoolId+' تعریف نشده است.');});
+  const normalized=Object.assign(defaultBankRules_(),rules,{version:1,pettyCashCards:cards,posTerminals:terminals,posAccounts:posAccounts,matching:Object.assign(defaultBankRules_().matching,rules.matching||{})});
   const serialized=JSON.stringify(normalized);
   if(serialized.length>45000)throw new Error('حجم قواعد بیش از حد مجاز است.');
   const hit=rows_('Settings').find(x=>String(x.obj.key||'')==='bank_reconciliation_rules');
@@ -1840,6 +1847,7 @@ function bankActionableRows_(onlyIds){
   const cards=(Array.isArray(rules.pettyCashCards)?rules.pettyCashCards:[]).filter(c=>c&&c.active!==false);
   const accounts={};rows_('BankAccounts').forEach(x=>{accounts[String(x.obj.id)]=x.obj;});
   const termMap=bankTerminalMap_(rules);
+  const posAcc={};(Array.isArray(rules.posAccounts)?rules.posAccounts:[]).forEach(x=>{if(x&&Number(x.schoolId)>0&&Number(x.bankAccountId)>0)posAcc[String(x.schoolId)]=String(x.bankAccountId);});
   const detail={};rows_('BankDetails').forEach(x=>detail[String(x.obj.bank_id)]=x.obj);
   const feeRe=/(کارمزد|آبونمان|پیامک|service\s*charge)/i;
   const out=[];
@@ -1859,7 +1867,11 @@ function bankActionableRows_(onlyIds){
     // A row with a POS terminal belongs only to the school that registered that terminal (stale tags are ignored).
     rec.school_ids=[];
     if(bankTermNorm_(rec.terminal)){
-      const list=termMap[bankTermNorm_(rec.terminal)]||[];
+      const registered=termMap[bankTermNorm_(rec.terminal)]||[];
+      // Schools whose POS money goes into ANOTHER bank account cannot own a row of this account.
+      const rowAcc=Object.keys(accounts).find(k=>rec.bank_account&&(rec.bank_account===String(accounts[k].account_number||'')||rec.bank_account===String(accounts[k].name||'')))||'';
+      const list=registered.filter(id=>{const a=posAcc[String(id)];return !a||!rowAcc||String(a)===String(rowAcc);});
+      if(registered.length&&!list.length)return; // imported into the wrong account: not an unregistered transaction
       rec.school_id=list.length===1?list[0]:'';
       if(list.length>1)rec.school_ids=list;
     }

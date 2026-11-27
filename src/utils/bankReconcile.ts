@@ -22,6 +22,9 @@ export interface PettyCardRule {
   active?: boolean;
 }
 
+/** Which bank account a school's POS settlements are paid into (0 / missing = not specified). */
+export interface PosAccountRule { schoolId: number; bankAccountId: number }
+
 export type BankStream = 'pos' | 'petty' | 'fees' | 'other';
 
 export const toLatinDigits = (val: unknown): string =>
@@ -46,6 +49,8 @@ export interface TerminalRegistry {
   /** The school of a terminal, or 0 when unregistered or shared by several schools. */
   schoolOf: (terminal: unknown) => number;
   isRegistered: (terminal: unknown) => boolean;
+  /** Bank account that receives this school's POS money, 0 when not specified. */
+  posAccountOf: (schoolId: number) => number;
   /** Terminals registered for more than one school. */
   shared: Array<{ terminal: string; schoolIds: number[] }>;
 }
@@ -53,7 +58,10 @@ export interface TerminalRegistry {
 export function buildTerminalRegistry(
   rules: PosTerminalRule[],
   schools: Pick<School, 'id' | 'pos_terminal_number'>[],
+  posAccounts: PosAccountRule[] = [],
 ): TerminalRegistry {
+  const accountOf = new Map<number, number>();
+  posAccounts.forEach((p) => { if (Number(p.schoolId) && Number(p.bankAccountId)) accountOf.set(Number(p.schoolId), Number(p.bankAccountId)); });
   const map = new Map<string, Set<number>>();
   const add = (terminal: unknown, schoolId: unknown) => {
     const t = normalizeTerminal(terminal);
@@ -72,6 +80,7 @@ export function buildTerminalRegistry(
       return list.length === 1 ? list[0] : 0;
     },
     isRegistered: (terminal) => schoolsOf(terminal).length > 0,
+    posAccountOf: (schoolId) => accountOf.get(Number(schoolId)) || 0,
     shared: Array.from(map.entries())
       .filter(([, set]) => set.size > 1)
       .map(([terminal, set]) => ({ terminal, schoolIds: Array.from(set) })),
@@ -117,8 +126,10 @@ export function classifyStream(row: BankTransaction, registry: TerminalRegistry,
 
 export interface RowOwner {
   schoolId: number; // 0 = unassigned (or shared, see candidateSchoolIds)
-  /** Schools that may own the row: the terminal's schools. Empty = unknown. */
+  /** Schools that may own the row: the terminal's schools whose POS money goes into this account. Empty = unknown. */
   candidateSchoolIds: number[];
+  /** The terminal is registered, but only for schools whose POS account is a DIFFERENT bank account. */
+  foreignAccount: boolean;
   managerName: string;
   managerId: string;
   cardNumber: string;
@@ -126,12 +137,18 @@ export interface RowOwner {
 
 /** Who is responsible for a bank row. Never falls back to a default school. */
 export function ownerOfRow(row: BankTransaction, registry: TerminalRegistry, cards: PettyCardRule[], account: BankAccount | null): RowOwner {
-  const owner: RowOwner = { schoolId: 0, candidateSchoolIds: [], managerName: '', managerId: '', cardNumber: '' };
+  const owner: RowOwner = { schoolId: 0, candidateSchoolIds: [], foreignAccount: false, managerName: '', managerId: '', cardNumber: '' };
   const terminal = normalizeTerminal(row.terminal_number);
   if (terminal) {
     // A row with a terminal gets its school from the registered terminal only. A school stored on the row
     // by older app versions (default "school 1") is ignored.
-    owner.candidateSchoolIds = registry.schoolsOf(terminal);
+    const registered = registry.schoolsOf(terminal);
+    // A school whose POS is paid into another account cannot own a row of this account.
+    owner.candidateSchoolIds = registered.filter((id) => {
+      const acc = registry.posAccountOf(id);
+      return !acc || !account || acc === Number(account.id);
+    });
+    owner.foreignAccount = registered.length > 0 && owner.candidateSchoolIds.length === 0;
     owner.schoolId = owner.candidateSchoolIds.length === 1 ? owner.candidateSchoolIds[0] : 0;
     return owner;
   }
@@ -234,7 +251,7 @@ export function autoMatchBankRows(
   open.forEach((b) => {
     if (done.has(b.id)) return;
     const terminal = normalizeTerminal(b.terminal_number);
-    const schoolIds = terminal ? ctx.registry.schoolsOf(terminal) : [];
+    const schoolIds = terminal ? ownerOfRow(b, ctx.registry, ctx.cards, ctx.account).candidateSchoolIds : [];
     if (!schoolIds.length) return;
     const hits = eligible.filter((t) => {
       if (used.has(t.id) || t.kind === 'هزینه' || !schoolIds.includes(Number(t.school_id))) return false;
@@ -268,6 +285,8 @@ export interface AccountReport {
   unregisteredCount: number;
   unregisteredTotal: number;
   unknownTerminals: TerminalSummary[];
+  /** POS rows imported into this account although their schools' POS money goes to another account. */
+  foreignRows: BankTransaction[];
   sharedTerminals: TerminalSummary[];
   feeRows: BankTransaction[];
 }
@@ -280,6 +299,7 @@ export function buildAccountReport(
   const unknown = new Map<string, TerminalSummary>();
   const shared = new Map<string, TerminalSummary>();
   const feeRows: BankTransaction[] = [];
+  const foreignRows: BankTransaction[] = [];
   let unregisteredCount = 0;
   let unregisteredTotal = 0;
   const schoolName = (id: number) => ctx.schools.find((s) => s.id === id)?.name || `مدرسه ${id}`;
@@ -289,6 +309,7 @@ export function buildAccountReport(
     if (stream === 'fees') { if (!row.reconciled) feeRows.push(row); return; }
     if (row.reconciled) return;
     const owner = ownerOfRow(row, ctx.registry, ctx.cards, ctx.account);
+    if (owner.foreignAccount) { foreignRows.push(row); return; }
     const amount = Number(row.amount || 0);
     unregisteredCount++;
     unregisteredTotal += amount;
@@ -335,6 +356,7 @@ export function buildAccountReport(
     unregisteredCount,
     unregisteredTotal,
     unknownTerminals: Array.from(unknown.values()).sort((a, b) => b.count - a.count),
+    foreignRows,
     sharedTerminals: Array.from(shared.values()),
     feeRows,
   };
