@@ -5,8 +5,10 @@ import { isUncollectedChequeTx } from './cheques';
  * Pure bank-reconciliation logic (no React, no storage).
  *
  * Golden rule: a bank row is attached to a school ONLY through something the user registered —
- * a POS terminal number (school record, bank-account record or reconciliation rules) or a petty-cash
- * card that carries a school. There is NO default school; everything else stays "unassigned".
+ * a POS terminal number (school record or reconciliation rules) or a petty-cash card that carries a school.
+ * There is NO default school; everything else stays "unassigned".
+ * One terminal may be SHARED by several schools (e.g. morning and evening shifts): then the row belongs to
+ * that group of schools until it is matched or registered for one of them.
  */
 
 export interface PosTerminalRule { terminal: string; schoolId: number; schoolName?: string }
@@ -39,18 +41,18 @@ const splitTerminals = (val: unknown): string[] =>
 /* ------------------------------------------------------------------ terminals */
 
 export interface TerminalRegistry {
-  /** Every school a terminal was registered for (more than one = conflict). */
+  /** Every school a terminal was registered for (several = shared terminal). */
   schoolsOf: (terminal: unknown) => number[];
-  /** The school of a terminal, or 0 when unregistered / registered for several schools. */
+  /** The school of a terminal, or 0 when unregistered or shared by several schools. */
   schoolOf: (terminal: unknown) => number;
   isRegistered: (terminal: unknown) => boolean;
-  conflicts: Array<{ terminal: string; schoolIds: number[] }>;
+  /** Terminals registered for more than one school. */
+  shared: Array<{ terminal: string; schoolIds: number[] }>;
 }
 
 export function buildTerminalRegistry(
   rules: PosTerminalRule[],
   schools: Pick<School, 'id' | 'pos_terminal_number'>[],
-  accounts: Pick<BankAccount, 'school_id' | 'pos_terminal_number' | 'is_active'>[],
 ): TerminalRegistry {
   const map = new Map<string, Set<number>>();
   const add = (terminal: unknown, schoolId: unknown) => {
@@ -62,10 +64,6 @@ export function buildTerminalRegistry(
   };
   rules.forEach((r) => add(r.terminal, r.schoolId));
   schools.forEach((sc) => splitTerminals(sc.pos_terminal_number).forEach((t) => add(t, sc.id)));
-  accounts.forEach((a) => {
-    if (a.is_active === false) return;
-    splitTerminals(a.pos_terminal_number).forEach((t) => add(t, a.school_id));
-  });
   const schoolsOf = (terminal: unknown) => Array.from(map.get(normalizeTerminal(terminal)) || []);
   return {
     schoolsOf,
@@ -74,7 +72,7 @@ export function buildTerminalRegistry(
       return list.length === 1 ? list[0] : 0;
     },
     isRegistered: (terminal) => schoolsOf(terminal).length > 0,
-    conflicts: Array.from(map.entries())
+    shared: Array.from(map.entries())
       .filter(([, set]) => set.size > 1)
       .map(([terminal, set]) => ({ terminal, schoolIds: Array.from(set) })),
   };
@@ -118,7 +116,9 @@ export function classifyStream(row: BankTransaction, registry: TerminalRegistry,
 }
 
 export interface RowOwner {
-  schoolId: number; // 0 = unassigned
+  schoolId: number; // 0 = unassigned (or shared, see candidateSchoolIds)
+  /** Schools that may own the row: the terminal's schools. Empty = unknown. */
+  candidateSchoolIds: number[];
   managerName: string;
   managerId: string;
   cardNumber: string;
@@ -126,12 +126,13 @@ export interface RowOwner {
 
 /** Who is responsible for a bank row. Never falls back to a default school. */
 export function ownerOfRow(row: BankTransaction, registry: TerminalRegistry, cards: PettyCardRule[], account: BankAccount | null): RowOwner {
-  const owner: RowOwner = { schoolId: 0, managerName: '', managerId: '', cardNumber: '' };
+  const owner: RowOwner = { schoolId: 0, candidateSchoolIds: [], managerName: '', managerId: '', cardNumber: '' };
   const terminal = normalizeTerminal(row.terminal_number);
   if (terminal) {
     // A row with a terminal gets its school from the registered terminal only. A school stored on the row
     // by older app versions (default "school 1") is ignored.
-    owner.schoolId = registry.schoolOf(terminal);
+    owner.candidateSchoolIds = registry.schoolsOf(terminal);
+    owner.schoolId = owner.candidateSchoolIds.length === 1 ? owner.candidateSchoolIds[0] : 0;
     return owner;
   }
   const card = findPettyCard(row, cards, account);
@@ -139,10 +140,11 @@ export function ownerOfRow(row: BankTransaction, registry: TerminalRegistry, car
     owner.managerName = String(card.managerName || '').trim();
     owner.managerId = card.managerId === undefined || card.managerId === null ? '' : String(card.managerId);
     owner.cardNumber = normalizeCard(card.card);
-    if (Number(card.schoolId) > 0) owner.schoolId = Number(card.schoolId);
+    if (Number(card.schoolId) > 0) { owner.schoolId = Number(card.schoolId); owner.candidateSchoolIds = [owner.schoolId]; }
   }
   if (!owner.schoolId && Number(row.school_id) > 0 && (row.assigned_student_id || row.matched_transaction_id)) {
     owner.schoolId = Number(row.school_id);
+    owner.candidateSchoolIds = [owner.schoolId];
   }
   return owner;
 }
@@ -200,12 +202,13 @@ export function autoMatchBankRows(
   open.forEach((b) => {
     const codes = [b.tracking_code, b.reference_number, b.pos_reference_code].map(codeOf).filter((c) => c && c !== 'بانکی');
     if (!codes.length) return;
-    const bankSchool = ownerOfRow(b, ctx.registry, ctx.cards, ctx.account).schoolId;
+    const owner = ownerOfRow(b, ctx.registry, ctx.cards, ctx.account);
+    const bankSchool = owner.schoolId;
     const hits = eligible.filter((t) =>
       !used.has(t.id) &&
       Number(t.amount) === Number(b.amount) &&
       compatible(b, t) &&
-      (!bankSchool || Number(t.school_id) === bankSchool) &&
+      (!owner.candidateSchoolIds.length || owner.candidateSchoolIds.includes(Number(t.school_id))) &&
       codes.some((c) => sameCode(c, codeOf(t.tracking_code))));
     if (hits.length === 1) { take(b, hits[0], 'reference', bankSchool); done.add(b.id); }
   });
@@ -227,19 +230,19 @@ export function autoMatchBankRows(
     if (hits.length === 1) { take(b, hits[0], 'petty_card', Number(card.schoolId) || 0); done.add(b.id); }
   });
 
-  // Tier 3 — POS settlement from a REGISTERED terminal: same school, same amount, paid by card reader, ±3 days.
+  // Tier 3 — POS settlement from a REGISTERED terminal: one of its schools, same amount, paid by card reader, ±3 days.
   open.forEach((b) => {
     if (done.has(b.id)) return;
     const terminal = normalizeTerminal(b.terminal_number);
-    const school = terminal ? ctx.registry.schoolOf(terminal) : 0;
-    if (!school) return;
+    const schoolIds = terminal ? ctx.registry.schoolsOf(terminal) : [];
+    if (!schoolIds.length) return;
     const hits = eligible.filter((t) => {
-      if (used.has(t.id) || t.kind === 'هزینه' || Number(t.school_id) !== school) return false;
+      if (used.has(t.id) || t.kind === 'هزینه' || !schoolIds.includes(Number(t.school_id))) return false;
       if (Number(t.amount) !== Number(b.amount)) return false;
       const viaPos = normalizeTerminal(t.pos_terminal_number) === terminal || /کارت\s*خوان|پوز|pos/i.test(String(t.payment_method || ''));
       return viaPos && dayDiff(b.date, t.date) <= 3;
     });
-    if (hits.length === 1) { take(b, hits[0], 'pos_terminal', school); done.add(b.id); }
+    if (hits.length === 1) { take(b, hits[0], 'pos_terminal', schoolIds.length === 1 ? schoolIds[0] : 0); done.add(b.id); }
   });
 
   return out;
@@ -249,9 +252,10 @@ export function autoMatchBankRows(
 
 export interface ResponsibleGroup {
   key: string;
-  kind: 'petty' | 'school' | 'unassigned';
+  kind: 'petty' | 'school' | 'shared' | 'unassigned';
   title: string;
   schoolId: number;
+  schoolIds: number[];
   managerName: string;
   rows: BankTransaction[];
   total: number;
@@ -264,7 +268,7 @@ export interface AccountReport {
   unregisteredCount: number;
   unregisteredTotal: number;
   unknownTerminals: TerminalSummary[];
-  conflictTerminals: TerminalSummary[];
+  sharedTerminals: TerminalSummary[];
   feeRows: BankTransaction[];
 }
 
@@ -274,7 +278,7 @@ export function buildAccountReport(
 ): AccountReport {
   const groups = new Map<string, ResponsibleGroup>();
   const unknown = new Map<string, TerminalSummary>();
-  const conflict = new Map<string, TerminalSummary>();
+  const shared = new Map<string, TerminalSummary>();
   const feeRows: BankTransaction[] = [];
   let unregisteredCount = 0;
   let unregisteredTotal = 0;
@@ -300,19 +304,24 @@ export function buildAccountReport(
       key = `school|${owner.schoolId}`;
       kind = 'school';
       title = schoolName(owner.schoolId);
+    } else if (owner.candidateSchoolIds.length > 1) {
+      const ids = [...owner.candidateSchoolIds].sort((a, b) => a - b);
+      key = `shared|${ids.join(',')}`;
+      kind = 'shared';
+      title = `پایانه مشترک: ${ids.map(schoolName).join(' / ')}`;
     } else {
       key = 'unassigned';
       kind = 'unassigned';
       title = 'بدون مدرسه / مدیر مشخص';
     }
-    if (!groups.has(key)) groups.set(key, { key, kind, title, schoolId: owner.schoolId, managerName: owner.managerName, rows: [], total: 0 });
+    if (!groups.has(key)) groups.set(key, { key, kind, title, schoolId: owner.schoolId, schoolIds: owner.candidateSchoolIds, managerName: owner.managerName, rows: [], total: 0 });
     const g = groups.get(key)!;
     g.rows.push(row);
     g.total += amount;
 
     const terminal = normalizeTerminal(row.terminal_number);
     if (terminal && !owner.schoolId) {
-      const target = ctx.registry.isRegistered(terminal) ? conflict : unknown;
+      const target = ctx.registry.isRegistered(terminal) ? shared : unknown;
       const cur = target.get(terminal) || { terminal, count: 0, total: 0, schoolIds: ctx.registry.schoolsOf(terminal) };
       cur.count++;
       cur.total += amount;
@@ -320,13 +329,13 @@ export function buildAccountReport(
     }
   });
 
-  const order = { petty: 0, school: 1, unassigned: 2 } as const;
+  const order = { petty: 0, school: 1, shared: 2, unassigned: 3 } as const;
   return {
     groups: Array.from(groups.values()).sort((a, b) => order[a.kind] - order[b.kind] || b.rows.length - a.rows.length),
     unregisteredCount,
     unregisteredTotal,
     unknownTerminals: Array.from(unknown.values()).sort((a, b) => b.count - a.count),
-    conflictTerminals: Array.from(conflict.values()),
+    sharedTerminals: Array.from(shared.values()),
     feeRows,
   };
 }

@@ -272,33 +272,35 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
     return Array.from(groups.values());
   }, [pettyCashCards]);
 
-  // Merge POS terminals entered on each school's record into the reconciliation lookup.
-  // School configuration is authoritative for the school assignment of a terminal.
+  // Terminal list for the settings tab: rules + the POS number typed on each school's record.
+  // One terminal may be shared by several schools (morning/evening shifts), so schools are merged per terminal.
   const effectivePosTerminals = useMemo(() => {
-    const merged = posTerminals.map((p) => ({ ...p }));
+    const byTerminal = new Map<string, { terminal: string; schoolIds: number[] }>();
+    const add = (terminal: unknown, schoolId: number) => {
+      const t = normalizeTerminal(terminal);
+      if (!t) return;
+      const cur = byTerminal.get(t) || { terminal: t, schoolIds: [] };
+      if (schoolId && !cur.schoolIds.includes(schoolId)) cur.schoolIds.push(schoolId);
+      byTerminal.set(t, cur);
+    };
+    posTerminals.forEach((p) => add(p.terminal, Number(p.schoolId || 0)));
     schools.forEach((school) => {
-      const terminals = String(school.pos_terminal_number || '')
+      String(school.pos_terminal_number || '')
         .split(/[,،;؛\n\s]+/)
-        .map((value) => normalizeTerminal(value))
-        .filter(Boolean);
-      terminals.forEach((terminal) => {
-        const existingIndex = merged.findIndex((p) => normalizeTerminal(p.terminal) === terminal);
-        const mapped = {
-          terminal,
-          schoolId: Number(school.id),
-          schoolName: school.name || '',
-        };
-        if (existingIndex >= 0) merged[existingIndex] = { ...merged[existingIndex], ...mapped };
-        else merged.push(mapped);
-      });
+        .forEach((value) => add(value, Number(school.id)));
     });
-    return merged;
+    return Array.from(byTerminal.values()).map((x) => ({
+      terminal: x.terminal,
+      schoolId: x.schoolIds[0] || 0,
+      schoolIds: x.schoolIds,
+      schoolName: x.schoolIds.map((id) => schools.find((sc) => sc.id === id)?.name).filter(Boolean).join(' / '),
+    }));
   }, [posTerminals, schools]);
 
-  // Terminals the user explicitly registered (school record, bank-account record, rules). Nothing is guessed.
+  // Terminals the user explicitly registered (school record, rules). Nothing is guessed; a terminal may belong to several schools.
   const terminalRegistry = useMemo(
-    () => buildTerminalRegistry(posTerminals, schools, bankAccounts),
-    [posTerminals, schools, bankAccounts],
+    () => buildTerminalRegistry(posTerminals, schools),
+    [posTerminals, schools],
   );
 
   // Stream of a bank row: pos / petty / fees / other
@@ -911,12 +913,16 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
     }
   };
 
-  const registerTerminalForSchool = (terminal: string, schoolId: number) => {
+  // Registers a terminal for one or more schools (a terminal can be shared by several shifts/schools).
+  const registerTerminalForSchool = (terminal: string, schoolIds: number[]) => {
     const t = normalizeTerminal(terminal);
-    if (!t || !schoolId) return;
-    const school = schools.find((sc) => sc.id === schoolId);
+    const ids = Array.from(new Set(schoolIds.filter(Boolean)));
+    if (!t || !ids.length) return;
     saveTerminalsAndCards(
-      [...posTerminals.filter((p) => normalizeTerminal(p.terminal) !== t), { terminal: t, schoolId, schoolName: school?.name || '' }],
+      [
+        ...posTerminals.filter((p) => normalizeTerminal(p.terminal) !== t),
+        ...ids.map((id) => ({ terminal: t, schoolId: id, schoolName: schools.find((sc) => sc.id === id)?.name || '' })),
+      ],
       pettyCashCards,
     );
   };
@@ -1298,7 +1304,6 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
             onNotify={notifyManagers}
             onRegisterTerminal={registerTerminalForSchool}
             onCleanTags={cleanWrongTags}
-            onOpenTerminalSettings={() => setActiveTab('terminals_cards')}
           />
         )}
 
@@ -1907,10 +1912,10 @@ export const BankAccountPage: React.FC<{ account: BankAccount; onBack: () => voi
                 {effectivePosTerminals.map((pos) => (
                   <div key={pos.terminal} className="p-3.5 rounded-2xl border border-gray-200 bg-gray-50/50 space-y-2">
                     <div className="flex items-center justify-between"><span className="font-mono font-black text-purple-900 text-sm">{pos.terminal}</span><span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 text-[10px] font-bold">پوز شاپرک</span></div>
-                    <div className="font-bold text-xs text-gray-800">{pos.schoolName || 'بدون انتساب به مدرسه'}</div>
+                    <div className="font-bold text-xs text-gray-800">{pos.schoolName ? (pos.schoolIds.length > 1 ? `مشترک: ${pos.schoolName}` : pos.schoolName) : 'بدون انتساب به مدرسه'}</div>
                     <div className="flex gap-2">
-                      <button type="button" onClick={() => { const v = window.prompt('شماره پایانه:', pos.terminal); if (v === null) return; const terminal = normalizeTerminal(v); if (!terminal) { setBannerNotice({text:'شماره پایانه معتبر نیست.',type:'error'}); return; } if (effectivePosTerminals.some((x) => normalizeTerminal(x.terminal) === terminal && normalizeTerminal(x.terminal) !== normalizeTerminal(pos.terminal))) { setBannerNotice({text:'شماره پایانه تکراری است.',type:'error'}); return; } saveTerminalsAndCards(posTerminals.map((x) => x.terminal === pos.terminal ? {...x, terminal} : x), pettyCashCards); }} className="flex-1 px-3 py-2 rounded-lg bg-purple-100 text-purple-800 text-xs font-bold">ویرایش شماره</button>
-                      <button type="button" onClick={() => { if (window.confirm('پایانه ' + pos.terminal + ' حذف شود؟')) saveTerminalsAndCards(posTerminals.filter((x) => x.terminal !== pos.terminal), pettyCashCards); }} className="px-3 py-2 rounded-lg bg-rose-100 text-rose-700 text-xs font-bold">حذف</button>
+                      <button type="button" onClick={() => { const v = window.prompt('شماره پایانه:', pos.terminal); if (v === null) return; const terminal = normalizeTerminal(v); if (!terminal) { setBannerNotice({text:'شماره پایانه معتبر نیست.',type:'error'}); return; } if (effectivePosTerminals.some((x) => normalizeTerminal(x.terminal) === terminal && normalizeTerminal(x.terminal) !== normalizeTerminal(pos.terminal))) { setBannerNotice({text:'شماره پایانه تکراری است.',type:'error'}); return; } saveTerminalsAndCards(posTerminals.map((x) => normalizeTerminal(x.terminal) === normalizeTerminal(pos.terminal) ? {...x, terminal} : x), pettyCashCards); }} className="flex-1 px-3 py-2 rounded-lg bg-purple-100 text-purple-800 text-xs font-bold">ویرایش شماره</button>
+                      <button type="button" onClick={() => { if (window.confirm('پایانه ' + pos.terminal + ' حذف شود؟')) saveTerminalsAndCards(posTerminals.filter((x) => normalizeTerminal(x.terminal) !== normalizeTerminal(pos.terminal)), pettyCashCards); }} className="px-3 py-2 rounded-lg bg-rose-100 text-rose-700 text-xs font-bold">حذف</button>
                     </div>
                   </div>
                 ))}

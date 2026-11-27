@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AlertTriangle, BellRing, ChevronDown, ChevronUp, CreditCard, Eraser, Landmark, Settings2, User } from 'lucide-react';
+import { AlertTriangle, BellRing, ChevronDown, ChevronUp, CreditCard, Eraser, Landmark, User } from 'lucide-react';
 import type { BankTransaction, School } from '../../types';
 import type { AccountReport, ResponsibleGroup } from '../../utils/bankReconcile';
 import { formatRial, jalaliFromGregorian } from '../../utils/jalali';
@@ -11,16 +11,16 @@ interface Props {
   isSenior: boolean;
   onResolve: (row: BankTransaction) => void;
   onNotify: () => void;
-  onRegisterTerminal: (terminal: string, schoolId: number) => void;
+  onRegisterTerminal: (terminal: string, schoolIds: number[]) => void;
   onCleanTags: () => void;
-  onOpenTerminalSettings: () => void;
-}
+  }
 
 const PAGE = 15;
 
 const kindStyle: Record<ResponsibleGroup['kind'], { badge: string; label: string }> = {
   petty: { badge: 'bg-blue-100 text-blue-800', label: 'کارت تن‌خواه' },
   school: { badge: 'bg-emerald-100 text-emerald-800', label: 'مدرسه' },
+  shared: { badge: 'bg-indigo-100 text-indigo-800', label: 'پایانه مشترک' },
   unassigned: { badge: 'bg-amber-100 text-amber-900', label: 'نامشخص' },
 };
 
@@ -78,26 +78,33 @@ const GroupCard: React.FC<{ group: ResponsibleGroup; onResolve: (row: BankTransa
   );
 };
 
-const UnknownTerminalRow: React.FC<{ terminal: string; count: number; total: number; schools: School[]; onRegister: (terminal: string, schoolId: number) => void; disabled: boolean }> = ({ terminal, count, total, schools, onRegister, disabled }) => {
-  const [schoolId, setSchoolId] = useState(0);
+const UnknownTerminalRow: React.FC<{ terminal: string; count: number; total: number; schools: School[]; onRegister: (terminal: string, schoolIds: number[]) => void; disabled: boolean }> = ({ terminal, count, total, schools, onRegister, disabled }) => {
+  const [picked, setPicked] = useState<number[]>([]);
+  const toggle = (id: number) => setPicked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
   return (
-    <div className="flex flex-wrap items-center gap-2 bg-white rounded-xl border border-amber-200 p-3">
-      <div className="flex-1 min-w-[180px]">
-        <div className="text-sm font-black text-gray-900 font-mono" dir="ltr">{terminal}</div>
-        <div className="text-[11px] text-gray-500">{count.toLocaleString('fa-IR')} ردیف · {formatRial(total)} ریال</div>
+    <div className="bg-white rounded-xl border border-amber-200 p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <div className="text-sm font-black text-gray-900 font-mono" dir="ltr">{terminal}</div>
+          <div className="text-[11px] text-gray-500">{count.toLocaleString('fa-IR')} ردیف · {formatRial(total)} ریال</div>
+        </div>
+        <button type="button" disabled={!picked.length || disabled} onClick={() => onRegister(terminal, picked)} className="px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-amber-950 text-xs font-black">
+          ثبت پایانه
+        </button>
       </div>
-      <select value={schoolId} onChange={(e) => setSchoolId(Number(e.target.value))} className="text-xs py-2 px-2 rounded-lg border border-gray-200 bg-gray-50 max-w-[220px]">
-        <option value={0}>مدرسه‌ی این پایانه…</option>
-        {schools.filter((s) => s.active !== false).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-      </select>
-      <button type="button" disabled={!schoolId || disabled} onClick={() => onRegister(terminal, schoolId)} className="px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-amber-950 text-xs font-black">
-        ثبت پایانه
-      </button>
+      <div className="text-[11px] text-gray-500">مدرسه‌ها را انتخاب کنید (اگر چند شیفت یک پایانه دارند، همه را انتخاب کنید):</div>
+      <div className="flex flex-wrap gap-1.5">
+        {schools.filter((s) => s.active !== false).map((s) => (
+          <button key={s.id} type="button" onClick={() => toggle(s.id)} className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${picked.includes(s.id) ? 'bg-purple-700 text-white border-purple-700' : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-purple-50'}`}>
+            {s.name}
+          </button>
+        ))}
+      </div>
     </div>
   );
 };
 
-export const BankTodoPanel: React.FC<Props> = ({ report, schools, busy, isSenior, onResolve, onNotify, onRegisterTerminal, onCleanTags, onOpenTerminalSettings }) => {
+export const BankTodoPanel: React.FC<Props> = ({ report, schools, busy, isSenior, onResolve, onNotify, onRegisterTerminal, onCleanTags }) => {
   const schoolName = (id: number) => schools.find((s) => s.id === id)?.name || `مدرسه ${id}`;
   const notifiable = report.groups.filter((g) => g.kind !== 'unassigned').reduce((n, g) => n + g.rows.length, 0);
   const petty = report.groups.filter((g) => g.kind === 'petty');
@@ -155,26 +162,18 @@ export const BankTodoPanel: React.FC<Props> = ({ report, schools, busy, isSenior
         </div>
       )}
 
-      {report.conflictTerminals.length > 0 && (
-        <div className="bg-rose-50 border border-rose-200 rounded-3xl p-4 sm:p-5 space-y-2">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-            <h3 className="font-black text-rose-950 text-sm">پایانه‌ی ثبت‌شده برای چند مدرسه</h3>
-          </div>
-          <p className="text-xs text-rose-900 leading-relaxed">
-            یک پایانه باید فقط یک مدرسه داشته باشد؛ تا اصلاح نشود ردیف‌هایش بدون مدرسه می‌مانند.
+      {report.sharedTerminals.length > 0 && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-3xl p-4 space-y-1.5">
+          <h3 className="font-black text-indigo-950 text-sm">پایانه‌های مشترک بین چند مدرسه</h3>
+          <p className="text-xs text-indigo-900 leading-relaxed">
+            ردیف این پایانه‌ها تا وقتی با یک شهریه تطبیق نخورده‌اند به همه‌ی مدیران آن مدارس اطلاع داده می‌شود؛ با تطبیق، مدرسه‌ی درست خودکار مشخص می‌شود.
           </p>
-          {report.conflictTerminals.map((t) => (
-            <div key={t.terminal} className="text-xs bg-white rounded-xl border border-rose-200 p-3">
+          {report.sharedTerminals.map((t) => (
+            <div key={t.terminal} className="text-xs bg-white rounded-xl border border-indigo-100 p-2.5">
               <span className="font-mono font-black" dir="ltr">{t.terminal}</span>
               <span className="text-gray-600"> ← {t.schoolIds.map(schoolName).join(' / ')} ({t.count.toLocaleString('fa-IR')} ردیف)</span>
             </div>
           ))}
-          {isSenior && (
-            <button type="button" onClick={onOpenTerminalSettings} className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-800 underline">
-              <Settings2 className="w-3.5 h-3.5" /> باز کردن فهرست پایانه‌ها
-            </button>
-          )}
         </div>
       )}
 

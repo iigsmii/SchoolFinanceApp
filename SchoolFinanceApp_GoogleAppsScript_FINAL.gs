@@ -1778,9 +1778,10 @@ function bankRulesSave_(b){
 
 /* ---------- BANK: registered POS terminals, un-tagging, manager notifications ----------
  * A bank row is attached to a school ONLY through something the user registered: a POS terminal number
- * (school record, bank-account record or the reconciliation rules) or a petty-cash card with a school.
- * Nothing is guessed and there is no default school. A terminal registered for two schools is ambiguous
- * and therefore leaves the row unassigned. */
+ * (school record or the reconciliation rules) or a petty-cash card with a school.
+ * Nothing is guessed and there is no default school. A terminal may be SHARED by several schools (morning and
+ * evening shifts use one POS): such a row stays unassigned but is announced to the managers of all those schools
+ * until it is matched / registered for one of them. */
 function bankTermNorm_(v){return digits_(v==null?'':v).replace(/^0+/,'');}
 function bankRulesLoad_(){
   let rules=defaultBankRules_();
@@ -1793,7 +1794,6 @@ function bankTerminalMap_(rules){
   const add=(t,s)=>{t=bankTermNorm_(t);s=String(s==null?'':s).trim();if(!t||!s||s==='0')return;if(!map[t])map[t]=[];if(map[t].indexOf(s)<0)map[t].push(s);};
   rows_('Settings').forEach(x=>{const k=String(x.obj.key||'');if(k.indexOf('pos_terminal_')===0)String(x.obj.value||'').split(/[,،;؛\s]+/).forEach(t=>add(t,k.slice(13)));});
   (Array.isArray(rules.posTerminals)?rules.posTerminals:[]).forEach(p=>add(p.terminal,p.schoolId));
-  rows_('BankAccounts').forEach(x=>{if(String(x.obj.is_active).toLowerCase()==='false')return;String(x.obj.pos_terminal_number||'').split(/[,،;؛\s]+/).forEach(t=>add(t,x.obj.school_id));});
   return map;
 }
 function bankSchoolForTerminal_(map,terminal){const s=map[bankTermNorm_(terminal)];return s&&s.length===1?s[0]:'';}
@@ -1816,7 +1816,7 @@ function bankUntag_(b){
     if(annotated[bankAnnotationKey_(o)])return;
     const d=detail[String(o.id)]||{};
     const term=bankTermNorm_(d.terminal_number);
-    if(term&&termMap[term]&&termMap[term].indexOf(sid)>=0)return; // registered for this very school
+    if(term&&termMap[term]&&termMap[term].length===1&&termMap[term][0]===sid)return; // the terminal belongs to this school alone
     const card=digits_(d.source_card_number||'');
     if(!term&&card&&cards.some(c=>c&&c.active!==false&&digits_(c.card||'')===card&&String(c.schoolId||'')===sid))return;
     cleared++;ids.push(o.id);byTerminal[term||'—']=(byTerminal[term||'—']||0)+1;
@@ -1857,7 +1857,12 @@ function bankActionableRows_(onlyIds){
       source_card:digits_(d.source_card_number||''),kind:'unassigned',manager_ids:[],card:''};
     if(rec.school_id==='0')rec.school_id='';
     // A row with a POS terminal belongs only to the school that registered that terminal (stale tags are ignored).
-    if(bankTermNorm_(rec.terminal))rec.school_id=bankSchoolForTerminal_(termMap,rec.terminal);
+    rec.school_ids=[];
+    if(bankTermNorm_(rec.terminal)){
+      const list=termMap[bankTermNorm_(rec.terminal)]||[];
+      rec.school_id=list.length===1?list[0]:'';
+      if(list.length>1)rec.school_ids=list;
+    }
     if(direction==='withdrawal'&&rec.source_card){
       const card=cards.find(c=>digits_(c.card||'')===rec.source_card);
       let linkedOk=true;
@@ -1869,6 +1874,7 @@ function bankActionableRows_(onlyIds){
       }
     }
     if(rec.school_id){rec.kind='school';rec.manager_ids=managers.filter(m=>userSchoolIds_(m.obj).indexOf(rec.school_id)>=0).map(m=>String(m.obj.id));}
+    else if(rec.school_ids.length>1){rec.kind='shared';rec.manager_ids=managers.filter(m=>userSchoolIds_(m.obj).some(id=>rec.school_ids.indexOf(id)>=0)).map(m=>String(m.obj.id));}
     out.push(rec);
   });
   return out;
@@ -1892,8 +1898,8 @@ function bankNotifyManagers_(onlyIds){
   const groups={};
   rows.forEach(r=>{
     if(announced[String(r.id)])return;
-    const key=r.kind==='petty'?('P|'+r.manager_ids[0]+'|'+r.card):('S|'+r.school_id);
-    (groups[key]=groups[key]||{kind:r.kind,rows:[],manager:r.manager_ids[0],school:r.school_id,card:r.card}).rows.push(r);
+    const key=r.kind==='petty'?('P|'+r.manager_ids[0]+'|'+r.card):r.kind==='shared'?('H|'+r.school_ids.slice().sort().join(',')):('S|'+r.school_id);
+    (groups[key]=groups[key]||{kind:r.kind,rows:[],manager:r.manager_ids[0],managers:r.manager_ids,school:r.school_id,schools:r.school_ids,card:r.card}).rows.push(r);
   });
   let messages=0,rowsNotified=0;
   Object.keys(groups).forEach(k=>{
@@ -1905,11 +1911,18 @@ function bankNotifyManagers_(onlyIds){
     let text;
     if(g.kind==='petty'){
       text='[BANK-PETTY:'+ids+'] '+g.rows.length+' برداشت ثبت‌نشده از کارت تن‌خواه شما ('+g.card+') در بانک دیده شد؛ مجموع '+total+' ریال.\n'+sample+more+'\nلطفاً هزینهٔ هرکدام را در بخش هزینه‌ها با منبع «کارت تن‌خواه» ثبت کنید.';
+    } else if(g.kind==='shared'){
+      text='[BANK-UNREG:'+ids+'] '+g.rows.length+' تراکنش بانکی از پایانهٔ مشترک مدارس ('+g.schools.map(schoolName_).join('، ')+') در نرم‌افزار ثبت نشده است؛ مجموع '+total+' ریال.\n'+sample+more+'\nاگر مربوط به مدرسهٔ شماست، شهریه یا هزینهٔ آن را ثبت کنید.';
     } else {
       text='[BANK-UNREG:'+ids+'] '+g.rows.length+' تراکنش بانکی مدرسهٔ '+schoolName_(g.school)+' در نرم‌افزار ثبت نشده است؛ مجموع '+total+' ریال.\n'+sample+more+'\nلطفاً شهریه یا هزینهٔ مربوط را ثبت کنید.';
     }
-    appendObj_('Messages',{id:'SYS-'+Utilities.getUuid(),message:text,created_by:'system',created_at:now_(),active:true,
-      target_school_id:g.kind==='petty'?'':String(g.school),target_role:'manager',author_name:'سامانه تطبیق بانک',target_user_id:g.kind==='petty'?String(g.manager):''});
+    const base={message:text,created_by:'system',created_at:now_(),active:true,target_role:'manager',author_name:'سامانه تطبیق بانک'};
+    if(g.kind==='shared'){
+      // One message per responsible manager (a school-wide message would not reach the other schools' managers).
+      g.managers.forEach(mid=>appendObj_('Messages',Object.assign({id:'SYS-'+Utilities.getUuid(),target_school_id:'',target_user_id:String(mid)},base)));
+    } else {
+      appendObj_('Messages',Object.assign({id:'SYS-'+Utilities.getUuid(),target_school_id:g.kind==='petty'?'':String(g.school),target_user_id:g.kind==='petty'?String(g.manager):''},base));
+    }
     messages++;rowsNotified+=g.rows.length;
   });
   if(messages)SpreadsheetApp.flush();
