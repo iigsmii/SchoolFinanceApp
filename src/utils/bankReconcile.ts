@@ -175,14 +175,17 @@ export interface AutoMatch {
   schoolId: number;
 }
 
+/** Date window for a code match: the manager may record the payment a few days off the bank date. */
+export const CODE_MATCH_DAYS = 5;
 const MATCHABLE_KINDS = new Set(['شهریه', 'هزینه', 'دریافت متفرقه']);
 const dayDiff = (a: string, b: string) => Math.abs((new Date(a).getTime() - new Date(b).getTime()) / 86400000);
-const codeOf = (v: unknown) => toLatinDigits(v).trim();
+/** Digits/letters only and no leading zeros: managers type "83363" for the receipt's "083363". */
+const codeOf = (v: unknown) => toLatinDigits(v).replace(/[^0-9A-Za-z]/g, '').replace(/^0+(?=.)/, '');
 
 const sameCode = (a: string, b: string) => {
   if (!a || !b) return false;
   if (a === b) return true;
-  // Bank statements sometimes prefix/suffix the reference; only trust long codes for partial matches.
+  // Only long codes (reference numbers) may match partially; short tracking codes must be equal.
   return a.length >= 8 && b.length >= 8 && (a.endsWith(b) || b.endsWith(a));
 };
 
@@ -215,9 +218,10 @@ export function autoMatchBankRows(
   };
   const done = new Set<number>();
 
-  // Tier 1 — the same reference/tracking code and the same amount.
+  // Tier 1 — the same code + amount + date. The code the manager typed may be the receipt's tracking number OR its
+  // reference number (many card-reader slips only show the reference), so both bank codes are tried.
   open.forEach((b) => {
-    const codes = [b.tracking_code, b.reference_number, b.pos_reference_code].map(codeOf).filter((c) => c && c !== 'بانکی');
+    const codes = [b.tracking_code, b.reference_number].map(codeOf).filter((c) => c && c !== 'بانکی');
     if (!codes.length) return;
     const owner = ownerOfRow(b, ctx.registry, ctx.cards, ctx.account);
     const bankSchool = owner.schoolId;
@@ -226,6 +230,7 @@ export function autoMatchBankRows(
       Number(t.amount) === Number(b.amount) &&
       compatible(b, t) &&
       (!owner.candidateSchoolIds.length || owner.candidateSchoolIds.includes(Number(t.school_id))) &&
+      dayDiff(b.date, t.date) <= CODE_MATCH_DAYS &&
       codes.some((c) => sameCode(c, codeOf(t.tracking_code))));
     if (hits.length === 1) { take(b, hits[0], 'reference', bankSchool); done.add(b.id); }
   });
