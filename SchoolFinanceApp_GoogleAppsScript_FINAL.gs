@@ -301,6 +301,7 @@ function doPost(e) {
       case 'bank': result=bank_(body); break;
       case 'bank_review': result=bankReview_(body); break;
       case 'bank_match': result=bankMatch_(body); break;
+      case 'bank_batch': result=bankBatch_(body); break;
       case 'bank_reconcile': result=bankReconcile_(body); break;
       case 'bank_upload': result=bankUpload_(body); break;
       case 'bank_untag': result=bankUntag_(body); break;
@@ -1464,7 +1465,7 @@ function bankAnnotationSave_(b){
   const studentId=String(b.student_id||'');
   if(studentId){const student=findRow_('Students',studentId);if(!student)throw new Error('دانش‌آموز انتخاب‌شده یافت نشد.');if(u.role!=='senior'&&!userCanAccessSchool_(u,student.obj.school_id))throw new Error('دانش‌آموز متعلق به مدرسه دیگری است.');}
   const values=[hit?hit.obj.id:Utilities.getUuid(),schoolId,date,amount,tracking,account,studentId,String(b.student_name||''),String(b.purpose||''),u.id,now_(),String(b.direction||'unknown'),b.balance===undefined?'':Number(b.balance||0),String(b.card_number||account)];
-  if(hit) updateRow_('BankAnnotations',hit.row,values); else sh.appendRow(values);
+  if(hit) updateRow_('BankAnnotations',hit.row,values); else {sh.appendRow(values);rowsCacheDrop_('BankAnnotations');}
   return {success:true,message:'تخصیص تراکنش بانکی ذخیره شد.'};
 }
 
@@ -1489,6 +1490,27 @@ function bankReview_(b) {
   return {success:true,data:data,bank_count:banks.length,transaction_count:tx.length};
 }
 
+/** Runs many queued bank_match / bank_annotation requests in ONE call (one lock, one auth, shared sheet reads).
+ *  The phone queued hundreds of them; one HTTP round trip + lock + full-sheet reads each made sync take an hour. */
+function bankBatch_(b){
+  auth_(b);
+  const items=Array.isArray(b.items)?b.items:[];
+  if(items.length>100)throw new Error('حداکثر ۱۰۰ مورد در هر دسته.');
+  const handlers={bank_match:bankMatch_,bank_annotation:bankAnnotationSave_};
+  syncRowsCache_=Object.create(null);syncRowsCacheEnabled_=true;
+  const results=[];
+  try{
+    items.forEach(it=>{
+      const fn=handlers[String(it&&it.action||'')];
+      if(!fn){results.push({success:false,error:'عمل پشتیبانی‌نشده در دسته'});return;}
+      try{
+        const r=fn(Object.assign({},it,{token:b.token}));
+        results.push(r&&r.success?{success:true}:{success:false,error:String(r&&(r.error||r.message)||'ناموفق')});
+      }catch(err){results.push({success:false,error:String(err&&err.message||err)});}
+    });
+  } finally {syncRowsCacheEnabled_=false;syncRowsCache_=Object.create(null);}
+  return {success:true,results:results};
+}
 function bankMatch_(b) {
   auth_(b,['senior','admin']);
   let hit=findRow_('Bank',b.id);
@@ -3091,6 +3113,7 @@ function appendObj_(name,obj){
   const headers=sh.getRange(1,1,1,Math.max(1,sh.getLastColumn())).getDisplayValues()[0].map(h=>String(h||'').trim());
   (HEADERS[name]||[]).forEach(h=>{ if(headers.indexOf(h)<0){ sh.getRange(1,headers.length+1).setValue(h); headers.push(h); } });
   sh.appendRow(headers.map(h=>obj[h]===undefined||obj[h]===null?'':obj[h]));
+  rowsCacheDrop_(name);
   return sh.getLastRow();
 }
 /** Update only the given keys of an existing row, by header name (adds missing canonical columns). */
@@ -3105,6 +3128,7 @@ function patchRow_(name,row,obj){
     }
     sh.getRange(row,col+1).setValue(obj[k]);
   });
+  rowsCacheDrop_(name);
 }
 function isSenior_(u){ return !!u && (u.role==='senior'||u.role==='admin'); }
 function truthy_(v){ return v===true||String(v).toLowerCase()==='true'; }
@@ -3205,10 +3229,15 @@ function findRow_(name,id) {
 // Write by header name, not physical column order. Older deployments may have
 // appended newer columns at the end of a sheet, so positional writes can update
 // the wrong fields while still returning success.
+/** Forget the per-request row cache of a sheet after writing to it (the cache is only on during sync / batches). */
+function rowsCacheDrop_(name){delete syncRowsCache_[String(name)+':0'];delete syncRowsCache_[String(name)+':1'];}
+/** Writes the given values (canonical column order) into one row. Cells whose value is already identical are
+ *  skipped: every setValue is a separate slow Sheets call and the script lock is held meanwhile. */
 function updateRow_(name,row,values) {
   const sh=sheet_(name);
   const canonical=HEADERS[name]||[];
   let headers=sh.getRange(1,1,1,Math.max(1,sh.getLastColumn())).getDisplayValues()[0].map(h=>String(h||'').trim());
+  const plan=[];
   values.forEach((value,index)=>{
     const header=canonical[index];
     if(!header) return;
@@ -3218,8 +3247,17 @@ function updateRow_(name,row,values) {
       sh.getRange(1,col+1).setValue(header);
       headers.push(header);
     }
-    sh.getRange(row,col+1).setValue(value);
+    plan.push([col,value]);
   });
+  if(!plan.length) return;
+  const width=Math.max.apply(null,plan.map(x=>x[0]))+1;
+  const old=sh.getRange(row,1,1,width).getValues()[0];
+  plan.forEach(x=>{
+    const cur=old[x[0]],value=x[1];
+    if(cur!==undefined&&!(cur instanceof Date)&&value!==null&&typeof value!=='object'&&value!==undefined&&String(cur)===String(value)) return;
+    sh.getRange(row,x[0]+1).setValue(value);
+  });
+  rowsCacheDrop_(name);
 }
 
 /** allowApproved: مدیر ارشد می‌تواند سند تأییدشده را حذف کند (به‌جز سند تطبیق‌شده با بانک). */
