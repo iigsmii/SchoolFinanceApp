@@ -1491,11 +1491,12 @@ function bankReview_(b) {
 
 function bankMatch_(b) {
   auth_(b,['senior','admin']);
-  let hit=findRow_('Bank',b.id);
+  const bankAll=rows_('Bank'); // read once: each full-sheet read is slow and the script lock is held meanwhile
+  let hit=bankAll.find(x=>String(x.obj.id)===String(b.id))||null;
   if(!hit&&b.tracking_code!==undefined&&b.amount!==undefined){
     // Rows imported from the app are identified by their content until the app learns the sheet ids.
     const amt=Number(b.amount),tr=String(b.tracking_code||'').trim();
-    hit=rows_('Bank').find(x=>Number(x.obj.amount)===amt&&String(x.obj.tracking_code||'').trim()===tr&&(!b.school_id||String(x.obj.school_id)===String(b.school_id))&&(!b.date||String(x.obj.date)===String(b.date)))||null;
+    hit=bankAll.find(x=>Number(x.obj.amount)===amt&&String(x.obj.tracking_code||'').trim()===tr&&(!b.school_id||String(x.obj.school_id)===String(b.school_id))&&(!b.date||String(x.obj.date)===String(b.date)))||null;
   }
   if(!hit) throw new Error('تراکنش بانکی یافت نشد.');
   let transactionId=String(b.transaction_id||'');
@@ -1512,7 +1513,7 @@ function bankMatch_(b) {
     if(!chequeRow||String(chequeRow.obj.collection_status)!=='cleared') throw new Error('این چک هنوز توسط مدیر ارشد «وصول‌شده» تأیید نشده است؛ ابتدا چک را سرحساب و در سررسید وصول کنید.');
   }
   if(!bankEligible_(tx.obj))throw new Error('این تراکنش نقدی یا بدهی، قابل تطبیق بانکی نیست.');
-  if(rows_('Bank').some(x=>String(x.obj.matched_transaction_id||'')===transactionId&&String(x.obj.id)!==String(hit.obj.id)))
+  if(bankAll.some(x=>String(x.obj.matched_transaction_id||'')===transactionId&&String(x.obj.id)!==String(hit.obj.id)))
     throw new Error('این تراکنش به ردیف بانکی دیگری متصل است.');
   if(String(tx.obj.kind)==='debt') throw new Error('بدهی دانش‌آموز قابل تطبیق با بانک نیست.');
   if(String(hit.obj.school_id||'').trim()!==''&&String(hit.obj.school_id)!==String(tx.obj.school_id)) throw new Error('تراکنش بانکی و تراکنش نرم‌افزار باید متعلق به یک مدرسه باشند.');
@@ -1995,7 +1996,11 @@ function bankUpload_(b){
     if(b.rows.length>10000)throw new Error('حداکثر ۱۰٬۰۰۰ ردیف در هر بار ورود مجاز است.');
     const bankRules=bankRulesLoad_();
     const termMap=bankTerminalMap_(bankRules);
-    let added=0,skipped=0;const existing=rows_('Bank').map(x=>x.obj);const addedBankIds=[];
+    let added=0,skipped=0;const addedBankIds=[];
+    const dupKey=(amount,track,school,date,direction,card)=>[Number(amount),String(track||'').trim(),String(school||''),String(date||''),String(direction||'unknown'),String(card||'').replace(/\D/g,'')].join('|');
+    const seen={};rows_('Bank').forEach(x=>{const o=x.obj;seen[dupKey(o.amount,o.tracking_code,o.school_id,o.date,o.direction,o.source_card_number)]=true;});
+    let nextBankId=nextId_('Bank');
+    const bankList=[],detailList=[];
     b.rows.forEach(r=>{
       const amount=Number(r.amount)||0,track=String(r.tracking_code||'').trim();
       if(!amount||(!track&&!String(r.description||'').trim())){skipped++;return;}
@@ -2011,19 +2016,21 @@ function bankUpload_(b){
       }
       const direction=String(r.direction||'unknown');
       const sourceCard=String(r.source_card_number||'').replace(/\D/g,'');
-      const dup=existing.some(x=>Number(x.amount)===amount&&String(x.tracking_code||'').trim()===track&&String(x.school_id||'')===schoolId&&String(x.date||'')===String(r.date||'')&&String(x.direction||'unknown')===direction&&String(x.source_card_number||'').replace(/\D/g,'')===sourceCard);
-      if(dup){skipped++;return;}
-      const bankId=nextId_('Bank');
-      appendByHeaders_('Bank',[bankId,String(r.date||''),schoolId,amount,String(r.description||''),track,String(r.bank_account||r.card_number||''),now_(),'','false','false']);
-      appendByHeaders_('BankDetails',[
+      const key=dupKey(amount,track,schoolId,r.date,direction,sourceCard);
+      if(seen[key]){skipped++;return;}
+      seen[key]=true;
+      const bankId=nextBankId++;
+      bankList.push([bankId,String(r.date||''),schoolId,amount,String(r.description||''),track,String(r.bank_account||r.card_number||''),now_(),'','false','false']);
+      detailList.push([
         bankId,String(r.source_card_number||''),String(r.destination_card_number||''),String(r.terminal_number||''),
         String(r.direction||'unknown'),r.balance===''?'':Number(r.balance||0),String(r.reference_number||''),
         String(r.pos_reference_code||''),r.fee_amount===''?'':Number(r.fee_amount||0),String(r.account_suffix||''),
         String(r.transaction_time||''),String(r.settlement_date||'')
       ]);
-      addedBankIds.push(bankId);
-      existing.push({amount:amount,tracking_code:track,school_id:schoolId,date:String(r.date||''),direction:direction,source_card_number:sourceCard});added++;
+      addedBankIds.push(bankId);added++;
     });
+    appendRowsByHeaders_('Bank',bankList);
+    appendRowsByHeaders_('BankDetails',detailList);
     SpreadsheetApp.flush();
     let reconciliation={matched:0,unmatched:added};
     let reconcileWarning='';
@@ -3084,6 +3091,19 @@ function assertEditable_(name,r){
 function appendByHeaders_(name,values){
   const sh=sheet_(name),headers=sh.getRange(1,1,1,sh.getLastColumn()).getDisplayValues()[0].map(String);
   const canonical=HEADERS[name];sh.appendRow(headers.map(h=>{const i=canonical.indexOf(h);return i>=0&&i<values.length?values[i]:'';}));
+}
+/** Appends many rows in ONE write (matched to the real sheet headers). appendRow per row costs ~0.3-1 s each and
+ *  keeps the global script lock busy, which made every other device fail with "lock held for a long time". */
+function appendRowsByHeaders_(name,list){
+  if(!list.length)return;
+  const sh=sheet_(name),lastCol=Math.max(1,sh.getLastColumn());
+  const headers=sh.getRange(1,1,1,lastCol).getDisplayValues()[0].map(String);
+  const canonical=HEADERS[name];
+  const data=list.map(values=>headers.map(h=>{const i=canonical.indexOf(h);return i>=0&&i<values.length?values[i]:'';}));
+  const start=Math.max(sh.getLastRow(),1)+1;
+  const need=start+data.length-1-sh.getMaxRows();
+  if(need>0)sh.insertRowsAfter(sh.getMaxRows(),need);
+  sh.getRange(start,1,data.length,headers.length).setValues(data);
 }
 /** Append one row built from an object, matched to the REAL sheet headers (adds missing canonical columns). */
 function appendObj_(name,obj){
