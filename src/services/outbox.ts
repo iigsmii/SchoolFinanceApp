@@ -120,11 +120,20 @@ export interface DrainResult {
   pending: number;
   offline: boolean;
   authExpired: boolean;
+  /** The server was busy with another write; the queue keeps its entries and is retried later. */
+  lockBusy?: boolean;
   /** Why the connection failed (when offline is true). */
   kind?: NetErrorKind;
 }
 
 const isAuthError = (msg?: string) => /نشست|وارد سامانه|ورود/.test(String(msg || ''));
+/** The server's global write lock was busy: transient, must not count as a failed attempt. */
+const isLockError = (r?: { error?: string; message?: string }) => /قفل|lock/i.test(`${r?.error || ''} ${r?.message || ''}`);
+
+/** Bank matches/annotations are tiny and can number in the hundreds: they are sent in batches. */
+const BATCHABLE = new Set(['bank_match', 'bank_annotation']);
+const BATCH_SIZE = 50;
+let batchUnsupported = false; // old backend without the bank_batch action
 
 /**
  * Sends queued entries in order. Stops at the first network/auth problem so ordering
@@ -145,6 +154,42 @@ export async function drainOutbox(onSuccess: (entry: OutboxEntry, result: any) =
     for (let i = 0; i < list.length; ) {
       const entry = list[i];
       if (entry.failed) { i++; continue; }
+
+      if (!batchUnsupported && BATCHABLE.has(entry.action)) {
+        const chunk: OutboxEntry[] = [];
+        for (let k = i; k < list.length && chunk.length < BATCH_SIZE; k++) {
+          if (list[k].failed || !BATCHABLE.has(list[k].action)) break;
+          chunk.push(list[k]);
+        }
+        if (chunk.length > 1) {
+          const bres: any = await postToAppsScript({ action: 'bank_batch', items: chunk.map((e) => e.payload) });
+          if (bres?.success && Array.isArray(bres.results) && bres.results.length === chunk.length) {
+            const after = list[list.indexOf(chunk[chunk.length - 1]) + 1]; // first entry that follows this batch
+            for (let k = 0; k < chunk.length; k++) {
+              const e = chunk[k];
+              const r = bres.results[k];
+              const at = list.indexOf(e);
+              if (r?.success) {
+                if (at >= 0) list.splice(at, 1);
+                try { await onSuccess(e, r); } catch (err) { console.warn('outbox onSuccess handler failed', err); }
+                out.sent++;
+              } else {
+                e.attempts += 1;
+                e.error = r?.error || 'خطای نامشخص سرور';
+                if (e.attempts >= 3) { e.failed = true; out.failed++; }
+              }
+            }
+            await persist();
+            i = after ? list.indexOf(after) : list.length;
+            continue;
+          }
+          if (bres?.network) { out.offline = true; out.kind = bres.kind; break; }
+          if (isAuthError(bres?.error || bres?.message)) { out.authExpired = true; break; }
+          if (isLockError(bres)) { out.lockBusy = true; break; }
+          if (/Unknown action/i.test(String(bres?.error || ''))) batchUnsupported = true; // fall back to one by one
+        }
+      }
+
       const res: any = await postToAppsScript(entry.payload);
       if (res?.success) {
         list.splice(i, 1);
@@ -155,6 +200,7 @@ export async function drainOutbox(onSuccess: (entry: OutboxEntry, result: any) =
       }
       if (res?.network) { out.offline = true; out.kind = res.kind; break; }
       if (isAuthError(res?.error || res?.message)) { out.authExpired = true; break; }
+      if (isLockError(res)) { out.lockBusy = true; break; }
       if (res?.needs_review) {
         // The server may or may not have written the row: never replay automatically.
         entry.failed = true;
